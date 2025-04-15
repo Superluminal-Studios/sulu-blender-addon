@@ -347,6 +347,8 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
                 "--s3-endpoint", endpoint_url,
                 "--s3-provider", "Cloudflare",
                 "--s3-env-auth",
+                "--s3-region", "auto",
+                "--s3-no-check-bucket",
             ]
             print("Running rclone cmd:", " ".join(cmd))
 
