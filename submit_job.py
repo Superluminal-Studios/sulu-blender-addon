@@ -188,13 +188,13 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         if method == "PROJECT":
             file_map = pack_blend(blend_path, target="", method=method, project_path=project_path)
             main_blend_s3_path = str(file_map[Path(blend_path)])
-            print(main_blend_s3_path)
 
             with filelist_filename.open("w", encoding="utf-8") as fp:
                 for file_path, packed_path in file_map.items():
                     required_storage += os.path.getsize(file_path)
-                    if file_path != blend_path:
+                    if str(file_path) != str(blend_path):
                         fp.write(str(packed_path) + "\n")
+
         else:  # ZIP
             pack_blend(blend_path, str(zip_filename), method=method)
             if not zip_filename.exists():
@@ -292,10 +292,6 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
 
             with filelist_filename.open("a", encoding="utf-8") as fp:
                 fp.write(main_blend_s3_path)
-
-            # print contents of filelist_filename
-            with filelist_filename.open("r", encoding="utf-8") as fp:
-                print(fp.read())
 
             run_rclone(
                 build_rclone_cmd(
