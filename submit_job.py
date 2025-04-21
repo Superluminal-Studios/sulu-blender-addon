@@ -283,9 +283,6 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         else:  # PROJECT
             print("filelist", filelist_filename, "project_path", project_path, "bucket_name", bucket_name, "project_path", project_path.stem)
 
-            with open(filelist_filename, "r", encoding="utf-8") as fp:
-                print(fp.read())
-                
             run_rclone(
                 build_rclone_cmd(
                     "copy",
