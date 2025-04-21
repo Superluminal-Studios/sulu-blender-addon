@@ -107,7 +107,7 @@ class Packer:
         self.blendfile = bfile
         self.project = project
         self.target = target
-        self._target_path = self._make_target_path(target)
+        self._target_path = target
         self.noop = noop
         self.compress = compress
         self.relative_only = relative_only
