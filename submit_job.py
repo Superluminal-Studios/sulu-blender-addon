@@ -186,8 +186,9 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         required_storage = 0
 
         if method == "PROJECT":
-            file_map = pack_blend(blend_path, Path("/"), method=method, project_path=project_path)
+            file_map = pack_blend(blend_path, target="/", method=method, project_path=project_path)
             main_blend_s3_path = str(file_map[Path(blend_path)]).lstrip("/")
+            print(main_blend_s3_path)
 
             with filelist_filename.open("w", encoding="utf-8") as fp:
                 for file_path, packed_path in file_map.items():
