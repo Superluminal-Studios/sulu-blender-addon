@@ -25,6 +25,9 @@ render_type_items = [
 #  Scene Properties for Superluminal
 # -------------------------------------------------------------------
 class SuperluminalSceneProperties(bpy.types.PropertyGroup):
+    project_path: bpy.props.StringProperty(name="Project Path", default="", subtype="FILE_PATH")
+    use_upload_project: bpy.props.BoolProperty(name="Upload Project", default=False)
+
     job_name: bpy.props.StringProperty(name="Job Name", default="My Render Job")
     use_scene_job_name: bpy.props.BoolProperty(name="Use Scene Name", default=False)
 

@@ -26,22 +26,24 @@ if vendor_dir not in sys.path:
 # -------------------------------------------------------------------
 from . import preferences
 from . import properties
-from . import operators
+from . import submit_job
 from . import panels
-
+from . import operators
 # -------------------------------------------------------------------
 #  Registration
 # -------------------------------------------------------------------
 def register():
     preferences.register()
     properties.register()
-    operators.register()
+    submit_job.register()
     panels.register()
+    operators.register()
 
 
 def unregister():
-    panels.unregister()
     operators.unregister()
+    panels.unregister()
+    submit_job.unregister()
     properties.unregister()
     preferences.unregister()
 

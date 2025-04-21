@@ -17,6 +17,11 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         row.label(text="Job Settings")
 
         row = box.row()
+        row.prop(props, "use_upload_project", text="Upload Project")
+        if props.use_upload_project:
+            row.prop(props, "project_path", text="Project Path")
+
+        row = box.row()
         row.prop(props, "use_scene_job_name", text="Use Scene Name")
         if not props.use_scene_job_name:
             row.prop(props, "job_name", text="")

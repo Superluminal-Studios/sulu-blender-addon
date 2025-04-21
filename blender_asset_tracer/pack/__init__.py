@@ -115,6 +115,8 @@ class Packer:
         self._abort_lock = threading.RLock()
         self._abort_reason = ""
 
+        self.file_map = {}
+
         # Set this to a custom Callback() subclass instance before calling
         # strategise() to receive progress reports.
         self._progress_cb = progress.Callback()
@@ -608,7 +610,7 @@ class Packer:
         self, asset_path: pathlib.Path, target: pathlib.PurePath, may_move=False
     ):
         if self.noop:
-            print("%s -> %s" % (asset_path, target))
+            self.file_map[asset_path] = target
             self._file_count += 1
             return
 

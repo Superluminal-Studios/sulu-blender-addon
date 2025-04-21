@@ -19,7 +19,7 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     pocketbase_url: bpy.props.StringProperty(
         name="PocketBase URL",
         description="Base URL for PocketBase",
-        default="https://your-pocketbase-instance.com",
+        default="https://api.superlumin.al",
     )
 
     username: bpy.props.StringProperty(
@@ -50,7 +50,7 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(self, "pocketbase_url")
+        # layout.prop(self, "pocketbase_url")
         layout.prop(self, "username")
         layout.prop(self, "password")
 
