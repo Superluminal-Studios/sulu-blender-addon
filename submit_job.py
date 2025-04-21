@@ -112,7 +112,7 @@ def ensure_rclone() -> Path:
 
 def run_rclone(cmd: List[str]) -> None:
     """Run *rclone* with progress output forwarded to stdout."""
-    extra = ["--progress", "--stats-one-line", "--stats=1s"]
+    extra = ["--stats=1s", "--verbose"]
     process = subprocess.Popen(
         [*cmd, *extra],
         stdout=subprocess.PIPE,
@@ -192,8 +192,9 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             with filelist_filename.open("w", encoding="utf-8") as fp:
                 for file_path, packed_path in file_map.items():
                     required_storage += os.path.getsize(file_path)
+                    print(str(packed_path))
                     if str(file_path) != str(blend_path):
-                        fp.write(str(packed_path) + "\n")
+                        fp.write(str(packed_path).replace("\\", "/") + "\n")
 
         else:  # ZIP
             pack_blend(blend_path, str(zip_filename), method=method)
@@ -280,6 +281,11 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         if method == "ZIP":
             run_rclone(build_rclone_cmd("copy", str(zip_filename), f":s3:{bucket_name}/"))
         else:  # PROJECT
+            print("filelist", filelist_filename, "project_path", project_path, "bucket_name", bucket_name, "project_path", project_path.stem)
+
+            with open(filelist_filename, "r", encoding="utf-8") as fp:
+                print(fp.read())
+                
             run_rclone(
                 build_rclone_cmd(
                     "copy",
@@ -291,7 +297,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             )
 
             with filelist_filename.open("a", encoding="utf-8") as fp:
-                fp.write(main_blend_s3_path)
+                fp.write(main_blend_s3_path.replace("\\", "/"))
 
             run_rclone(
                 build_rclone_cmd(
@@ -306,7 +312,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             run_rclone(
                 build_rclone_cmd(
                     "moveto",
-                    str(tmp_blend_path),
+                    str(tmp_blend_path), 
                     dest_remote,
                     "--checksum",
                     "--ignore-times",
