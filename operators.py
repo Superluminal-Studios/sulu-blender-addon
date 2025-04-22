@@ -1,81 +1,109 @@
 import bpy
+import json
 import requests
 
+from .preferences import g_project_items, ensure_cached_project_items
+
+
+# -------------------------------------------------------------------
+#  Authentication
+# -------------------------------------------------------------------
+
 class SUPERLUMINAL_OT_Login(bpy.types.Operator):
-    """Authenticate using PocketBase credentials."""
+    """Authenticate with PocketBase and store token."""
     bl_idname = "superluminal.login"
-    bl_label = "Login to PocketBase"
+    bl_label = "Log in to PocketBase"
 
     def execute(self, context):
         prefs = context.preferences.addons[__package__].preferences
-
         auth_url = f"{prefs.pocketbase_url}/api/collections/users/auth-with-password"
         payload = {"identity": prefs.username, "password": prefs.password}
 
         try:
-            response = requests.post(auth_url, json=payload)
+            response = requests.post(auth_url, json=payload, timeout=10)
             response.raise_for_status()
-        except Exception as e:
-            self.report({"ERROR"}, f"Error logging in: {str(e)}")
+        except Exception as exc:
+            self.report({"ERROR"}, f"Error logging in: {exc}")
             return {"CANCELLED"}
 
-        data = response.json()
-        if "token" in data:
-            prefs.user_token = data["token"]
-            self.report({"INFO"}, "Logged in successfully!")
-        else:
-            self.report({"WARNING"}, "Login response did not contain a token.")
+        token = response.json().get("token")
+        if not token:
+            self.report({"WARNING"}, "Login succeeded but no token was returned.")
+            return {"CANCELLED"}
 
+        prefs.user_token = token
+        self.report({"INFO"}, "Logged in successfully.")
         return {"FINISHED"}
 
 
+class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
+    """Clear the stored PocketBase token."""
+    bl_idname = "superluminal.logout"
+    bl_label = "Log out"
+
+    def execute(self, context):
+        prefs = context.preferences.addons[__package__].preferences
+        prefs.user_token = ""
+        self.report({"INFO"}, "Logged out.")
+        return {"FINISHED"}
+
+
+# -------------------------------------------------------------------
+#  Project list
+# -------------------------------------------------------------------
+
 class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
-    """Fetch the list of available projects from PocketBase."""
+    """Fetch PocketBase project list and cache it permanently."""
     bl_idname = "superluminal.fetch_projects"
     bl_label = "Fetch Project List"
 
     def execute(self, context):
         prefs = context.preferences.addons[__package__].preferences
-
-        projects_url = f"{prefs.pocketbase_url}/api/collections/projects/records"
-        headers = {"Authorization": f"{prefs.user_token}"}
-
-        try:
-            response = requests.get(projects_url, headers=headers)
-            response.raise_for_status()
-        except Exception as e:
-            self.report({"ERROR"}, f"Error fetching projects: {str(e)}")
+        if not prefs.user_token:
+            self.report({"ERROR"}, "Not authenticated—log in first.")
             return {"CANCELLED"}
 
-        data = response.json()
-        from .preferences import g_project_items
-        local_items = []
-        if "items" in data:
-            for project in data["items"]:
-                project_id = project.get("id", "")
-                project_name = project.get("name", project_id)
-                local_items.append(
-                    (project_id, project_name, f"Project {project_name}")
-                )
+        projects_url = f"{prefs.pocketbase_url}/api/collections/projects/records"
+        headers = {"Authorization": prefs.user_token}
 
-        if not local_items:
-            local_items = [("NONE", "No projects", "No projects")]
+        try:
+            response = requests.get(projects_url, headers=headers, timeout=10)
+            response.raise_for_status()
+        except Exception as exc:
+            self.report({"ERROR"}, f"Error fetching projects: {exc}")
+            return {"CANCELLED"}
+
+        fetched_items = [
+            (proj.get("id", ""), proj.get("name", proj.get("id", "")), f"Project {proj.get('name', '')}")
+            for proj in response.json().get("items", [])
+        ]
+
+        if not fetched_items:
+            fetched_items = [("NONE", "No projects", "No projects")]
 
         g_project_items.clear()
-        g_project_items.extend(local_items)
+        g_project_items.extend(fetched_items)
+        prefs.stored_projects = json.dumps([list(t) for t in fetched_items])
 
-        self.report({"INFO"}, "Projects fetched successfully.")
+        self.report({"INFO"}, "Projects fetched.")
         return {"FINISHED"}
-    
+
+
+# -------------------------------------------------------------------
+#  Registration helpers
+# -------------------------------------------------------------------
 
 classes = (
     SUPERLUMINAL_OT_Login,
+    SUPERLUMINAL_OT_Logout,
     SUPERLUMINAL_OT_FetchProjects,
 )
+
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+
 
 def unregister():
     for cls in reversed(classes):

@@ -1,79 +1,138 @@
+"""
+Superluminal ‑ per‑scene settings kept inside the .blend file.
+
+Every property now has a concise, user‑facing *description* so the
+tooltip in Blender’s UI clearly explains what the option does.
+"""
+
+from __future__ import annotations
 import bpy
 
 # -------------------------------------------------------------------
-#  Enums for UI
+#  Enum items
 # -------------------------------------------------------------------
 render_format_items = [
-    ("PNG", "PNG", "PNG format"),
-    ("JPEG", "JPEG", "JPEG format"),
-    ("OPEN_EXR", "OpenEXR", "OpenEXR format"),
+    ("PNG",      "PNG",      "Save each frame as a PNG image"),
+    ("JPEG",     "JPEG",     "Save each frame as JPEG image"),
+    ("OPEN_EXR", "OpenEXR",  "Save multilayer OpenEXR files."),
 ]
 
 blender_version_items = [
-    ("BLENDER42", "Blender 4.2", ""),
-    ("BLENDER35", "Blender 3.5", ""),
-    ("BLENDER34", "Blender 3.4", ""),
+    ("BLENDER40", "Blender 4.0", "Use Blender 4.0 on the farm"),
+    ("BLENDER41", "Blender 4.1", "Use Blender 4.1 on the farm"),
+    ("BLENDER42", "Blender 4.2", "Use Blender 4.2 on the farm"),
+    ("BLENDER43", "Blender 4.3", "Use Blender 4.3 on the farm"),
+    ("BLENDER44", "Blender 4.4", "Use Blender 4.4 on the farm"),
 ]
 
 render_type_items = [
-    ("IMAGE", "Image", "Still image render"),
-    ("ANIMATION", "Animation", "Animated frames"),
+    ("IMAGE",     "Image",     "Render only a single frame"),
+    ("ANIMATION", "Animation", "Render a sequence of frames"),
 ]
-
 
 # -------------------------------------------------------------------
 #  Scene Properties for Superluminal
 # -------------------------------------------------------------------
 class SuperluminalSceneProperties(bpy.types.PropertyGroup):
-    project_path: bpy.props.StringProperty(name="Project Path", default="", subtype="FILE_PATH")
-    use_upload_project: bpy.props.BoolProperty(name="Upload Project", default=False)
+    # ────────────────────────────────────────────────────────────────
+    #  Project packaging
+    # ────────────────────────────────────────────────────────────────
+    project_path: bpy.props.StringProperty(
+        name="Project Path",
+        default="",
+        subtype="FILE_PATH",
+        description="Folder that contains all linked assets. "
+                    "Only needed when you choose 'Upload Project'.",
+    )
+    use_upload_project: bpy.props.BoolProperty(
+        name="Upload Project",
+        default=False,
+        description="Upload the entire project directory instead of a single "
+                    ".blend‑only ZIP. Requires ‘Project Path’ to be set.",
+    )
 
-    job_name: bpy.props.StringProperty(name="Job Name", default="My Render Job")
-    use_scene_job_name: bpy.props.BoolProperty(name="Use Scene Name", default=False)
+    # ────────────────────────────────────────────────────────────────
+    #  Job naming
+    # ────────────────────────────────────────────────────────────────
+    job_name: bpy.props.StringProperty(
+        name="Job Name",
+        default="My Render Job",
+        description="Custom name shown in the Superluminal dashboard.",
+    )
+    use_file_name: bpy.props.BoolProperty(
+        name="Use File Name",
+        default=True,
+        description="Ignore the custom job name and use the .blend filename.",
+    )
 
+    # ────────────────────────────────────────────────────────────────
+    #  Output format
+    # ────────────────────────────────────────────────────────────────
     render_format: bpy.props.EnumProperty(
         name="Render Format",
         items=render_format_items,
         default="PNG",
+        description="Image/sequence file format to use when overriding the "
+                    "scene’s output settings.",
     )
     use_scene_render_format: bpy.props.BoolProperty(
-        name="Use Scene Format", default=False
+        name="Use Scene Format",
+        default=True,
+        description="Keep whatever format is already set in the scene "
+                    "and ignore the override above.",
     )
 
+    # ────────────────────────────────────────────────────────────────
+    #  Render type
+    # ────────────────────────────────────────────────────────────────
     render_type: bpy.props.EnumProperty(
-        name="Render Type", items=render_type_items, default="IMAGE"
+        name="Render Type",
+        items=render_type_items,
+        default="ANIMATION",
+        description="Choose whether to render the current frame only or "
+                    "the whole frame range.",
     )
 
-    frame_start: bpy.props.IntProperty(name="Start Frame", default=1)
-    frame_end: bpy.props.IntProperty(name="End Frame", default=250)
+    # ────────────────────────────────────────────────────────────────
+    #  Frame range overrides
+    # ────────────────────────────────────────────────────────────────
+    frame_start: bpy.props.IntProperty(
+        name="Start Frame",
+        default=1,
+        description="First frame to render when overriding the scene range.",
+    )
+    frame_end: bpy.props.IntProperty(
+        name="End Frame",
+        default=250,
+        description="Last frame to render when overriding the scene range.",
+    )
     use_scene_frame_range: bpy.props.BoolProperty(
-        name="Use Scene Frame Range", default=False
+        name="Use Scene Frame Range",
+        default=True,
+        description="Render the frame range already set in the Timeline "
+                    "instead of the override above.",
     )
 
-    frame_step: bpy.props.IntProperty(name="Frame Step", default=1)
-    use_scene_frame_step: bpy.props.BoolProperty(
-        name="Use Scene Frame Step", default=False
-    )
-
-    batch_size: bpy.props.IntProperty(name="Batch Size", default=1, min=1)
-    use_scene_batch_size: bpy.props.BoolProperty(
-        name="Use Default/Scene Logic", default=False
-    )
-
+    # ────────────────────────────────────────────────────────────────
+    #  Farm Blender version
+    # ────────────────────────────────────────────────────────────────
     blender_version: bpy.props.EnumProperty(
         name="Blender Version",
         items=blender_version_items,
-        default="BLENDER42",
+        default="BLENDER44",
+        description="Specify which Blender build the render farm should run. "
+                    "Make sure your scene is compatible with the chosen version.",
     )
 
-
-def register():
+# -------------------------------------------------------------------
+#  Registration helpers
+# -------------------------------------------------------------------
+def register() -> None:
     bpy.utils.register_class(SuperluminalSceneProperties)
     bpy.types.Scene.superluminal_settings = bpy.props.PointerProperty(
         type=SuperluminalSceneProperties
     )
 
-
-def unregister():
+def unregister() -> None:
     del bpy.types.Scene.superluminal_settings
     bpy.utils.unregister_class(SuperluminalSceneProperties)

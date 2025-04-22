@@ -1,69 +1,76 @@
 import bpy
+import json
 
 # -------------------------------------------------------------------
-#  Global storage for dynamic project list
+#  Global cache for dynamic project list
 # -------------------------------------------------------------------
 g_project_items = [("NONE", "No projects", "No projects")]
 
 
-def get_project_list_items(self, context):
-    """Callback for the EnumProperty to display dynamic project items."""
+def ensure_cached_project_items(prefs):
+    """Populate g_project_items from prefs.stored_projects once per session."""
     global g_project_items
+    if (
+        len(g_project_items) == 1
+        and g_project_items[0][0] == "NONE"
+        and prefs.stored_projects
+    ):
+        try:
+            cached = json.loads(prefs.stored_projects)
+            g_project_items.clear()
+            g_project_items.extend([tuple(t) for t in cached])
+        except Exception:
+            # Corrupt cache—reset
+            prefs.stored_projects = ""
+
+
+def get_project_list_items(self, context):
+    ensure_cached_project_items(self)
     return g_project_items
 
 
 class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
-    # IMPORTANT: This must match the folder/addon name for lookups
-    bl_idname = __package__
+    bl_idname = __package__  # MUST match add‑on folder name
 
+    # ----------------------------------------------------------------
+    #  Stored properties
+    # ----------------------------------------------------------------
     pocketbase_url: bpy.props.StringProperty(
-        name="PocketBase URL",
-        description="Base URL for PocketBase",
+        name="PocketBase URL",
         default="https://api.superlumin.al",
     )
-
-    username: bpy.props.StringProperty(
-        name="Username",
-        description="PocketBase username",
-        default="",
-    )
-
-    password: bpy.props.StringProperty(
-        name="Password",
-        description="PocketBase password",
-        default="",
-        subtype="PASSWORD",
-    )
-
-    user_token: bpy.props.StringProperty(
-        name="User Token",
-        description="Authenticated token stored after successful login",
-        default="",
+    username: bpy.props.StringProperty(name="Username")
+    password: bpy.props.StringProperty(name="Password", subtype="PASSWORD")
+    user_token: bpy.props.StringProperty(name="User Token")
+    stored_projects: bpy.props.StringProperty(
+        name="Cached Projects (JSON)", options={'HIDDEN'}
     )
 
     project_list: bpy.props.EnumProperty(
         name="Project",
-        description="List of projects from PocketBase",
         items=get_project_list_items,
-        default=0,  # index-based default
     )
 
+    # ----------------------------------------------------------------
+    #  UI
+    # ----------------------------------------------------------------
     def draw(self, context):
         layout = self.layout
         # layout.prop(self, "pocketbase_url")
-        layout.prop(self, "username")
-        layout.prop(self, "password")
 
-        row = layout.row()
-        row.operator("superluminal.login", text="Log In")
+        if self.user_token:
+            # Logged in – hide creds, show Log out
+            layout.operator("superluminal.logout", text="Log out")
+        else:
+            # Not logged in – show creds & Log in
+            layout.prop(self, "username")
+            layout.prop(self, "password")
+            layout.operator("superluminal.login", text="Log in")
 
-        layout.separator()
 
-        row = layout.row()
-        row.operator("superluminal.fetch_projects", text="Fetch Projects")
-
-        layout.prop(self, "project_list")
-
+# -------------------------------------------------------------------
+#  Registration helpers
+# -------------------------------------------------------------------
 
 def register():
     bpy.utils.register_class(SuperluminalAddonPreferences)

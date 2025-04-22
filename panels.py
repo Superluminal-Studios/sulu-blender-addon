@@ -7,66 +7,125 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
     bl_region_type = "WINDOW"
     bl_context = "render"
 
+    # ------------------------------------------------------------------
+    #  UI helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def draw_toggle_row(col, toggle_prop, content_prop, *,
+                        toggle_text="", content_text="",
+                        invert=False):
+        """
+        Adds a checkbox row, followed by a row that shows the related
+        property but is disabled while the toggle is (un)checked.
+        """
+        row = col.row(align=True)
+        row.prop(toggle_prop[0], toggle_prop[1], text=toggle_text)
+
+        row = col.row(align=True)
+        row.prop(content_prop[0], content_prop[1], text=content_text)
+        row.enabled = (toggle_prop[0].path_resolve(toggle_prop[1]) ^ invert)
+
+    # ------------------------------------------------------------------
+    #  Draw
+    # ------------------------------------------------------------------
     def draw(self, context):
         layout = self.layout
-        scene = context.scene
-        props = scene.superluminal_settings
+        scene   = context.scene
+        props   = scene.superluminal_settings
+        prefs   = context.preferences.addons[__package__].preferences
 
+        # --------------------------------------------------------------
+        #  Project selector + refresh button
+        # --------------------------------------------------------------
+        row = layout.row(align=True)
+        row.prop(prefs, "project_list", text="Project")
+        row.operator("superluminal.fetch_projects",
+                     text="",
+                     icon="FILE_REFRESH")
+
+        # --------------------------------------------------------------
+        #  Job settings
+        # --------------------------------------------------------------
         box = layout.box()
-        row = box.row()
-        row.label(text="Job Settings")
+        box.label(text="Job Settings", icon="SCENE_DATA")
+        col = box.column(align=True)
 
-        row = box.row()
-        row.prop(props, "use_upload_project", text="Upload Project")
-        if props.use_upload_project:
-            row.prop(props, "project_path", text="Project Path")
-
-        row = box.row()
-        row.prop(props, "use_scene_job_name", text="Use Scene Name")
-        if not props.use_scene_job_name:
-            row.prop(props, "job_name", text="")
-
-        row = box.row()
-        row.prop(props, "use_scene_render_format", text="Use Scene Format")
-        if not props.use_scene_render_format:
-            row.prop(props, "render_format", text="")
-
-        row = box.row()
-        row.prop(props, "render_type", text="Type")
-
-        box2 = layout.box()
-        row = box2.row()
-        row.label(text="Frame Range")
-        row = box2.row()
-        row.prop(props, "use_scene_frame_range", text="Use Scene Range")
-        if not props.use_scene_frame_range:
-            row.prop(props, "frame_start", text="Start")
-            row.prop(props, "frame_end", text="End")
-
-        row = box2.row()
-        row.prop(props, "use_scene_frame_step", text="Use Scene Step")
-        if not props.use_scene_frame_step:
-            row.prop(props, "frame_step", text="Step")
-
-        row = layout.row()
-        row.prop(props, "use_scene_batch_size", text="Use Scene/Default Batch")
-        if not props.use_scene_batch_size:
-            row.prop(props, "batch_size", text="Batch Size")
-
-        row = layout.row()
-        row.prop(props, "blender_version", text="Blender Version")
-
-        layout.separator()
-
-        row = layout.row()
-        row.operator(
-            "superluminal.submit_job", text="Submit Render Job", icon="RENDER_STILL"
+        # Upload project
+        self.draw_toggle_row(
+            col,
+            (props, "use_upload_project"),
+            (props, "project_path"),
+            toggle_text="Upload Project",
+            content_text="Project Path"
         )
+        col.separator()                 # <— NEW: adds vertical gap
 
+        # Job name
+        self.draw_toggle_row(
+            col,
+            (props, "use_file_name"),
+            (props, "job_name"),
+            toggle_text="Use File Name",
+            content_text="Job Name",
+            invert=True,
+        )
+        col.separator()                 # <— NEW
+
+        # Render format
+        self.draw_toggle_row(
+            col,
+            (props, "use_scene_render_format"),
+            (props, "render_format"),
+            toggle_text="Use Scene Format",
+            content_text="Render Format",
+            invert=True,
+        )
+        col.separator()                 # <— NEW
+
+        # Render type selector
+        col.prop(props, "render_type", text="Type")
+
+        # --------------------------------------------------------------
+        #  Frame range / current frame
+        # --------------------------------------------------------------
+        box = layout.box()
+        box.label(text="Frame Range", icon="TIME")
+        col = box.column(align=True)
+
+        use_scene_label = (
+            "Use Current Frame" if props.render_type == "IMAGE"
+            else "Use Scene Range"
+        )
+        col.prop(props, "use_scene_frame_range", text=use_scene_label)
+
+        if props.render_type == "IMAGE":
+            row = col.row(align=True)
+            row.prop(props, "frame_start", text="Frame")
+            row.enabled = not props.use_scene_frame_range
+        else:
+            row = col.row(align=True)
+            row.prop(props, "frame_start", text="Start")
+            row.prop(props, "frame_end",   text="End")
+            row.enabled = not props.use_scene_frame_range
+
+        # --------------------------------------------------------------
+        #  Misc
+        # --------------------------------------------------------------
+        layout.prop(props, "blender_version", text="Blender Version")
+        layout.separator()
+        layout.operator("superluminal.submit_job",
+                        text="Submit Render Job",
+                        icon="RENDER_STILL")
+
+# --------------------------------------------------------------------
+#  Registration
+# --------------------------------------------------------------------
+classes = (SUPERLUMINAL_PT_RenderPanel,)
 
 def register():
-    bpy.utils.register_class(SUPERLUMINAL_PT_RenderPanel)
-
+    for cls in classes:
+        bpy.utils.register_class(cls)
 
 def unregister():
-    bpy.utils.unregister_class(SUPERLUMINAL_PT_RenderPanel)
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
