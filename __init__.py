@@ -10,23 +10,13 @@ bl_info = {
 }
 
 import bpy
-import sys
-import os
-
-# -------------------------------------------------------------------
-#  Adjust PYTHONPATH to include vendored dependencies
-# -------------------------------------------------------------------
-addon_dir = os.path.dirname(__file__)
-vendor_dir = os.path.join(addon_dir, "vendor", "site-packages")
-if vendor_dir not in sys.path:
-    sys.path.append(vendor_dir)
 
 # -------------------------------------------------------------------
 #  Internal Imports
 # -------------------------------------------------------------------
 from . import preferences
 from . import properties
-from . import submit_job
+from . import submit_operator
 from . import panels
 from . import operators
 # -------------------------------------------------------------------
@@ -35,7 +25,7 @@ from . import operators
 def register():
     preferences.register()
     properties.register()
-    submit_job.register()
+    submit_operator.register()
     panels.register()
     operators.register()
 
@@ -43,7 +33,7 @@ def register():
 def unregister():
     operators.unregister()
     panels.unregister()
-    submit_job.unregister()
+    submit_operator.unregister()
     properties.unregister()
     preferences.unregister()
 

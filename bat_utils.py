@@ -1,4 +1,3 @@
-import bpy
 from pathlib import Path
 from .blender_asset_tracer.pack import Packer
 from .blender_asset_tracer.pack import zipped
