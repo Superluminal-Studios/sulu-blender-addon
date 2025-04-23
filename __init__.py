@@ -17,6 +17,7 @@ import bpy
 from . import preferences
 from . import properties
 from . import submit_operator
+from . import download_operator
 from . import panels
 from . import operators
 # -------------------------------------------------------------------
@@ -26,6 +27,7 @@ def register():
     preferences.register()
     properties.register()
     submit_operator.register()
+    download_operator.register()
     panels.register()
     operators.register()
 
@@ -34,6 +36,7 @@ def unregister():
     operators.unregister()
     panels.unregister()
     submit_operator.unregister()
+    download_operator.unregister()
     properties.unregister()
     preferences.unregister()
 

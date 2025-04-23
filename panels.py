@@ -116,6 +116,10 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         layout.operator("superluminal.submit_job",
                         text="Submit Render Job",
                         icon="RENDER_STILL")
+        layout.separator()
+        layout.operator("superluminal.download_output",
+                        text="Download Render Output",
+                        icon="FILE_FOLDER")
 
 # --------------------------------------------------------------------
 #  Registration
