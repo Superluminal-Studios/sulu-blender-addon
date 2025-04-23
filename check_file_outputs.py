@@ -635,34 +635,7 @@ def gather_all_scenes_outputs(using_cli=False):
     return {scn.name: gather_render_outputs(scn, using_cli) for scn in bpy.data.scenes}
 
 
-if __name__ == "__main__":
-    # Single scene usage
-    scn = bpy.context.scene
-    scene_data = gather_render_outputs(scn)
-    print("=== Outputs for current scene:", scn.name, "===")
-    for out_item in scene_data["outputs"]:
-        print(out_item)
-
-    print("\n=== Warnings for current scene:", scn.name, "===")
-    for warning in scene_data["warnings"]:
-        print(f"{warning['severity'].upper()}: {warning['message']}")
-        if warning["node"]:
-            print(f"  Node: {warning['node']}")
-        if warning["view_layer"]:
-            print(f"  View Layer: {warning['view_layer']}")
-
-    # All scenes usage
-    print("\n=== Gathering for all scenes: ===")
-    all_scenes_dict = gather_all_scenes_outputs()
-    for scene_name, data in all_scenes_dict.items():
-        print(f"\nScene '{scene_name}' outputs:")
-        for item in data["outputs"]:
-            print("  ", item)
-
-        print(f"\nScene '{scene_name}' warnings:")
-        for warning in data["warnings"]:
-            print(f"  {warning['severity'].upper()}: {warning['message']}")
-            if warning["node"]:
-                print(f"    Node: {warning['node']}")
-            if warning["view_layer"]:
-                print(f"    View Layer: {warning['view_layer']}")
+# if __name__ == "__main__":
+#     # Single scene usage
+#     scn = bpy.context.scene
+#     scene_data = gather_render_outputs(scn)

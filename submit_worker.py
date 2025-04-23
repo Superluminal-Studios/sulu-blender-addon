@@ -212,7 +212,7 @@ def main() -> None:
             "end":   data["end_frame"],
             "frame_step": 1,
             "batch_size": 1,
-            "render_passes": {},
+            "render_passes": data["render_passes"],
             "render_format": data["render_format"],
             "render_engine": data["render_engine"],
             "version": "20241125",

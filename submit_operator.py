@@ -11,7 +11,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Dict, List
-
+from .check_file_outputs import gather_render_outputs
 import bpy  # type: ignore
 
 
@@ -85,6 +85,11 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         if not bpy.data.filepath:
             self.report({"ERROR"}, "Please save your .blend file first.")
             return {"CANCELLED"}
+        
+        outputs = gather_render_outputs(scene)["outputs"]
+        layers = outputs[0]["layers"]
+        print(layers)
+        
 
         # Gather parameters that ONLY Blender knows
         job_id = uuid.uuid4()
@@ -99,6 +104,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
                 if props.use_file_name
                 else props.job_name
             ),
+            "render_passes": layers,
             "render_format": (
                 scene.render.image_settings.file_format
                 if props.use_scene_render_format
