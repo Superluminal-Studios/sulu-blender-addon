@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# ─────────────────────────  Standard library  ──────────────────────────
+
 import json
 import platform
 import shlex
@@ -12,58 +12,53 @@ import uuid
 from pathlib import Path
 from typing import Dict
 from .check_file_outputs import gather_render_outputs
-import bpy  # type: ignore
+import bpy  
 
 def launch_in_terminal(cmd):
     """
     Run *cmd* (list[str]) in a brand-new terminal / console and keep that
     window open when the command finishes.
     """
-    system = platform.system()
 
-    # ─── Windows ──────────────────────────────────────────
-    if system == "Windows":
-        #
-        # 1.  '/k'   keeps the window open.
-        # 2.  creationflags = CREATE_NEW_CONSOLE opens a *new* window
-        #
-        subprocess.Popen(
-            ["cmd", "/k", *cmd],
-            creationflags=subprocess.CREATE_NEW_CONSOLE
-        )
-        return
+    subprocess.Popen(cmd)
 
-    # ─── macOS ────────────────────────────────────────────
-    if system == "Darwin":
-        quoted = shlex.join(cmd)
-        wait = 'echo; read -p "Press ENTER to close..."'
-        subprocess.Popen([
-            "osascript", "-e",
-            f'tell application "Terminal" to do script "{quoted}; {wait}"'
-        ])
-        return
+    # system = platform.system()
 
-    # ─── Linux / *BSD ─────────────────────────────────────
-    quoted = shlex.join(cmd)
-    wait = 'echo; read -p "Press ENTER to close..."'
-    bash_wrap = ["bash", "-c", f"{quoted}; {wait}"]
+    # if system == "Windows":
+    #     subprocess.Popen(
+    #         ["cmd", "/k", *cmd],
+    #         creationflags=subprocess.CREATE_NEW_CONSOLE
+    #     )
+    #     return
 
-    for term, prefix in (
-        ("konsole",            ["konsole", "-e"]),
-        ("xterm",              ["xterm", "-e"]),
-        ("xfce4-terminal",     ["xfce4-terminal", "--command"]),
-        ("gnome-terminal",     ["gnome-terminal", "--"]),
-        ("x-terminal-emulator",["x-terminal-emulator", "-e"]),
-    ):
-        if shutil.which(term):
-            subprocess.Popen([*prefix, *bash_wrap])
-            return
+    # if system == "Darwin":
+    #     quoted = shlex.join(cmd)
+    #     wait = 'echo; read -p "Press ENTER to close..."'
+    #     subprocess.Popen([
+    #         "osascript", "-e",
+    #         f'tell application "Terminal" to do script "{quoted}; {wait}"'
+    #     ])
+    #     return
+    
+    # quoted = shlex.join(cmd)
+    # wait = 'echo; read -p "Press ENTER to close..."'
+    # bash_wrap = ["bash", "-c", f"{quoted}; {wait}"]
 
-    # Fallback: detached background shell
-    subprocess.Popen(bash_wrap)
+    # for term, prefix in (
+    #     ("konsole",            ["konsole", "-e"]),
+    #     ("xterm",              ["xterm", "-e"]),
+    #     ("xfce4-terminal",     ["xfce4-terminal", "--command"]),
+    #     ("gnome-terminal",     ["gnome-terminal", "--"]),
+    #     ("x-terminal-emulator",["x-terminal-emulator", "-e"]),
+    # ):
+    #     if shutil.which(term):
+    #         subprocess.Popen([*prefix, *bash_wrap])
+    #         return
+
+    # subprocess.Popen(bash_wrap)
 
 
-# ───────────────  Blender operator  ────────────────
+
 class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
     """Submit the current .blend file to the Superluminal Render Farm
        by spawning an external worker process.
@@ -72,7 +67,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
     bl_idname = "superluminal.submit_job"
     bl_label = "Submit Job to Superluminal (external)"
 
-    def execute(self, context):  # noqa: C901
+    def execute(self, context):  
         scene = context.scene
         props = scene.superluminal_settings
         prefs = context.preferences.addons[__package__].preferences
@@ -86,7 +81,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         print(layers)
         
 
-        # Gather parameters that ONLY Blender knows
+        
         job_id = uuid.uuid4()
         handoff: Dict[str, object] = {
             "addon_dir": str(Path(__file__).resolve().parent),
@@ -113,7 +108,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             ),
             "render_engine": scene.render.engine.upper(),
             "blender_version": props.blender_version,
-            # PocketBase / auth
+            
             "pocketbase_url": prefs.pocketbase_url,
             "user_token": prefs.user_token,
             "selected_project_id": prefs.project_list,
@@ -129,7 +124,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         return {"FINISHED"}
 
 
-# ───────────────  Blender hooks  ────────────────
+
 classes = (SUPERLUMINAL_OT_SubmitJob,)
 
 
