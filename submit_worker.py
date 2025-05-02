@@ -135,7 +135,10 @@ def main() -> None:
     if use_project:
         _log("🔍  Finding dependencies…")
         fmap = pack_blend(blend_path, target="", method="PROJECT", project_path=project_path)
+        
         main_blend_s3 = str(fmap[Path(blend_path)])
+        main_blend_s3 = main_blend_s3.replace("\\", "/")
+
         required_storage = 0
         with filelist.open("w", encoding="utf-8") as fp:
             for idx, (src, packed) in enumerate(fmap.items(), 1):

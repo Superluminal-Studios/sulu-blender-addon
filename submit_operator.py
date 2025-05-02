@@ -10,63 +10,56 @@ import sys
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 from .check_file_outputs import gather_render_outputs
 import bpy  # type: ignore
 
-
-# ╭─────────────────────  launch_in_terminal  ─────────────────────╮
 def launch_in_terminal(cmd):
     """
-    Run *cmd* (list[str]) in a brand-new terminal / console window and
-    keep that window open until the user presses ENTER.
+    Run *cmd* (list[str]) in a brand-new terminal / console and keep that
+    window open when the command finishes.
     """
-    sysstr = platform.system()
-    quoted = shlex.join(cmd)
+    system = platform.system()
 
-    # ─── Windows ──────────────────────────────────────────────
-    if sysstr == "Windows":
+    # ─── Windows ──────────────────────────────────────────
+    if system == "Windows":
         #
-        # MAKE A STRING – shell=True expects a string, not a list.
+        # 1.  '/k'   keeps the window open.
+        # 2.  creationflags = CREATE_NEW_CONSOLE opens a *new* window
         #
-        # /k  → keep the console open
-        # & pause → show the usual "Press any key to continue…"
-        #
-        cmdline = f'cmd /k {quoted} & echo. & pause'
         subprocess.Popen(
-            cmdline,
-            shell=True,
+            ["cmd", "/k", *cmd],
             creationflags=subprocess.CREATE_NEW_CONSOLE
         )
         return
 
-    # Message used on macOS + Linux
-    wait_snippet = 'echo; read -p "Press ENTER to close..."'
-
-    # ─── macOS ────────────────────────────────────────────────
-    if sysstr == "Darwin":
-        bash_wrap = f"{quoted}; {wait_snippet}"
+    # ─── macOS ────────────────────────────────────────────
+    if system == "Darwin":
+        quoted = shlex.join(cmd)
+        wait = 'echo; read -p "Press ENTER to close..."'
         subprocess.Popen([
             "osascript", "-e",
-            f'tell application "Terminal" to do script "{bash_wrap}"'
+            f'tell application "Terminal" to do script "{quoted}; {wait}"'
         ])
         return
 
-    # ─── Linux / BSD ─────────────────────────────────────────
-    bash_wrap = ["bash", "-c", f"{quoted}; {wait_snippet}"]
+    # ─── Linux / *BSD ─────────────────────────────────────
+    quoted = shlex.join(cmd)
+    wait = 'echo; read -p "Press ENTER to close..."'
+    bash_wrap = ["bash", "-c", f"{quoted}; {wait}"]
 
     for term, prefix in (
-        ("konsole",          ["konsole", "-e"]),
-        ("xterm",            ["xterm", "-e"]),
-        ("xfce4-terminal",   ["xfce4-terminal", "--command"]),
-        ("gnome-terminal",   ["gnome-terminal", "--"]),
-        ("x-terminal-emulator", ["x-terminal-emulator", "-e"]),
+        ("konsole",            ["konsole", "-e"]),
+        ("xterm",              ["xterm", "-e"]),
+        ("xfce4-terminal",     ["xfce4-terminal", "--command"]),
+        ("gnome-terminal",     ["gnome-terminal", "--"]),
+        ("x-terminal-emulator",["x-terminal-emulator", "-e"]),
     ):
         if shutil.which(term):
             subprocess.Popen([*prefix, *bash_wrap])
             return
 
-    # Fallback: detached background (window will still close after ENTER)
+    # Fallback: detached background shell
     subprocess.Popen(bash_wrap)
 
 
