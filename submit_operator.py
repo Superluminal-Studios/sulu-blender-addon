@@ -25,47 +25,50 @@ def launch_in_terminal(cmd: List[str]) -> None:
     • macOS .......... Terminal.app runs bash -c '<cmd>; read -p …'
     • Linux/BSD ...... detects common emulators and runs the same bash wrapper
     """
-    sysstr = platform.system()
-    quoted = shlex.join(cmd)
 
-    # message shown by the read‑prompt
-    wait_snippet = 'echo; read -p "Press ENTER to close..."'
+    subprocess.call(cmd)
 
-    # ─── Windows ───
-    if sysstr == "Windows":
-        wrapper = f"{quoted} & {wait_snippet}"
-        subprocess.Popen(
-            ["cmd", "/c", "start", "", "cmd", "/c", wrapper],
-            shell=True,
-        )
-        return
+    # sysstr = platform.system()
+    # quoted = shlex.join(cmd)
 
-    # build bash wrapper:   bash -c '<cmd>; echo; read -p "Press ENTER to close..."'
-    bash_wrap = ["bash", "-c", f"{quoted}; {wait_snippet}"]
+    # # message shown by the read‑prompt
+    # wait_snippet = 'echo; read -p "Press ENTER to close..."'
 
-    # ─── macOS ───
-    if sysstr == "Darwin":
-        subprocess.Popen(
-            ["osascript", "-e",
-             f'tell application "Terminal" to do script "{shlex.join(bash_wrap)}"']
-        )
-        return
+    # # ─── Windows ───
+    # if sysstr == "Windows":
+    #     wrapper = f"{quoted} & {wait_snippet}"
+    #     subprocess.Popen(
+    #         ["cmd", "/c", "start", "", "cmd", "/c", wrapper],
+    #         shell=True,
+    #     )
+    #     return
 
-    # ─── Linux / BSD ───
-    terms = (
-        ("konsole", ["konsole", "-e"]),
-        ("xterm", ["xterm", "-e"]),
-        ("xfce4-terminal", ["xfce4-terminal", "--command"]),
-        ("gnome-terminal", ["gnome-terminal", "--"]),
-        ("x-terminal-emulator", ["x-terminal-emulator", "-e"]),
-    )
-    for name, prefix in terms:
-        if shutil.which(name):
-            subprocess.Popen([*prefix, *bash_wrap])
-            return
+    # # build bash wrapper:   bash -c '<cmd>; echo; read -p "Press ENTER to close..."'
+    # bash_wrap = ["bash", "-c", f"{quoted}; {wait_snippet}"]
 
-    # fallback: detached background (still closes after ENTER)
-    subprocess.Popen(bash_wrap)
+    # # ─── macOS ───
+    # if sysstr == "Darwin":
+    #     subprocess.Popen(
+    #         ["osascript", "-e",
+    #          f'tell application "Terminal" to do script "{shlex.join(bash_wrap)}"']
+    #     )
+    #     return
+
+    # # ─── Linux / BSD ───
+    # terms = (
+    #     ("konsole", ["konsole", "-e"]),
+    #     ("xterm", ["xterm", "-e"]),
+    #     ("xfce4-terminal", ["xfce4-terminal", "--command"]),
+    #     ("gnome-terminal", ["gnome-terminal", "--"]),
+    #     ("x-terminal-emulator", ["x-terminal-emulator", "-e"]),
+    # )
+    # for name, prefix in terms:
+    #     if shutil.which(name):
+    #         subprocess.Popen([*prefix, *bash_wrap])
+    #         return
+
+    # # fallback: detached background (still closes after ENTER)
+    # subprocess.Popen(bash_wrap)
 
 
 # ───────────────  Blender operator  ────────────────

@@ -58,7 +58,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             toggle_text="Upload Project",
             content_text="Project Path"
         )
-        col.separator()                 # <— NEW: adds vertical gap
+        col.separator()
 
         # Job name
         self.draw_toggle_row(
@@ -69,7 +69,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             content_text="Job Name",
             invert=True,
         )
-        col.separator()                 # <— NEW
+        col.separator()
 
         # Render format
         self.draw_toggle_row(
@@ -80,7 +80,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             content_text="Render Format",
             invert=True,
         )
-        col.separator()                 # <— NEW
+        col.separator()               
 
         # Render type selector
         col.prop(props, "render_type", text="Type")

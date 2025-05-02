@@ -154,7 +154,8 @@ def main() -> None:
     hdr = {"Authorization": data["user_token"]}
     url = f"{data['pocketbase_url']}/api/collections/project_storage/records"
     params = {"filter": f"(project_id='{data['selected_project_id']}' && bucket_name~'render-')"}
-    s3info = requests.get(url, headers=hdr, params=params, timeout=30).json()["items"][0]
+    s3_response = requests.get(url, headers=hdr, params=params, timeout=30).json()["items"]
+    s3info = s3_response[0]
     bucket = s3info["bucket_name"]
 
     # ───── rclone uploads ─────
