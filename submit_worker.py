@@ -76,7 +76,7 @@ def _download_with_bar(url: str, dest: Path) -> None:
             done += len(chunk)
             if total:
                 filled = int(bar * done / total)
-                print(f"\r    |{'█'*filled}{'-'*(bar-filled)}| {done*100/total:5.1f}% ",
+                print(f"\r    |{' '*filled}{'-'*(bar-filled)}| {done*100/total:5.1f}% ",
                       end="", flush=True)
     if total:
         print()
@@ -135,7 +135,7 @@ def main() -> None:
     if use_project:
         _log("🔍  Finding dependencies…")
         fmap = pack_blend(blend_path, target="", method="PROJECT", project_path=project_path)
-        
+
         main_blend_s3 = str(fmap[Path(blend_path)])
         main_blend_s3 = main_blend_s3.replace("\\", "/")
 
