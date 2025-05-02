@@ -16,59 +16,58 @@ import bpy  # type: ignore
 
 
 # ╭─────────────────────  launch_in_terminal  ─────────────────────╮
-def launch_in_terminal(cmd: List[str]) -> None:
+def launch_in_terminal(cmd):
     """
-    Open *cmd* in a new terminal window, wait for the user to press ENTER,
-    then close the window.
-
-    • Windows ........ start a new cmd that runs <cmd> & pause
-    • macOS .......... Terminal.app runs bash -c '<cmd>; read -p …'
-    • Linux/BSD ...... detects common emulators and runs the same bash wrapper
+    Run *cmd* (list[str]) in a brand-new terminal / console window and
+    keep that window open until the user presses ENTER.
     """
+    sysstr = platform.system()
+    quoted = shlex.join(cmd)
 
-    subprocess.call(cmd)
+    # ─── Windows ──────────────────────────────────────────────
+    if sysstr == "Windows":
+        #
+        # MAKE A STRING – shell=True expects a string, not a list.
+        #
+        # /k  → keep the console open
+        # & pause → show the usual "Press any key to continue…"
+        #
+        cmdline = f'cmd /k {quoted} & echo. & pause'
+        subprocess.Popen(
+            cmdline,
+            shell=True,
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
+        return
 
-    # sysstr = platform.system()
-    # quoted = shlex.join(cmd)
+    # Message used on macOS + Linux
+    wait_snippet = 'echo; read -p "Press ENTER to close..."'
 
-    # # message shown by the read‑prompt
-    # wait_snippet = 'echo; read -p "Press ENTER to close..."'
+    # ─── macOS ────────────────────────────────────────────────
+    if sysstr == "Darwin":
+        bash_wrap = f"{quoted}; {wait_snippet}"
+        subprocess.Popen([
+            "osascript", "-e",
+            f'tell application "Terminal" to do script "{bash_wrap}"'
+        ])
+        return
 
-    # # ─── Windows ───
-    # if sysstr == "Windows":
-    #     wrapper = f"{quoted} & {wait_snippet}"
-    #     subprocess.Popen(
-    #         ["cmd", "/c", "start", "", "cmd", "/c", wrapper],
-    #         shell=True,
-    #     )
-    #     return
+    # ─── Linux / BSD ─────────────────────────────────────────
+    bash_wrap = ["bash", "-c", f"{quoted}; {wait_snippet}"]
 
-    # # build bash wrapper:   bash -c '<cmd>; echo; read -p "Press ENTER to close..."'
-    # bash_wrap = ["bash", "-c", f"{quoted}; {wait_snippet}"]
+    for term, prefix in (
+        ("konsole",          ["konsole", "-e"]),
+        ("xterm",            ["xterm", "-e"]),
+        ("xfce4-terminal",   ["xfce4-terminal", "--command"]),
+        ("gnome-terminal",   ["gnome-terminal", "--"]),
+        ("x-terminal-emulator", ["x-terminal-emulator", "-e"]),
+    ):
+        if shutil.which(term):
+            subprocess.Popen([*prefix, *bash_wrap])
+            return
 
-    # # ─── macOS ───
-    # if sysstr == "Darwin":
-    #     subprocess.Popen(
-    #         ["osascript", "-e",
-    #          f'tell application "Terminal" to do script "{shlex.join(bash_wrap)}"']
-    #     )
-    #     return
-
-    # # ─── Linux / BSD ───
-    # terms = (
-    #     ("konsole", ["konsole", "-e"]),
-    #     ("xterm", ["xterm", "-e"]),
-    #     ("xfce4-terminal", ["xfce4-terminal", "--command"]),
-    #     ("gnome-terminal", ["gnome-terminal", "--"]),
-    #     ("x-terminal-emulator", ["x-terminal-emulator", "-e"]),
-    # )
-    # for name, prefix in terms:
-    #     if shutil.which(name):
-    #         subprocess.Popen([*prefix, *bash_wrap])
-    #         return
-
-    # # fallback: detached background (still closes after ENTER)
-    # subprocess.Popen(bash_wrap)
+    # Fallback: detached background (window will still close after ENTER)
+    subprocess.Popen(bash_wrap)
 
 
 # ───────────────  Blender operator  ────────────────
