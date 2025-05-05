@@ -56,7 +56,7 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     # ----------------------------------------------------------------
     def draw(self, context):
         layout = self.layout
-        # layout.prop(self, "pocketbase_url")
+        layout.prop(self, "pocketbase_url")
 
         if self.user_token:
             # Logged in – hide creds, show Log out

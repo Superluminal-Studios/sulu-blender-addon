@@ -124,6 +124,15 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
                     "Make sure your scene is compatible with the chosen version.",
     )
 
+    # ────────────────────────────────────────────────────────────────
+    #  Ignore errors
+    # ────────────────────────────────────────────────────────────────
+    ignore_errors: bpy.props.BoolProperty(
+        name="Ignore Errors",
+        default=False,
+        description="Ignore errors and continue rendering.",
+    )
+
 # -------------------------------------------------------------------
 #  Registration helpers
 # -------------------------------------------------------------------

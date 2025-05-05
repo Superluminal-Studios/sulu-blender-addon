@@ -223,6 +223,7 @@ def main() -> None:
             "blender_version": data["blender_version"],
             "required_storage": required_storage,
             "zip": (not use_project),
+            "ignore_errors": data["ignore_errors"],
         }
     }
     post_url = f"{data['pocketbase_url']}/api/farm/{org_id}/jobs"

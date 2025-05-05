@@ -120,6 +120,12 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         layout.operator("superluminal.download_output",
                         text="Download Render Output",
                         icon="FILE_FOLDER")
+        
+        layout.separator()
+        layout.label(text="Advanced Settings", icon="PREFERENCES")
+        col = layout.column(align=True)
+        col.prop(props, "ignore_errors", text="Ignore Errors")
+        
 
 # --------------------------------------------------------------------
 #  Registration

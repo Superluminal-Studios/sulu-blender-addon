@@ -20,42 +20,40 @@ def launch_in_terminal(cmd):
     window open when the command finishes.
     """
 
-    subprocess.Popen(cmd)
+    system = platform.system()
 
-    # system = platform.system()
+    if system == "Windows":
+        subprocess.Popen(
+            ["cmd", "/k", *cmd],
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
+        return
 
-    # if system == "Windows":
-    #     subprocess.Popen(
-    #         ["cmd", "/k", *cmd],
-    #         creationflags=subprocess.CREATE_NEW_CONSOLE
-    #     )
-    #     return
-
-    # if system == "Darwin":
-    #     quoted = shlex.join(cmd)
-    #     wait = 'echo; read -p "Press ENTER to close..."'
-    #     subprocess.Popen([
-    #         "osascript", "-e",
-    #         f'tell application "Terminal" to do script "{quoted}; {wait}"'
-    #     ])
-    #     return
+    if system == "Darwin":
+        quoted = shlex.join(cmd)
+        wait = 'echo; read -p "Press ENTER to close..."'
+        subprocess.Popen([
+            "osascript", "-e",
+            f'tell application "Terminal" to do script "{quoted}; {wait}"'
+        ])
+        return
     
-    # quoted = shlex.join(cmd)
-    # wait = 'echo; read -p "Press ENTER to close..."'
-    # bash_wrap = ["bash", "-c", f"{quoted}; {wait}"]
+    quoted = shlex.join(cmd)
+    wait = 'echo; read -p "Press ENTER to close..."'
+    bash_wrap = ["bash", "-c", f"{quoted}; {wait}"]
 
-    # for term, prefix in (
-    #     ("konsole",            ["konsole", "-e"]),
-    #     ("xterm",              ["xterm", "-e"]),
-    #     ("xfce4-terminal",     ["xfce4-terminal", "--command"]),
-    #     ("gnome-terminal",     ["gnome-terminal", "--"]),
-    #     ("x-terminal-emulator",["x-terminal-emulator", "-e"]),
-    # ):
-    #     if shutil.which(term):
-    #         subprocess.Popen([*prefix, *bash_wrap])
-    #         return
+    for term, prefix in (
+        ("konsole",            ["konsole", "-e"]),
+        ("xterm",              ["xterm", "-e"]),
+        ("xfce4-terminal",     ["xfce4-terminal", "--command"]),
+        ("gnome-terminal",     ["gnome-terminal", "--"]),
+        ("x-terminal-emulator",["x-terminal-emulator", "-e"]),
+    ):
+        if shutil.which(term):
+            subprocess.Popen([*prefix, *bash_wrap])
+            return
 
-    # subprocess.Popen(bash_wrap)
+    subprocess.Popen(bash_wrap)
 
 
 
@@ -108,7 +106,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             ),
             "render_engine": scene.render.engine.upper(),
             "blender_version": props.blender_version,
-            
+            "ignore_errors": props.ignore_errors,
             "pocketbase_url": prefs.pocketbase_url,
             "user_token": prefs.user_token,
             "selected_project_id": prefs.project_list,
