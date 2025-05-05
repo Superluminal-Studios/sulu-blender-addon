@@ -186,10 +186,15 @@ def main() -> None:
             f":s3:{bucket}/{project_path.stem}",
             ["--checksum"],
         )
+
+        move_to_path = f"{project_path.stem}/{main_blend_s3}"
+        if move_to_path.startswith("/"):
+            move_to_path = move_to_path[1:]
+            
         _run_rclone(
             base, "moveto",
             str(tmp_blend),
-            f":s3:{bucket}/{project_path.stem}/{main_blend_s3}",
+            f":s3:{bucket}/{move_to_path}",
             ["--checksum", "--ignore-times"],
         )
 
