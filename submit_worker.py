@@ -241,6 +241,7 @@ def main() -> None:
 
     elapsed = time.perf_counter() - t_start
     _log(f"✅  Job submitted successfully.\n🕒  Submission took {elapsed:.1f}s in total.")
+    input("\nPress ENTER to close this window…")
     # input("\nPress ENTER to close this window…")
     handoff_path.unlink(missing_ok=True)
 

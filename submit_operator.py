@@ -21,11 +21,14 @@ def launch_in_terminal(cmd):
     """
 
     system = platform.system()
-
+    DETACHED_PROCESS = 0x00000008
     if system == "Windows":
         subprocess.Popen(
-            ["cmd", "/k", *cmd],
-            creationflags=subprocess.CREATE_NEW_CONSOLE
+            [*cmd],
+            close_fds=False,
+            shell=True,
+            creationflags=DETACHED_PROCESS,
+
         )
         return
 
