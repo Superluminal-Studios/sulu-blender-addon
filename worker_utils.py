@@ -18,7 +18,7 @@ def launch_in_terminal(cmd):
         
     elif platform.system() == "Linux":
         subprocess.Popen(
-            [*cmd],
+            ["/bin/bash", "-c", *cmd],
             close_fds=True,
             shell=True,
             start_new_session=True)
