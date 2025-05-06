@@ -40,7 +40,7 @@ def launch_in_terminal(cmd):
         ("xfce4-terminal",     ["xfce4-terminal", "--command"]),
         ("gnome-terminal",     ["gnome-terminal", "--"]),
         ("x-terminal-emulator",["x-terminal-emulator", "-e"]),
-        
+        ("fish",               ["fish", "-c"]),
         
     ):
         if shutil.which(term):
