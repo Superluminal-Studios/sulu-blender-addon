@@ -1,25 +1,50 @@
-import subprocess
 import platform
-import os
-DETACHED_PROCESS = 0x00000008
+import shlex
+import shutil
+import subprocess
 
 def launch_in_terminal(cmd):
     """
     Run *cmd* (list[str]) in a brand-new terminal / console and keep that
     window open when the command finishes.
     """
-    if platform.system() == "Windows":
+
+    system = platform.system()
+    DETACHED_PROCESS = 0x00000008
+    if system == "Windows":
         subprocess.Popen(
             [*cmd],
-            close_fds=True,
+            close_fds=False,
             shell=True,
-            creationflags=DETACHED_PROCESS)
+            creationflags=DETACHED_PROCESS,
+
+        )
         return
+
+    if system == "Darwin":
+        quoted = shlex.join(cmd)
+        wait = 'echo; read -p "Press ENTER to close..."'
+        subprocess.Popen([
+            "osascript", "-e",
+            f'tell application "Terminal" to do script "{quoted}; {wait}"'
+        ])
+        return
+    
+    quoted = shlex.join(cmd)
+    wait = 'echo; read -p "Press ENTER to close..."'
+    bash_wrap = ["bash", "-c", f"{quoted}; {wait}"]
+
+    for term, prefix in (
+        ("konsole",            ["konsole", "-e"]),
+        ("xterm",              ["xterm", "-e"]),
+        ("xfce4-terminal",     ["xfce4-terminal", "--command"]),
+        ("gnome-terminal",     ["gnome-terminal", "--"]),
+        ("x-terminal-emulator",["x-terminal-emulator", "-e"]),
         
-    elif platform.system() == "Linux":
-        subprocess.Popen(
-            ["/bin/bash", "-c", *cmd],
-            close_fds=True,
-            shell=True,
-            start_new_session=True)
-        return
+        
+    ):
+        if shutil.which(term):
+            subprocess.Popen([*prefix, *bash_wrap])
+            return
+
+    subprocess.Popen(bash_wrap)
