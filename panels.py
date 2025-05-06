@@ -51,13 +51,9 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         col = box.column(align=True)
 
         # Upload project
-        self.draw_toggle_row(
-            col,
-            (props, "use_upload_project"),
-            (props, "project_path"),
-            toggle_text="Upload Project",
-            content_text="Project Path"
-        )
+        
+        col.prop(props, "use_upload_project", text="Upload Project Files")
+
         col.separator()
 
         # Job name

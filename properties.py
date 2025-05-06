@@ -37,18 +37,12 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     # ────────────────────────────────────────────────────────────────
     #  Project packaging
     # ────────────────────────────────────────────────────────────────
-    project_path: bpy.props.StringProperty(
-        name="Project Path",
-        default="",
-        subtype="FILE_PATH",
-        description="Folder that contains all linked assets. "
-                    "Only needed when you choose 'Upload Project'.",
-    )
+
     use_upload_project: bpy.props.BoolProperty(
-        name="Upload Project",
-        default=False,
+        name="Upload Project Files",
+        default=True,
         description="Upload the entire project directory instead of a single "
-                    ".blend‑only ZIP. Requires ‘Project Path’ to be set.",
+                    ".blend‑only ZIP",
     )
 
     # ────────────────────────────────────────────────────────────────

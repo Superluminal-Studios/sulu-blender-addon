@@ -122,15 +122,26 @@ def _run_rclone(base: List[str], verb: str, src: str, dst: str, extra: list[str]
 
 # ╭───────────────────────  main  ───────────────────────────────╮
 def main() -> None:
+    hdr = {"Authorization": data["user_token"]}
+
+    proj = requests.get(
+    f"{data['pocketbase_url']}/api/collections/projects/records",
+    headers=hdr,
+    params={"filter": f"(id='{data['selected_project_id']}')"},
+    timeout=30,
+    ).json()["items"][0]
+
     blend_path   = str(data["blend_path"])
-    project_path = Path(data["project_path"])
+    project_path = blend_path.replace('\\', '/').split('/')[0] + '/'
     use_project  = bool(data["use_project_upload"])
     job_id       = data["job_id"]
     tmp_blend = data["temp_blend_path"]
-    #tmp_blend = Path(tempfile.gettempdir()) / f"{job_id}.blend"
     zip_file  = Path(tempfile.gettempdir()) / f"{job_id}.zip"
     filelist  = Path(tempfile.gettempdir()) / f"{job_id}.txt"
-    #tmp_blend.write_bytes(Path(blend_path).read_bytes())
+    org_id = proj["organization_id"]
+    project_sqid = proj["sqid"]
+    project_name = proj["name"]
+    
 
     # ───── pack assets ─────
     if use_project:
@@ -144,18 +155,25 @@ def main() -> None:
 
         _log("🔍  Finding dependencies…")
         fmap = pack_blend(blend_path, target="", method="PROJECT", project_path=project_path)
-
-        main_blend_s3 = str(fmap[Path(blend_path)])
-        main_blend_s3 = main_blend_s3.replace("\\", "/")
-
         required_storage = 0
+        file_list = []
+
+        for idx, (src, packed) in enumerate(fmap.items(), 1):
+            if src == Path(blend_path):
+                main_blend_s3 = str(src).replace("\\", "/")
+            required_storage += os.path.getsize(src)
+            _log(f"    [{idx}/{len(fmap)-1}] writing {src}")
+            path = str(src).replace("\\", "/")
+            file_list.append(path)
+
+        project_path_base = os.path.commonpath([os.path.abspath(os.path.join(project_path, f)) for f in file_list]).replace("\\", "/")
+        packed_file_list = [f.replace(project_path_base+"/", "") for f in file_list]
+        main_blend_s3 = main_blend_s3.replace(project_path_base+"/", "")
+
         with filelist.open("w", encoding="utf-8") as fp:
-            for idx, (src, packed) in enumerate(fmap.items(), 1):
-                if src == Path(blend_path):
-                    continue
-                required_storage += os.path.getsize(src)
-                _log(f"    [{idx}/{len(fmap)-1}] writing {packed}")
-                fp.write(str(packed).replace("\\", "/") + "\n")
+            for f in packed_file_list:
+                fp.write(f.replace("\\", "/") + "\n")
+
     else:
         _log("📦  Creating .zip archive…")
         pack_blend(blend_path, str(zip_file), method="ZIP")
@@ -163,7 +181,6 @@ def main() -> None:
 
     # ───── credentials ─────
     _log("🔑  Fetching R2 credentials…")
-    hdr = {"Authorization": data["user_token"]}
     s3_request_url = f"{data['pocketbase_url']}/api/collections/project_storage/records"
     s3_request = {"filter": f"(project_id='{data['selected_project_id']}' && bucket_name~'render-')"}
     s3_response = requests.get(s3_request_url, headers=hdr, params=s3_request, timeout=30).json()["items"]
@@ -180,23 +197,24 @@ def main() -> None:
     else:
         _run_rclone(
             base, "copy",
-            str(project_path),
-            f":s3:{bucket}/{project_path.stem}",
+            str(project_path_base),
+            f":s3:{bucket}/{project_name}/",
             ["--files-from", str(filelist), "--checksum"],
         )
 
         # append main .blend path so worker downloads it
+
         with filelist.open("a", encoding="utf-8") as fp:
             fp.write(main_blend_s3.replace("\\", "/"))
 
         _run_rclone(
             base, "move",
             str(filelist),
-            f":s3:{bucket}/{project_path.stem}",
+            f":s3:{bucket}/{project_name}/",
             ["--checksum"],
         )
 
-        move_to_path = f"{project_path.stem}/{main_blend_s3}"
+        move_to_path = f"{project_name}/{main_blend_s3}"
         if move_to_path.startswith("/"):
             move_to_path = move_to_path[1:]
             
@@ -209,22 +227,14 @@ def main() -> None:
 
     # ───── register job ─────
     _log("🗄️   Submitting job to Superluminal…")
-    proj = requests.get(
-        f"{data['pocketbase_url']}/api/collections/projects/records",
-        headers=hdr,
-        params={"filter": f"(id='{data['selected_project_id']}')"},
-        timeout=30,
-    ).json()["items"][0]
-    org_id = proj["organization_id"]
-    project_sqid = proj["sqid"]
-
+    
     payload = {
         "job_data": {
             "id": job_id,
             "project_id": data["selected_project_id"],
             "organization_id": org_id,
             "main_file": Path(blend_path).name if not use_project else main_blend_s3,
-            "project_path": project_path.stem,
+            "project_path": project_name,
             "name": data["job_name"],
             "status": "queued",
             "start": data["start_frame"],
@@ -241,6 +251,7 @@ def main() -> None:
             "ignore_errors": data["ignore_errors"],
         }
     }
+
     post_url = f"{data['pocketbase_url']}/api/farm/{org_id}/jobs"
     requests.post(
         post_url,
@@ -253,12 +264,12 @@ def main() -> None:
     _log(f"✅  Job submitted successfully.\n🕒  Submission took {elapsed:.1f}s in total.")
     
     handoff_path.unlink(missing_ok=True)
-    selection = input("\nOpened job in your browser? y/n, press ENTER to this window…\n")
+    selection = input("\nOpen job in your browser? y/n, Or just press ENTER to this window…\n")
     if selection.lower() == "y":
         web_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{job_id}"
         webbrowser.open(web_url)
         _log(f"🌐  Opened {web_url} in your browser.")
-    input("Press ENTER to close this window…")
+        input("\nPress ENTER to close this window…")
 
 # ╭──────────────────  entry  ───────────────────╮
 if __name__ == "__main__":
