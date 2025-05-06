@@ -17,6 +17,7 @@ import uuid
 import zipfile
 from pathlib import Path
 from typing import Dict, List
+import webbrowser
 
 # third‑party
 import requests  # type: ignore
@@ -125,14 +126,22 @@ def main() -> None:
     project_path = Path(data["project_path"])
     use_project  = bool(data["use_project_upload"])
     job_id       = data["job_id"]
-
-    tmp_blend = Path(tempfile.gettempdir()) / f"{job_id}.blend"
+    tmp_blend = data["temp_blend_path"]
+    #tmp_blend = Path(tempfile.gettempdir()) / f"{job_id}.blend"
     zip_file  = Path(tempfile.gettempdir()) / f"{job_id}.zip"
     filelist  = Path(tempfile.gettempdir()) / f"{job_id}.txt"
-    tmp_blend.write_bytes(Path(blend_path).read_bytes())
+    #tmp_blend.write_bytes(Path(blend_path).read_bytes())
 
     # ───── pack assets ─────
     if use_project:
+        saving = True
+        while saving:
+            if not os.path.exists(blend_path+"@"):
+                saving = False
+            else:
+                _log("⏳  Waiting for Blender to finish saving…")
+                time.sleep(0.1)
+
         _log("🔍  Finding dependencies…")
         fmap = pack_blend(blend_path, target="", method="PROJECT", project_path=project_path)
 
@@ -155,9 +164,9 @@ def main() -> None:
     # ───── credentials ─────
     _log("🔑  Fetching R2 credentials…")
     hdr = {"Authorization": data["user_token"]}
-    url = f"{data['pocketbase_url']}/api/collections/project_storage/records"
-    params = {"filter": f"(project_id='{data['selected_project_id']}' && bucket_name~'render-')"}
-    s3_response = requests.get(url, headers=hdr, params=params, timeout=30).json()["items"]
+    s3_request_url = f"{data['pocketbase_url']}/api/collections/project_storage/records"
+    s3_request = {"filter": f"(project_id='{data['selected_project_id']}' && bucket_name~'render-')"}
+    s3_response = requests.get(s3_request_url, headers=hdr, params=s3_request, timeout=30).json()["items"]
     s3info = s3_response[0]
     bucket = s3info["bucket_name"]
 
@@ -207,6 +216,7 @@ def main() -> None:
         timeout=30,
     ).json()["items"][0]
     org_id = proj["organization_id"]
+    project_sqid = proj["sqid"]
 
     payload = {
         "job_data": {
@@ -241,9 +251,14 @@ def main() -> None:
 
     elapsed = time.perf_counter() - t_start
     _log(f"✅  Job submitted successfully.\n🕒  Submission took {elapsed:.1f}s in total.")
-    input("\nPress ENTER to close this window…")
-    # input("\nPress ENTER to close this window…")
+    
     handoff_path.unlink(missing_ok=True)
+    selection = input("\nOpened job in your browser? y/n, press ENTER to this window…\n")
+    if selection.lower() == "y":
+        web_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{job_id}"
+        webbrowser.open(web_url)
+        _log(f"🌐  Opened {web_url} in your browser.")
+    input("Press ENTER to close this window…")
 
 # ╭──────────────────  entry  ───────────────────╮
 if __name__ == "__main__":

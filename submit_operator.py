@@ -88,6 +88,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "addon_dir": str(Path(__file__).resolve().parent),
             "job_id": str(job_id),
             "blend_path": bpy.data.filepath,
+            "temp_blend_path": str(Path(tempfile.gettempdir()) / bpy.path.basename(bpy.context.blend_data.filepath)),
             "use_project_upload": bool(props.use_upload_project),
             "project_path": str(Path(bpy.path.abspath(props.project_path)).resolve()),
             "job_name": (
@@ -114,7 +115,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "user_token": prefs.user_token,
             "selected_project_id": prefs.project_list,
         }
-
+        bpy.ops.wm.save_as_mainfile(filepath=handoff["temp_blend_path"], compress=True, copy=True, relative_remap=False)
         tmp_json = Path(tempfile.gettempdir()) / f"superluminal_{job_id}.json"
         tmp_json.write_text(json.dumps(handoff), encoding="utf-8")
 
