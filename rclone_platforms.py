@@ -1,8 +1,6 @@
 import platform
 from pathlib import Path
 
-RCLONE_VERSION = "v1.69.1"
-
 # Map (normalized_os, normalized_arch) -> rclone's "os-arch" string
 # Extend as needed to cover additional platforms.
 SUPPORTED_PLATFORMS = {
@@ -10,8 +8,8 @@ SUPPORTED_PLATFORMS = {
     ("windows", "amd64"):  "windows-amd64",
     ("windows", "arm64"):  "windows-arm64",
 
-    ("darwin",  "amd64"):  "darwin-amd64",   # macOS Intel
-    ("darwin",  "arm64"):  "darwin-arm64",   # macOS Apple Silicon
+    ("darwin",  "amd64"):  "osx-amd64",   # macOS Intel
+    ("darwin",  "arm64"):  "osx-arm64",   # macOS Apple Silicon
 
     ("linux",   "386"):    "linux-386",
     ("linux",   "amd64"):  "linux-amd64",
@@ -37,7 +35,6 @@ SUPPORTED_PLATFORMS = {
 
     ("solaris", "amd64"):  "solaris-amd64",
 }
-
 # -------------------------------------------------------------------
 #  Rclone Download Helpers
 # -------------------------------------------------------------------
@@ -60,17 +57,7 @@ def normalize_os(os_name: str) -> str:
     if os_name.startswith("linux"):
         return "linux"
     if os_name.startswith("darwin"):
-        return "darwin"
-    if os_name.startswith("freebsd"):
-        return "freebsd"
-    if os_name.startswith("openbsd"):
-        return "openbsd"
-    if os_name.startswith("netbsd"):
-        return "netbsd"
-    if os_name.startswith("plan9"):
-        return "plan9"
-    if os_name.startswith("sunos") or os_name.startswith("solaris"):
-        return "solaris"
+        return "osx"
     return os_name
 
 def normalize_arch(arch_name: str) -> str:
@@ -83,15 +70,7 @@ def normalize_arch(arch_name: str) -> str:
         return "386"
     if arch_name in ("aarch64", "arm64"):
         return "arm64"
-
-    # If you need to differentiate ARM versions:
-    if "armv7" in arch_name:
-        return "armv7"
-    if "armv6" in arch_name:
-        return "armv6"
-    if "arm" == arch_name:
-        return "arm"
-
+    
     return arch_name
 
 def get_platform_suffix() -> str:
@@ -109,6 +88,13 @@ def get_platform_suffix() -> str:
             "Extend SUPPORTED_PLATFORMS for additional coverage."
         )
     return SUPPORTED_PLATFORMS[key]
+
+def get_rclone_url() -> str:
+    """
+    Return the URL for the current rclone version for this platform.
+    """
+    suffix = get_platform_suffix()
+    return f"https://downloads.rclone.org/rclone-current-{suffix}.zip"
 
 def get_rclone_platform_dir(suffix: str) -> Path:
     """

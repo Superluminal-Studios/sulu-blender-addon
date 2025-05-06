@@ -42,7 +42,7 @@ sys.modules[pkg_name] = pkg
 bat_utils = importlib.import_module(f"{pkg_name}.bat_utils")
 pack_blend = bat_utils.pack_blend
 rclone_plat = importlib.import_module(f"{pkg_name}.rclone_platforms")
-RCLONE_VERSION = rclone_plat.RCLONE_VERSION
+rclone_url = rclone_plat.get_rclone_url
 get_platform_suffix = rclone_plat.get_platform_suffix
 get_rclone_platform_dir = rclone_plat.get_rclone_platform_dir
 rclone_install_directory = rclone_plat.rclone_install_directory
@@ -89,7 +89,7 @@ def _ensure_rclone() -> Path:
     if rclone_bin.exists():
         return rclone_bin
     tmp_zip = Path(tempfile.gettempdir()) / f"rclone_{uuid.uuid4()}.zip"
-    url = f"https://downloads.rclone.org/{RCLONE_VERSION}/rclone-{RCLONE_VERSION}-{suf}.zip"
+    url = rclone_url()
     _download_with_bar(url, tmp_zip)
     _log("📦  Extracting rclone…")
     with zipfile.ZipFile(tmp_zip) as zf:
