@@ -8,13 +8,10 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import time
 import types
-import uuid
-import zipfile
 from pathlib import Path
 from typing import Dict, List
 import webbrowser
@@ -42,12 +39,9 @@ sys.modules[pkg_name] = pkg
 bat_utils = importlib.import_module(f"{pkg_name}.bat_utils")
 pack_blend = bat_utils.pack_blend
 rclone = importlib.import_module(f"{pkg_name}.rclone")
+run_rclone = rclone.run_rclone
 rclone_url = rclone.get_rclone_url
 ensure_rclone = rclone.ensure_rclone
-get_platform_suffix = rclone.get_platform_suffix
-get_rclone_platform_dir = rclone.get_rclone_platform_dir
-rclone_install_directory = rclone.rclone_install_directory
-
 
 # ╭────────────────────  constants  ───────────────────────────╮
 CLOUDFLARE_ACCOUNT_ID = "f09fa628d989ddd93cbe3bf7f7935591"
@@ -66,8 +60,6 @@ def _log(msg: str) -> None:
 def _short(p: str) -> str:
     return p if p.startswith(":s3:") else Path(p).name
 
-
-
 def _build_base(rclone_bin: Path, endpoint: str, s3: Dict[str, str]) -> List[str]:
     return [
         str(rclone_bin),
@@ -78,11 +70,6 @@ def _build_base(rclone_bin: Path, endpoint: str, s3: Dict[str, str]) -> List[str
         "--s3-region", "auto",
         *COMMON_RCLONE_FLAGS,
     ]
-
-def _run_rclone(base: List[str], verb: str, src: str, dst: str, extra: list[str]) -> None:
-    _log(f"{verb.capitalize():9} {_short(src)}  →  {_short(dst)}")
-    cmd = [base[0], verb, src, dst, *extra, "--stats=1s", "--progress", *base[1:]]
-    subprocess.run(cmd, check=True)
 
 # ╭───────────────────────  main  ───────────────────────────────╮
 def main() -> None:
@@ -157,9 +144,9 @@ def main() -> None:
     _log("🚀  Uploading assets…")
 
     if not use_project:
-        _run_rclone(base, "copy", str(zip_file), f":s3:{bucket}/", [])
+        run_rclone(base, "copy", str(zip_file), f":s3:{bucket}/", [])
     else:
-        _run_rclone(
+        run_rclone(
             base, "copy",
             str(project_path_base),
             f":s3:{bucket}/{project_name}/",
@@ -171,7 +158,7 @@ def main() -> None:
         with filelist.open("a", encoding="utf-8") as fp:
             fp.write(main_blend_s3.replace("\\", "/"))
 
-        _run_rclone(
+        run_rclone(
             base, "move",
             str(filelist),
             f":s3:{bucket}/{project_name}/",
@@ -182,7 +169,7 @@ def main() -> None:
         if move_to_path.startswith("/"):
             move_to_path = move_to_path[1:]
             
-        _run_rclone(
+        run_rclone(
             base, "moveto",
             str(tmp_blend),
             f":s3:{bucket}/{move_to_path}",

@@ -6,6 +6,8 @@ import zipfile
 import os
 from pathlib import Path
 import requests
+import subprocess
+from typing import List
 
 # Map (normalized_os, normalized_arch) -> rclone's "os-arch" string
 # Extend as needed to cover additional platforms.
@@ -154,3 +156,9 @@ def ensure_rclone(logger=None) -> Path:
         rclone_bin.chmod(rclone_bin.stat().st_mode | 0o111)
     tmp_zip.unlink(missing_ok=True)
     return rclone_bin
+
+def run_rclone(base: List[str], verb: str, src: str, dst: str, extra: list[str], logger=None) -> None:
+    if logger:
+        logger(f"{verb.capitalize():9} {src}  →  {dst}")
+    cmd = [base[0], verb, src, dst, *extra, "--stats=1s", "--progress", *base[1:]]
+    subprocess.run(cmd, check=True)
