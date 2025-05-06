@@ -41,11 +41,13 @@ sys.modules[pkg_name] = pkg
 
 bat_utils = importlib.import_module(f"{pkg_name}.bat_utils")
 pack_blend = bat_utils.pack_blend
-rclone_plat = importlib.import_module(f"{pkg_name}.rclone_platforms")
-rclone_url = rclone_plat.get_rclone_url
-get_platform_suffix = rclone_plat.get_platform_suffix
-get_rclone_platform_dir = rclone_plat.get_rclone_platform_dir
-rclone_install_directory = rclone_plat.rclone_install_directory
+rclone = importlib.import_module(f"{pkg_name}.rclone")
+rclone_url = rclone.get_rclone_url
+ensure_rclone = rclone.ensure_rclone
+get_platform_suffix = rclone.get_platform_suffix
+get_rclone_platform_dir = rclone.get_rclone_platform_dir
+rclone_install_directory = rclone.rclone_install_directory
+
 
 # ╭────────────────────  constants  ───────────────────────────╮
 CLOUDFLARE_ACCOUNT_ID = "f09fa628d989ddd93cbe3bf7f7935591"
@@ -64,45 +66,7 @@ def _log(msg: str) -> None:
 def _short(p: str) -> str:
     return p if p.startswith(":s3:") else Path(p).name
 
-def _download_with_bar(url: str, dest: Path) -> None:
-    _log("⬇️  Downloading rclone")
-    resp = requests.get(url, stream=True, timeout=30)
-    resp.raise_for_status()
-    total = int(resp.headers.get("Content-Length", 0))
-    done = 0
-    bar = 40
-    with dest.open("wb") as fp:
-        for chunk in resp.iter_content(8192):
-            fp.write(chunk)
-            done += len(chunk)
-            if total:
-                filled = int(bar * done / total)
-                print(f"\r    |{' '*filled}{'-'*(bar-filled)}| {done*100/total:5.1f}% ",
-                      end="", flush=True)
-    if total:
-        print()
 
-def _ensure_rclone() -> Path:
-    suf = get_platform_suffix()
-    bin_name = "rclone.exe" if suf.startswith("windows") else "rclone"
-    rclone_bin = get_rclone_platform_dir(suf) / bin_name
-    if rclone_bin.exists():
-        return rclone_bin
-    tmp_zip = Path(tempfile.gettempdir()) / f"rclone_{uuid.uuid4()}.zip"
-    url = rclone_url()
-    _download_with_bar(url, tmp_zip)
-    _log("📦  Extracting rclone…")
-    with zipfile.ZipFile(tmp_zip) as zf:
-        for m in zf.infolist():
-            if m.filename.lower().endswith(("rclone.exe", "rclone")):
-                m.filename = os.path.basename(m.filename)
-                zf.extract(m, rclone_bin.parent)
-                (rclone_bin.parent / m.filename).rename(rclone_bin)
-                break
-    if not suf.startswith("windows"):
-        rclone_bin.chmod(rclone_bin.stat().st_mode | 0o111)
-    tmp_zip.unlink(missing_ok=True)
-    return rclone_bin
 
 def _build_base(rclone_bin: Path, endpoint: str, s3: Dict[str, str]) -> List[str]:
     return [
@@ -188,7 +152,7 @@ def main() -> None:
     bucket = s3info["bucket_name"]
 
     # ───── rclone uploads ─────
-    rclone_bin = _ensure_rclone()
+    rclone_bin = ensure_rclone(logger=_log)
     base = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
     _log("🚀  Uploading assets…")
 

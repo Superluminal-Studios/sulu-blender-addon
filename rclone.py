@@ -1,5 +1,11 @@
 import platform
 from pathlib import Path
+import tempfile
+import uuid
+import zipfile
+import os
+from pathlib import Path
+import requests
 
 # Map (normalized_os, normalized_arch) -> rclone's "os-arch" string
 # Extend as needed to cover additional platforms.
@@ -102,3 +108,49 @@ def get_rclone_platform_dir(suffix: str) -> Path:
     e.g. rclone/<suffix>/ .
     """
     return rclone_install_directory() / suffix
+
+def download_with_bar(url: str, dest: Path, logger=None) -> None:
+    if logger:
+        logger("⬇️  Downloading rclone")
+    resp = requests.get(url, stream=True, timeout=30)
+    resp.raise_for_status()
+    total = int(resp.headers.get("Content-Length", 0))
+    done = 0
+    bar = 40
+    with dest.open("wb") as fp:
+        for chunk in resp.iter_content(8192):
+            fp.write(chunk)
+            done += len(chunk)
+            if total:
+                filled = int(bar * done / total)
+                print(f"\r    |{' '*filled}{'-'*(bar-filled)}| {done*100/total:5.1f}% ",
+                      end="", flush=True)
+    if total:
+        print()
+
+def ensure_rclone(logger=None) -> Path:
+    if logger:
+        logger("🔍  Checking for rclone")
+    suf = get_platform_suffix()
+    bin_name = "rclone.exe" if suf.startswith("windows") else "rclone"
+    rclone_bin = get_rclone_platform_dir(suf) / bin_name
+    if rclone_bin.exists():
+        return rclone_bin
+    tmp_zip = Path(tempfile.gettempdir()) / f"rclone_{uuid.uuid4()}.zip"
+    url = get_rclone_url()
+    download_with_bar(url, tmp_zip)
+    if logger:
+        logger("📦  Extracting rclone…")
+    
+
+    with zipfile.ZipFile(tmp_zip) as zf:
+        for m in zf.infolist():
+            if m.filename.lower().endswith(("rclone.exe", "rclone")):
+                m.filename = os.path.basename(m.filename)
+                zf.extract(m, rclone_bin.parent)
+                (rclone_bin.parent / m.filename).rename(rclone_bin)
+                break
+    if not suf.startswith("windows"):
+        rclone_bin.chmod(rclone_bin.stat().st_mode | 0o111)
+    tmp_zip.unlink(missing_ok=True)
+    return rclone_bin

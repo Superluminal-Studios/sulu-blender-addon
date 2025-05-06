@@ -10,7 +10,6 @@ import sys
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Dict
 from .check_file_outputs import gather_render_outputs
 import bpy  
 
@@ -84,7 +83,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
 
         
         job_id = uuid.uuid4()
-        handoff: Dict[str, object] = {
+        handoff = {
             "addon_dir": str(Path(__file__).resolve().parent),
             "job_id": str(job_id),
             "blend_path": bpy.data.filepath,
