@@ -215,7 +215,7 @@ def main() -> None:
     _log(f"✅  Job submitted successfully.\n🕒  Submission took {elapsed:.1f}s in total.")
     
     handoff_path.unlink(missing_ok=True)
-    selection = input("\nOpen job in your browser? y/n, Or just press ENTER to this window…\n")
+    selection = input("\nOpen job in your browser? y/n, Or just press ENTER to close this window…\n")
     if selection.lower() == "y":
         web_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{job_id}"
         webbrowser.open(web_url)
