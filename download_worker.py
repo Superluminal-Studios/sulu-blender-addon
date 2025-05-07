@@ -113,7 +113,7 @@ def main() -> None:
         base, "copy",
         f":s3:{bucket}/{job_id}/output/",
         f"{download_path}/{job_name}/",
-        ["--checksum"],
+        ["--checksum","-exclude", "**/thumbnails/**"],
     )
 
     _log("🎉  Download complete!")
