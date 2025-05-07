@@ -92,6 +92,7 @@ def main() -> None:
     project_name = proj["name"]
 
     job_id = data["job_id"]
+    job_name = data["job_name"]
     download_path = data["download_path"]
 
     
@@ -110,10 +111,13 @@ def main() -> None:
 
     _run_rclone(
         base, "copy",
-        f":s3:{bucket}/{project_name}/{job_id}/",
-        download_path,
+        f":s3:{bucket}/{job_id}/output/",
+        f"{download_path}/{job_name}/",
         ["--checksum"],
     )
+
+    _log("🎉  Download complete!")
+    input("\nPress ENTER to close this window…")
 
 # ╭──────────────────  entry  ───────────────────╮
 if __name__ == "__main__":

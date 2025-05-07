@@ -8,6 +8,8 @@ tooltip in Blender’s UI clearly explains what the option does.
 from __future__ import annotations
 import bpy
 
+from .preferences import get_job_items
+
 # -------------------------------------------------------------------
 #  Enum items
 # -------------------------------------------------------------------
@@ -125,6 +127,22 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         name="Ignore Errors",
         default=False,
         description="Ignore errors and continue rendering.",
+    )
+
+    # ────────────────────────────────────────────────────────────────
+    #  Download stuff
+    # ────────────────────────────────────────────────────────────────
+    job_id: bpy.props.EnumProperty(
+        name="Job",
+        items=get_job_items,
+        description="Select the job to render.",
+    )
+
+    download_path: bpy.props.StringProperty(
+        name="Download Path",
+        default="/tmp/",
+        description="Path to download the rendered frames to.",
+        subtype="DIR_PATH",
     )
 
 # -------------------------------------------------------------------

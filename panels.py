@@ -1,5 +1,5 @@
 import bpy
-
+from .preferences import get_job_items
 class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
     bl_idname = "SUPERLUMINAL_PT_RenderPanel"
     bl_label = "Superluminal Render"
@@ -113,10 +113,26 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
                         text="Submit Render Job",
                         icon="RENDER_STILL")
         layout.separator()
-        layout.operator("superluminal.download_output",
-                        text="Download Render Output",
-                        icon="FILE_FOLDER")
-        
+
+
+        box = layout.box()
+        row = box.row()
+        row.label(text="Download Job Output")
+        row = box.row()
+        row.prop(props, "job_id", text="Job")
+        row.operator("superluminal.fetch_project_jobs",
+                     text="",
+                     icon="FILE_REFRESH")
+        row = box.row()
+        row.prop(props, "download_path", text="Download Path")
+        row = box.row()
+        download_operator = row.operator("superluminal.download_job",
+                     text="Download Job Output",
+                     icon="SORT_ASC")
+        download_operator.job_id = props.job_id
+        job_items = get_job_items(self, context)
+        download_operator.job_name = [job[1] for job in job_items if job[0] == props.job_id][0]
+
         layout.separator()
         layout.label(text="Advanced Settings", icon="PREFERENCES")
         col = layout.column(align=True)

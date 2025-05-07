@@ -2,7 +2,7 @@ import bpy
 import json
 import requests
 
-from .preferences import g_project_items, ensure_cached_project_items
+from .preferences import g_project_items, g_job_items
 
 
 # -------------------------------------------------------------------
@@ -89,6 +89,63 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
+    """Fetch PocketBase project list and cache it permanently."""
+    bl_idname = "superluminal.fetch_project_jobs"
+    bl_label = "Fetch Project Jobs"
+
+    def execute(self, context):
+        prefs = context.preferences.addons[__package__].preferences
+        if not prefs.user_token:
+            self.report({"ERROR"}, "Not authenticated—log in first.")
+            return {"CANCELLED"}
+        
+        project_id = prefs.project_list
+
+        proj = requests.get(
+            f"{prefs.pocketbase_url}/api/collections/projects/records",
+            headers={"Authorization": prefs.user_token},
+            params={"filter": f"(id='{project_id}')"},
+            timeout=30,
+        ).json()["items"][0]
+
+        org_id = proj["organization_id"]
+
+        render_queue_url = f"{prefs.pocketbase_url}/api/collections/render_queues/records"
+        headers = {"Authorization": prefs.user_token}
+        params = {"filter": f"(organization_id='{org_id}')"}
+        response = requests.get(render_queue_url, headers=headers, params=params, timeout=30).json()
+
+        user_key = response["items"][0]["user_key"]
+
+        jobs_url = f"{prefs.pocketbase_url}/farm/{org_id}/api/job_list"
+        headers = {"Auth-Token": user_key}
+
+        try:
+            response = requests.get(jobs_url, headers=headers, timeout=10)
+            response.raise_for_status()
+        except Exception as exc:
+            self.report({"ERROR"}, f"Error fetching jobs: {exc}")
+            return {"CANCELLED"}
+        
+        jobs = response.json()
+
+        g_job_items.clear()
+        g_job_items.extend(
+            (job_id, job_data.get("name", job_id), job_data.get("name", job_id))
+            for job_id, job_data in jobs.get("body", {}).items()
+        )
+
+        # (optional) make the first entry the current selection
+        if g_job_items:
+            context.scene.superluminal_settings.job_id = g_job_items[0][0]
+
+        # force UI refresh so the Properties editor redraws immediately
+        for area in context.screen.areas:
+            if area.type == 'PROPERTIES':
+                area.tag_redraw()
+        return {"FINISHED"}
+
 # -------------------------------------------------------------------
 #  Registration helpers
 # -------------------------------------------------------------------
@@ -97,6 +154,7 @@ classes = (
     SUPERLUMINAL_OT_Login,
     SUPERLUMINAL_OT_Logout,
     SUPERLUMINAL_OT_FetchProjects,
+    SUPERLUMINAL_OT_FetchProjectJobs,
 )
 
 

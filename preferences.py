@@ -6,6 +6,15 @@ import json
 # -------------------------------------------------------------------
 g_project_items = [("NONE", "No projects", "No projects")]
 
+g_job_items: list[tuple[str, str, str]] = [
+    ("NONE", "Not Loaded", "Run “Fetch Project Jobs” first")
+]
+
+def get_job_items(self, context):
+    """Dynamic enum callback for Scene.superluminal_settings.job_id"""
+    if not g_job_items:           # never return an empty list
+        return [("NONE", "Not Loaded", "Run “Fetch Project Jobs” first")]
+    return g_job_items
 
 def ensure_cached_project_items(prefs):
     """Populate g_project_items from prefs.stored_projects once per session."""
@@ -23,10 +32,10 @@ def ensure_cached_project_items(prefs):
             # Corrupt cache—reset
             prefs.stored_projects = ""
 
-
 def get_project_list_items(self, context):
     ensure_cached_project_items(self)
     return g_project_items
+
 
 
 class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
@@ -45,7 +54,6 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     stored_projects: bpy.props.StringProperty(
         name="Cached Projects (JSON)", options={'HIDDEN'}
     )
-
     project_list: bpy.props.EnumProperty(
         name="Project",
         items=get_project_list_items,
