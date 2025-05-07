@@ -126,5 +126,5 @@ if __name__ == "__main__":
     except Exception as exc:
         import traceback
         traceback.print_exc()
-        print(f"\n❌  Submission failed: {exc}")
+        print(f"\n❌  Download failed: {exc}")
         input("\nPress ENTER to close this window…")
