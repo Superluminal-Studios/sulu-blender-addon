@@ -20,11 +20,13 @@ def pack_blend(infile, target, method="ZIP", project_path=None):
         packer.strategise()
         packer.execute()
         file_map = packer.file_map
+        packer.close()
         return file_map
 
     elif method == "ZIP":
         with zipped.ZipPacker(Path(infile), Path(infile).parent, Path(target)) as packer:
             packer.strategise()
             packer.execute()
+            packer.close()
 
         return None

@@ -109,11 +109,17 @@ def main() -> None:
     base = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
     _log("🚀  Uploading assets…")
 
+
+    rclone_args = ["--exclude", "thumbnails/**", "--transfers", "16", "--checkers", "16"]
+    if not os.path.exists(download_path):
+        rclone_args.extend(["--no-check-dest", "--ignore-times"])
+
     _run_rclone(
         base, "copy",
         f":s3:{bucket}/{job_id}/output/",
         f"{download_path}/{job_name}/",
-        ["--checksum","--exclude", "**/thumbnails/**"],
+        rclone_args,
+        
     )
 
     _log("🎉  Download complete!")

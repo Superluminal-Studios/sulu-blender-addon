@@ -30,12 +30,13 @@ def launch_in_terminal(cmd: List[str]) -> None:
                 cmd,
                 shell=True,
                 close_fds=False,
-                creationflags=DETACHED_PROCESS,
+                creationflags=DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
             )
         except Exception:
             # final fallback: synchronous call in the current console
             subprocess.call(cmd)
         return
+
 
     # ---------------------------------------------------------------------- #
     # 2. macOS – Terminal.app (or iTerm2 if you prefer)                      #
