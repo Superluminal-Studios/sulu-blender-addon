@@ -43,23 +43,10 @@ def launch_in_terminal(cmd: List[str]) -> None:
     # ---------------------------------------------------------------------- #
     if system == "Darwin":
         quoted = shlex.join(cmd)
-
-        # Plain Terminal.app: force a **new window**
-        applescript_lines = [
-            'tell application "Terminal"',
-            'activate',
-            f'do script "{quoted}" in (make new window)',
-            'end tell',
-        ]
-        osa_cmd = ["osascript"]
-        for line in applescript_lines:
-            osa_cmd.extend(["-e", line])
-
         try:
-            subprocess.Popen(osa_cmd)
-        except Exception:
             subprocess.call(cmd)
-        return
+        except Exception as e:
+            print(f"Error launching command: {e}")
 
     # ---------------------------------------------------------------------- #
     # 3. Linux / BSD – try a series of terminal emulators in sensible order  #
