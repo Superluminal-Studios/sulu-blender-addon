@@ -54,6 +54,26 @@ COMMON_RCLONE_FLAGS = [
 ]
 
 # ╭───────────────────  helpers  ──────────────────────────────╮
+
+def is_blend_saved(path):
+    saving = True
+    warned = False
+    while saving:
+        if not os.path.exists(path+"@"):
+            saving = False
+        else:
+            if not warned:
+                _log("⚠️  Warning: The primary blend is still being saved.\n")
+
+                _log("This may be caused by Dropbox, Google Drive, OneDrive, or similar software.")
+                _log("Please close any syncing software that may be trying to access your blend file. ")
+                warned = True
+            time.sleep(0.25)
+    else:
+        if warned:
+            _log("✅  File is saved. Proceeding with submission.")
+
+
 def _log(msg: str) -> None:
     print(msg, flush=True)
 
@@ -92,18 +112,11 @@ def main() -> None:
     org_id = proj["organization_id"]
     project_sqid = proj["sqid"]
     project_name = proj["name"]
-    
+    is_blend_saved(blend_path)
 
     # ───── pack assets ─────
+    
     if use_project:
-        saving = True
-        while saving:
-            if not os.path.exists(blend_path+"@"):
-                saving = False
-            else:
-                _log("⏳  Waiting for Blender to finish saving…")
-                time.sleep(0.1)
-
         _log("🔍  Finding dependencies…")
         fmap = pack_blend(blend_path, target="", method="PROJECT", project_path=project_path)
         required_storage = 0
