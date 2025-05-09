@@ -190,22 +190,23 @@ def main() -> None:
             ["--checksum", "--ignore-times"],
         )
 
-        run_rclone(
-            base, "moveto",
-            data["packed_addons_path"],
-            f":s3:{bucket}/{job_id}/addons/",
-            ["--checksum", "--ignore-times"],
-        )
+    run_rclone(
+        base, "moveto",
+        data["packed_addons_path"],
+        f":s3:{bucket}/{job_id}/addons/",
+        ["--checksum", "--ignore-times"],
+    )
 
-        try:
-            os.remove(data["packed_addons_path"])
-            os.remove(os.path.dirname(str(tmp_blend)))
-        except:
-            pass
+    try:
+        os.remove(data["packed_addons_path"])
+        os.remove(os.path.dirname(str(tmp_blend)))
+    except:
+        pass
 
     # ───── register job ─────
     _log("🗄️   Submitting job to Superluminal…")
     
+    _log(f"packed_addons: {data['packed_addons']}")
     payload = {
         "job_data": {
             "id": job_id,

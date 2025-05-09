@@ -131,7 +131,12 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
                      icon="SORT_ASC")
         download_operator.job_id = props.job_id
         job_items = get_job_items(self, context)
-        download_operator.job_name = [job[1] for job in job_items if job[0] == props.job_id][0]
+
+        try:
+            download_operator.job_name = [job[1] for job in job_items if job[0] == props.job_id][0]
+        except:
+            download_operator.job_name = ""
+            row.enabled = False
 
         layout.separator()
         layout.label(text="Advanced Settings", icon="PREFERENCES")

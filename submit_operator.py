@@ -65,16 +65,23 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "user_token": prefs.user_token,
             "selected_project_id": prefs.project_list,
         }
-        bundle_addons(handoff["bundled_addons_path"])
+        
         bpy.ops.wm.save_as_mainfile(filepath=handoff["temp_blend_path"], compress=True, copy=True, relative_remap=False)
-        tmp_json = Path(tempfile.gettempdir()) / f"superluminal_{job_id}.json"
-        tmp_json.write_text(json.dumps(handoff), encoding="utf-8")
 
         worker = Path(__file__).with_name("submit_worker.py")
+
+        # try:
+        handoff["packed_addons"] = bundle_addons(handoff["packed_addons_path"])
+        # except Exception as e:
+            # self.report({"ERROR"}, f"Failed to pack addons: {e}")
+
+
+        tmp_json = Path(tempfile.gettempdir()) / f"superluminal_{job_id}.json"
+        tmp_json.write_text(json.dumps(handoff), encoding="utf-8")
         try:
-            handoff["packed_addons"] = launch_in_terminal([sys.executable, "-u", str(worker), str(tmp_json)])
+            launch_in_terminal([sys.executable, "-u", str(worker), str(tmp_json)])
         except Exception as e:
-            self.report({"ERROR"}, f"Failed to pack addons: {e}")
+            self.report({"ERROR"}, f"Failed to launch submission: {e}")
 
         self.report({"INFO"}, "Submission started in external window.")
         return {"FINISHED"}
