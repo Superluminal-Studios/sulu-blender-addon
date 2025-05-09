@@ -33,8 +33,8 @@ def bundle_addons(zip_path):
 
     for mod in enabled_modules:
         addon_name = mod.__name__
-        addon_display_name = mod.bl_info.get("name", addon_name)
-        enabled_addons.append(addon_display_name)
+        addon_enable_name = addon_name.split(".")[-1]
+        enabled_addons.append(addon_enable_name)
 
         addon_root_path = Path(mod.__file__).parent
         addon_zip_file = zip_path / f"{addon_name}.zip"
