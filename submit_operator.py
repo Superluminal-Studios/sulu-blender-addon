@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from .check_file_outputs import gather_render_outputs
 from .worker_utils import launch_in_terminal
+from .addon_packer import bundle_addons
 import bpy  
 
 
@@ -30,13 +31,12 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         
         outputs = gather_render_outputs(scene)["outputs"]
         layers = outputs[0]["layers"]
-        print(layers)
-        
 
-        
         job_id = uuid.uuid4()
         handoff = {
             "addon_dir": str(Path(__file__).resolve().parent),
+            "packed_addons_path": tempfile.mkdtemp(prefix="blender_addons_"),
+            "packed_addons": [],
             "job_id": str(job_id),
             "blend_path": bpy.data.filepath,
             "temp_blend_path": str(Path(tempfile.gettempdir()) / bpy.path.basename(bpy.context.blend_data.filepath)),
@@ -65,12 +65,16 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "user_token": prefs.user_token,
             "selected_project_id": prefs.project_list,
         }
+        bundle_addons(handoff["bundled_addons_path"])
         bpy.ops.wm.save_as_mainfile(filepath=handoff["temp_blend_path"], compress=True, copy=True, relative_remap=False)
         tmp_json = Path(tempfile.gettempdir()) / f"superluminal_{job_id}.json"
         tmp_json.write_text(json.dumps(handoff), encoding="utf-8")
 
         worker = Path(__file__).with_name("submit_worker.py")
-        launch_in_terminal([sys.executable, "-u", str(worker), str(tmp_json)])
+        try:
+            handoff["packed_addons"] = launch_in_terminal([sys.executable, "-u", str(worker), str(tmp_json)])
+        except Exception as e:
+            self.report({"ERROR"}, f"Failed to pack addons: {e}")
 
         self.report({"INFO"}, "Submission started in external window.")
         return {"FINISHED"}

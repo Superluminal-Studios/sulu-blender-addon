@@ -3,8 +3,27 @@ import shlex
 import shutil
 import subprocess
 from typing import List
+import os
 
 DETACHED_PROCESS = 0x00000008  # Only used on Windows
+
+
+def logger(msg: str) -> None:
+    """logger a message to the console
+    (and flush it immediately)."""
+    print(msg, flush=True)
+
+
+def open_folder(path: str) -> None:
+    try:
+        if platform.system() == "Windows":
+            os.startfile(path)                       # noqa
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+    except Exception as e:
+        logger(f"⚠️  Couldn’t open folder automatically: {e}")
 
 
 def launch_in_terminal(cmd: List[str]) -> None:

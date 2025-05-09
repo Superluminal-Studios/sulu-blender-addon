@@ -27,6 +27,4 @@ def pack_blend(infile, target, method="ZIP", project_path=None):
         with zipped.ZipPacker(Path(infile), Path(infile).parent, Path(target)) as packer:
             packer.strategise()
             packer.execute()
-            packer.close()
-
         return None

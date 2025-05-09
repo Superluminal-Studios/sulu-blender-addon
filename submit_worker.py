@@ -112,6 +112,7 @@ def main() -> None:
     org_id = proj["organization_id"]
     project_sqid = proj["sqid"]
     project_name = proj["name"]
+
     is_blend_saved(blend_path)
 
     # ───── pack assets ─────
@@ -189,6 +190,19 @@ def main() -> None:
             ["--checksum", "--ignore-times"],
         )
 
+        run_rclone(
+            base, "moveto",
+            data["packed_addons_path"],
+            f":s3:{bucket}/{job_id}/addons/",
+            ["--checksum", "--ignore-times"],
+        )
+
+        try:
+            os.remove(data["packed_addons_path"])
+            os.remove(os.path.dirname(str(tmp_blend)))
+        except:
+            pass
+
     # ───── register job ─────
     _log("🗄️   Submitting job to Superluminal…")
     
@@ -196,6 +210,7 @@ def main() -> None:
         "job_data": {
             "id": job_id,
             "project_id": data["selected_project_id"],
+            "packed_addons": data["packed_addons"],
             "organization_id": org_id,
             "main_file": Path(blend_path).name if not use_project else main_blend_s3,
             "project_path": project_name,
