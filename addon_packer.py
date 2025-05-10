@@ -37,7 +37,7 @@ def bundle_addons(zip_path):
         enabled_addons.append(addon_enable_name)
 
         addon_root_path = Path(mod.__file__).parent
-        addon_zip_file = zip_path / f"{addon_name}.zip"
+        addon_zip_file = zip_path / f"{addon_enable_name}.zip"
 
         with zipfile.ZipFile(addon_zip_file, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zipf:
             for root, _, files in os.walk(addon_root_path):
@@ -45,7 +45,7 @@ def bundle_addons(zip_path):
                 for file in files:
                     file_path = Path(root) / file
                     # Inside the ZIP:  addon_name / <rel_root> / file
-                    archive_path = Path(addon_name) / rel_root / file
+                    archive_path = Path(addon_enable_name) / rel_root / file
                     zipf.write(file_path, archive_path)
 
     return enabled_addons
