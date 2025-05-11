@@ -16,6 +16,7 @@ DEFAULT_ADDONS = [
     "io_curve_svg",
     "io_mesh_uv_layout",
     "viewport_vr_preview",
+    "sulu-blender-addon"
 ]
 
 
