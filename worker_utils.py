@@ -61,21 +61,10 @@ def launch_in_terminal(cmd: List[str]) -> None:
     # 2. macOS – Terminal.app (or iTerm2 if you prefer)                      #
     # ---------------------------------------------------------------------- #
     if system == "Darwin":
-        """use osascript to open a new Terminal window
-
-        tell application "System Events"
-            tell process "Terminal"
-                keystroke "command"
-                keystroke return
-            end tell
-        end tell
-
-        """
 
         quoted = shlex.join(cmd)
-        cmd = 'osascript -e \'tell application "Terminal" to do script "{quoted}"\''
-        subprocess.Popen(shlex.split(cmd))
-
+        osa_line = f'tell app "Terminal" to do script "{quoted}"'
+        subprocess.Popen(["osascript", "-e", osa_line])
     # ---------------------------------------------------------------------- #
     # 3. Linux / BSD – try a series of terminal emulators in sensible order  #
     # ---------------------------------------------------------------------- #
