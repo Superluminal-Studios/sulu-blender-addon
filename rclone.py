@@ -159,7 +159,7 @@ def ensure_rclone(logger=None) -> Path:
     return rclone_bin
 
 def run_rclone(base: List[str], verb: str, src: str, dst: str, extra: list[str], logger=None) -> None:
-    print(f"Running rclone: {base[0]} {verb} {src} {dst} {' '.join(extra)}")
+    print(f"Rclone: {verb} {src} {dst} {' '.join(extra)}")
     if logger:
         logger(f"{verb.capitalize():9} {src}  →  {dst}")
     cmd = [base[0], verb, src, dst, *extra, "--stats=1s", "--progress", *base[1:]]
