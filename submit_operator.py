@@ -80,7 +80,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "blend_path": bpy.data.filepath,
             "temp_blend_path": str(Path(tempfile.gettempdir()) / bpy.path.basename(bpy.context.blend_data.filepath)),
             "use_project_upload": not bool(props.upload_project_as_zip),
-            "use_custom_project_path": bool(props.use_custom_project_path),
+            "automatic_project_path": bool(props.automatic_project_path),
             "custom_project_path": props.custom_project_path,
             "job_name": (
                 Path(bpy.data.filepath).stem
