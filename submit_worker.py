@@ -108,10 +108,11 @@ def main() -> None:
         f"{data['pocketbase_url']}/api/farm_status/{proj['organization_id']}",
         headers=headers,
         timeout=30,
-    ).json()
+    )
 
-    print(json.dumps(farm_status, indent=4))
-
+    if farm_status.status_code != 200:
+        _log("❌  Failed to fetch farm status.")
+        sys.exit(1)
 
     blend_path   = str(data["blend_path"])
     project_path = blend_path.replace('\\', '/').split('/')[0] + '/'
