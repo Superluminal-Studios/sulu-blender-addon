@@ -145,6 +145,29 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         subtype="DIR_PATH",
     )
 
+
+    show_upload: bpy.props.BoolProperty(
+        name="Show Upload Section",
+        description="Expand/Collapse the upload section of the panel",
+        default=True,
+        options={'HIDDEN'},   # don’t clutter the sidebar with these flags
+    )
+
+    show_download: bpy.props.BoolProperty(
+        name="Show Download Section",
+        description="Expand/Collapse the download section of the panel",
+        default=True,
+        options={'HIDDEN'},
+    )
+
+    show_advanced: bpy.props.BoolProperty(
+        name="Show Advanced Section",
+        description="Expand/Collapse the advanced section of the panel",
+        default=False,
+        options={'HIDDEN'},
+    )
+
+
 # -------------------------------------------------------------------
 #  Registration helpers
 # -------------------------------------------------------------------
