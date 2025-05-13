@@ -16,8 +16,8 @@ SUPPORTED_PLATFORMS = {
     ("windows", "amd64"):  "windows-amd64",
     ("windows", "arm64"):  "windows-arm64",
 
-    ("darwin",  "amd64"):  "osx-amd64",   # macOS Intel
-    ("darwin",  "arm64"):  "osx-arm64",   # macOS Apple Silicon
+    ("osx",  "amd64"):  "osx-amd64",   # macOS Intel
+    ("osx",  "arm64"):  "osx-arm64",   # macOS Apple Silicon
 
     ("linux",   "386"):    "linux-386",
     ("linux",   "amd64"):  "linux-amd64",
@@ -88,6 +88,7 @@ def get_platform_suffix() -> str:
     """
     sys_name = normalize_os(platform.system())
     arch_name = normalize_arch(platform.machine())
+    print(sys_name, arch_name)
 
     key = (sys_name, arch_name)
     if key not in SUPPORTED_PLATFORMS:
