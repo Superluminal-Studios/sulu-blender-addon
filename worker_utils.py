@@ -68,43 +68,45 @@ def launch_in_terminal(cmd: List[str]) -> None:
     # ---------------------------------------------------------------------- #
     # 3. Linux / BSD – try a series of terminal emulators in sensible order  #
     # ---------------------------------------------------------------------- #
-    quoted    = shlex.join(cmd)
-    bash_wrap = ["bash", "-c", quoted]
+    if system in ("Linux", "FreeBSD"):
+        
+        quoted    = shlex.join(cmd)
+        bash_wrap = ["bash", "-c", quoted]
 
-    for term, prefix in (
-        # 3.1 Mainstream defaults (GNOME / KDE / Xfce)
-        ("gnome-terminal",     ["gnome-terminal", "--"]),
-        ("konsole",            ["konsole", "-e"]),
-        ("xfce4-terminal",     ["xfce4-terminal", "--command"]),
+        for term, prefix in (
+            # 3.1 Mainstream defaults (GNOME / KDE / Xfce)
+            ("gnome-terminal",     ["gnome-terminal", "--"]),
+            ("konsole",            ["konsole", "-e"]),
+            ("xfce4-terminal",     ["xfce4-terminal", "--command"]),
 
-        # 3.2 Modern GPU / tiling / power-user favourites
-        ("kitty",              ["kitty", "--hold"]),
-        ("alacritty",          ["alacritty", "-e"]),
-        ("wezterm",            ["wezterm", "start", "--"]),
-        ("tilix",              ["tilix", "-e"]),
-        ("terminator",         ["terminator", "-x"]),
+            # 3.2 Modern GPU / tiling / power-user favourites
+            ("kitty",              ["kitty", "--hold"]),
+            ("alacritty",          ["alacritty", "-e"]),
+            ("wezterm",            ["wezterm", "start", "--"]),
+            ("tilix",              ["tilix", "-e"]),
+            ("terminator",         ["terminator", "-x"]),
 
-        # 3.3 Other DE-specific or traditional emulators
-        ("mate-terminal",      ["mate-terminal", "-e"]),
-        ("lxterminal",         ["lxterminal", "-e"]),
-        ("qterminal",          ["qterminal", "-e"]),
-        ("deepin-terminal",    ["deepin-terminal", "-e"]),
+            # 3.3 Other DE-specific or traditional emulators
+            ("mate-terminal",      ["mate-terminal", "-e"]),
+            ("lxterminal",         ["lxterminal", "-e"]),
+            ("qterminal",          ["qterminal", "-e"]),
+            ("deepin-terminal",    ["deepin-terminal", "-e"]),
 
-        # 3.4 Lightweight / legacy tools
-        ("urxvt",              ["urxvt", "-hold", "-e"]),
-        ("xterm",              ["xterm", "-e"]),
-        ("st",                 ["st", "-e"]),
+            # 3.4 Lightweight / legacy tools
+            ("urxvt",              ["urxvt", "-hold", "-e"]),
+            ("xterm",              ["xterm", "-e"]),
+            ("st",                 ["st", "-e"]),
 
-        # 3.5 Debian/Ubuntu alternatives wrapper
-        ("x-terminal-emulator",["x-terminal-emulator", "-e"]),
-    ):
-        if shutil.which(term):
-            try:
-                subprocess.Popen([*prefix, *bash_wrap])
-            except Exception:
-                continue  # try the next emulator
-            else:
-                return
+            # 3.5 Debian/Ubuntu alternatives wrapper
+            ("x-terminal-emulator",["x-terminal-emulator", "-e"]),
+        ):
+            if shutil.which(term):
+                try:
+                    subprocess.Popen([*prefix, *bash_wrap])
+                except Exception:
+                    continue  # try the next emulator
+                else:
+                    return
 
     # ---------------------------------------------------------------------- #
     # 4. Absolute last resort – synchronous execution in the current shell   #
