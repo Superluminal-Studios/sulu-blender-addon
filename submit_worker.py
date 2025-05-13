@@ -117,6 +117,8 @@ def main() -> None:
     blend_path   = str(data["blend_path"])
     project_path = blend_path.replace('\\', '/').split('/')[0] + '/'
     use_project  = bool(data["use_project_upload"])
+    automatic_project_path = bool(data["automatic_project_path"])
+    custom_project_path = data["custom_project_path"]
     job_id       = data["job_id"]
     tmp_blend = data["temp_blend_path"]
     zip_file  = Path(tempfile.gettempdir()) / f"{job_id}.zip"
@@ -143,7 +145,11 @@ def main() -> None:
             path = str(src).replace("\\", "/")
             file_list.append(path)
 
-        project_path_base = os.path.commonpath([os.path.abspath(os.path.join(project_path, f)) for f in file_list]).replace("\\", "/")
+        if automatic_project_path:
+            project_path_base = os.path.commonpath([os.path.abspath(os.path.join(project_path, f)) for f in file_list]).replace("\\", "/")
+        else:
+            project_path_base = custom_project_path
+        
         packed_file_list = [f.replace(project_path_base+"/", "") for f in file_list]
         main_blend_s3 = main_blend_s3.replace(project_path_base+"/", "")
 

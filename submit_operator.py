@@ -9,8 +9,42 @@ from pathlib import Path
 from .check_file_outputs import gather_render_outputs
 from .worker_utils import launch_in_terminal
 from .addon_packer import bundle_addons
+from .properties import blender_version_items
 import bpy  
 
+# Build a lookup:  40 → "BLENDER40", 41 → "BLENDER41", …
+_enum_by_number = {
+    int(code.replace("BLENDER", "")): code
+    for code, *_ in blender_version_items
+}
+_enum_numbers_sorted = sorted(_enum_by_number)     # e.g. [40, 41, 42, 43, 44]
+
+def enum_from_bpy_version(bpy_version: tuple[int, int, int]) -> str:
+    """
+    Return the enum key that best matches the running Blender version.
+
+    • If the build is *newer* than anything in the list → return the
+      **highest** enum we have.
+    • If it’s *older* than anything in the list → return the **lowest**.
+    • Otherwise pick the exact match or, if the minor revision isn’t
+      represented, the nearest lower entry (4.2.3 maps to 4.2).
+    """
+    major, minor, _ = bpy_version
+    numeric = major * 10 + minor     # 4.3 → 43
+
+    # Clamp to list boundaries
+    if numeric <= _enum_numbers_sorted[0]:
+        return _enum_by_number[_enum_numbers_sorted[0]]
+    if numeric >= _enum_numbers_sorted[-1]:
+        return _enum_by_number[_enum_numbers_sorted[-1]]
+
+    # Inside the known range – find the closest lower-or-equal entry
+    for n in reversed(_enum_numbers_sorted):
+        if n <= numeric:
+            return _enum_by_number[n]
+
+    # Fallback (shouldn’t be reached)
+    return blender_version_items[0][0]
 
 class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
     """Submit the current .blend file to the Superluminal Render Farm
@@ -32,6 +66,11 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         outputs = gather_render_outputs(scene)["outputs"]
         layers = outputs[0]["layers"]
 
+        if props.auto_determine_blender_version:
+            blender_version = enum_from_bpy_version(bpy.app.version)
+        else:
+            blender_version = props.blender_version
+
         job_id = uuid.uuid4()
         handoff = {
             "addon_dir": str(Path(__file__).resolve().parent),
@@ -40,7 +79,9 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "job_id": str(job_id),
             "blend_path": bpy.data.filepath,
             "temp_blend_path": str(Path(tempfile.gettempdir()) / bpy.path.basename(bpy.context.blend_data.filepath)),
-            "use_project_upload": bool(props.use_upload_project),
+            "use_project_upload": not bool(props.upload_project_as_zip),
+            "use_custom_project_path": bool(props.use_custom_project_path),
+            "custom_project_path": props.custom_project_path,
             "job_name": (
                 Path(bpy.data.filepath).stem
                 if props.use_file_name
@@ -59,7 +100,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
                 scene.frame_end if props.use_scene_frame_range else props.frame_end
             ),
             "render_engine": scene.render.engine.upper(),
-            "blender_version": props.blender_version,
+            "blender_version": blender_version,
             "ignore_errors": props.ignore_errors,
             "pocketbase_url": prefs.pocketbase_url,
             "user_token": prefs.user_token,

@@ -125,6 +125,7 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
             response = requests.get(jobs_url, headers=headers, timeout=10)
             response.raise_for_status()
         except Exception as exc:
+            print(f"Error fetching jobs: {exc}")
             self.report({"ERROR"}, f"Error fetching jobs: {exc}")
             return {"CANCELLED"}
         

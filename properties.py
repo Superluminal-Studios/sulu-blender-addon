@@ -40,11 +40,22 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     #  Project packaging
     # ────────────────────────────────────────────────────────────────
 
-    use_upload_project: bpy.props.BoolProperty(
-        name="Upload Project Files",
+    upload_project_as_zip: bpy.props.BoolProperty(
+        name="Upload Project As Zip",
         default=True,
-        description="Upload the entire project directory instead of a single "
-                    ".blend‑only ZIP",
+        description="Upload the entire project directory as a zip file.",
+    )
+
+    automatic_project_path: bpy.props.BoolProperty(
+        name="Automatic Project Path",
+        default=True,
+        description="Automatically determine the project path based on all of the files in the project.",
+    )
+    custom_project_path: bpy.props.StringProperty(
+        name="Custom Project Path",
+        default="",
+        description="Path to the project directory to upload. This is only used if Automatic Project Path is disabled.",
+        subtype="DIR_PATH",
     )
 
     # ────────────────────────────────────────────────────────────────
@@ -120,6 +131,12 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
                     "Make sure your scene is compatible with the chosen version.",
     )
 
+    auto_determine_blender_version: bpy.props.BoolProperty(
+        name="Auto Determine Blender Version",
+        default=True,
+        description="Automatically determine the Blender version to use based on the scene.",
+    )
+
     # ────────────────────────────────────────────────────────────────
     #  Ignore errors
     # ────────────────────────────────────────────────────────────────
@@ -145,6 +162,10 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         subtype="DIR_PATH",
     )
 
+    # ────────────────────────────────────────────────────────────────
+    #  Show sections
+    # ────────────────────────────────────────────────────────────────
+
 
     show_upload: bpy.props.BoolProperty(
         name="Show Upload Section",
@@ -163,6 +184,13 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     show_advanced: bpy.props.BoolProperty(
         name="Show Advanced Section",
         description="Expand/Collapse the advanced section of the panel",
+        default=False,
+        options={'HIDDEN'},
+    )
+
+    show_project_uploads: bpy.props.BoolProperty(
+        name="Show Project Uploads Section",
+        description="Expand/Collapse the project uploads section of the panel",
         default=False,
         options={'HIDDEN'},
     )

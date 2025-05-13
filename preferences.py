@@ -4,33 +4,30 @@ import json
 # -------------------------------------------------------------------
 #  Global cache for dynamic project list
 # -------------------------------------------------------------------
-g_project_items = [("NONE", "No projects", "No projects")]
+g_project_items = []
 
 g_job_items: list[tuple[str, str, str]] = [
-    ("NONE", "Not Loaded", "Run “Fetch Project Jobs” first")
+    # ("NONE", "Not Loaded", "Run “Fetch Project Jobs” first")
 ]
 
 def get_job_items(self, context):
     """Dynamic enum callback for Scene.superluminal_settings.job_id"""
     if not g_job_items:           # never return an empty list
-        return [("NONE", "Not Loaded", "Run “Fetch Project Jobs” first")]
+        # return [("NONE", "Not Loaded", "Run “Fetch Project Jobs” first")]
+        return []
     return g_job_items
 
 def ensure_cached_project_items(prefs):
     """Populate g_project_items from prefs.stored_projects once per session."""
     global g_project_items
-    if (
-        len(g_project_items) == 1
-        and g_project_items[0][0] == "NONE"
-        and prefs.stored_projects
-    ):
-        try:
-            cached = json.loads(prefs.stored_projects)
-            g_project_items.clear()
-            g_project_items.extend([tuple(t) for t in cached])
-        except Exception:
-            # Corrupt cache—reset
-            prefs.stored_projects = ""
+    # if (not g_project_items):
+    #     try:
+    #         cached = json.loads(prefs.stored_projects)
+    #         g_project_items.clear()
+    #         g_project_items.extend([tuple(t) for t in cached])
+    #     except Exception:
+    #         # Corrupt cache—reset
+    #         prefs.stored_projects = ""
 
 def get_project_list_items(self, context):
     ensure_cached_project_items(self)

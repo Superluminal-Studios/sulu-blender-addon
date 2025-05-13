@@ -56,20 +56,37 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         row.operator("superluminal.fetch_projects", text="", icon="FILE_REFRESH")
 
         # --------------------------------------------------------------
+        #  Project uploads
+        # --------------------------------------------------------------
+        project_box = layout.box()
+        if self.draw_section_header(project_box, props, "show_project_uploads", "Upload Settings"):
+            col = project_box.column(align=True)
+
+            # Upload entire project vs .blend-only ZIP
+            col.prop(props, "upload_project_as_zip", text="Upload Project As Zip")
+
+            # Custom project path override
+            col = project_box.column(align=True)
+            col.prop(props, "automatic_project_path", text="Automatic Project Path")
+            sub = col.column(align=True)
+            sub.active = not props.automatic_project_path
+            sub.prop(props, "custom_project_path", text="Custom Project Path")
+
+            col.enabled = not props.upload_project_as_zip
+
+        # --------------------------------------------------------------
         #  Upload section
         # --------------------------------------------------------------
         upload_box = layout.box()
-        if self.draw_section_header(upload_box, props, "show_upload", "Upload"):
+        if self.draw_section_header(upload_box, props, "show_upload", "Job Submission"):
             col = upload_box.column(align=True)
-            col.prop(props, "use_upload_project", text="Upload Project Files")
-            col.separator()
 
             # Job name override
             self.draw_toggle_row(
                 col,
                 (props, "use_file_name"),
                 (props, "job_name"),
-                toggle_text="Use File Name",
+                toggle_text="Use File Name as Job Name",
                 content_text="Job Name",
                 invert=True,
             )
@@ -80,7 +97,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
                 col,
                 (props, "use_scene_render_format"),
                 (props, "render_format"),
-                toggle_text="Use Scene Format",
+                toggle_text="Use Scene Render Format",
                 content_text="Render Format",
                 invert=True,
             )
@@ -90,7 +107,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             col.separator()
 
             # – Frame range – (no extra box, stacked Start/End)
-            col.label(text="Frame Range", icon="TIME")
             frame_col = col.column(align=True)
 
             use_scene_lbl = "Use Current Frame" if props.render_type == "IMAGE" else "Use Scene Range"
@@ -115,7 +131,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         download_box = layout.box()
         if self.draw_section_header(download_box, props, "show_download", "Download"):
             col = download_box.column(align=True)
-            col.label(text="Job Output", icon="FILE_FOLDER")
 
             id_row = col.row(align=True)
             id_row.prop(props, "job_id", text="Job")
@@ -147,8 +162,16 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         adv_box = layout.box()
         if self.draw_section_header(adv_box, props, "show_advanced", "Advanced"):
             col = adv_box.column(align=True)
-            col.prop(props, "blender_version", text="Blender Version")
-            col.prop(props, "ignore_errors",  text="Ignore Errors")
+            self.draw_toggle_row(
+                col,
+                (props, "auto_determine_blender_version"),
+                (props, "blender_version"),
+                toggle_text="Use Current Blender Version",
+                content_text="Blender Version",
+                invert=True,
+            )
+            col.separator()
+            col.prop(props, "ignore_errors",  text="Complete on Error")
 
 
 # --------------------------------------------------------------------
