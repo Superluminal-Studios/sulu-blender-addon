@@ -19,6 +19,8 @@ import webbrowser
 # third‑party
 import requests  # type: ignore
 
+
+
 # ╭────────────────────  read hand‑off  ─────────────────────╮
 if len(sys.argv) != 2:
     print("Usage: submit_worker.py <handoff.json>")
@@ -93,14 +95,23 @@ def _build_base(rclone_bin: Path, endpoint: str, s3: Dict[str, str]) -> List[str
 
 # ╭───────────────────────  main  ───────────────────────────────╮
 def main() -> None:
-    hdr = {"Authorization": data["user_token"]}
-
-    proj = requests.get(
+    session = requests.Session()
+    headers = {"Authorization": data["user_token"]}
+    proj = session.get(
     f"{data['pocketbase_url']}/api/collections/projects/records",
-    headers=hdr,
+    headers=headers,
     params={"filter": f"(id='{data['selected_project_id']}')"},
     timeout=30,
     ).json()["items"][0]
+
+    farm_status = session.get(
+        f"{data['pocketbase_url']}/api/farm_status/{proj['organization_id']}",
+        headers=headers,
+        timeout=30,
+    ).json()
+
+    print(json.dumps(farm_status, indent=4))
+
 
     blend_path   = str(data["blend_path"])
     project_path = blend_path.replace('\\', '/').split('/')[0] + '/'
@@ -148,9 +159,11 @@ def main() -> None:
     _log("🔑  Fetching R2 credentials…")
     s3_request_url = f"{data['pocketbase_url']}/api/collections/project_storage/records"
     s3_request = {"filter": f"(project_id='{data['selected_project_id']}' && bucket_name~'render-')"}
-    s3_response = requests.get(s3_request_url, headers=hdr, params=s3_request, timeout=30).json()["items"]
+    s3_response = session.get(s3_request_url, headers=headers, params=s3_request, timeout=30).json()["items"]
     s3info = s3_response[0]
     bucket = s3info["bucket_name"]
+
+
 
     # ───── rclone uploads ─────
     rclone_bin = ensure_rclone(logger=_log)
@@ -233,9 +246,9 @@ def main() -> None:
     }
 
     post_url = f"{data['pocketbase_url']}/api/farm/{org_id}/jobs"
-    requests.post(
+    session.post(
         post_url,
-        headers={**hdr, "Content-Type": "application/json"},
+        headers={**headers, "Content-Type": "application/json"},
         data=json.dumps(payload),
         timeout=30,
     ).raise_for_status()
