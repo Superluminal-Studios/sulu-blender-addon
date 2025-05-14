@@ -4,6 +4,9 @@ import requests
 
 from .preferences import g_project_items, g_job_items
 from .constants import POCKETBASE_URL
+
+session = requests.Session()
+
 # -------------------------------------------------------------------
 #  Authentication
 # -------------------------------------------------------------------
@@ -18,7 +21,7 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
         payload  = {"identity": prefs.username, "password": prefs.password}
 
         try:
-            response = requests.post(auth_url, json=payload, timeout=10)
+            response = session.post(auth_url, json=payload, timeout=10)
             response.raise_for_status()
         except Exception as exc:
             self.report({"ERROR"}, f"Error logging in: {exc}")
@@ -64,7 +67,7 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
         headers      = {"Authorization": prefs.user_token}
 
         try:
-            response = requests.get(projects_url, headers=headers, timeout=10)
+            response = session.get(projects_url, headers=headers, timeout=10)
             response.raise_for_status()
         except Exception as exc:
             self.report({"ERROR"}, f"Error fetching projects: {exc}")
@@ -132,6 +135,8 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
                 params={"filter": f"(organization_id='{org_id}')"},
                 timeout=30,
             )
+
+            
             rq_resp.raise_for_status()
             user_key = rq_resp.json()["items"][0]["user_key"]
         except Exception as exc:
@@ -146,6 +151,7 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
             jobs_resp = requests.get(jobs_url, headers={"Auth-Token": user_key}, timeout=10)
             jobs_resp.raise_for_status()
             jobs = jobs_resp.json()
+            
         except Exception as exc:
             self.report({"ERROR"}, f"Error fetching jobs: {exc}")
             return {"CANCELLED"}
@@ -153,7 +159,7 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
         g_job_items.clear()
         g_job_items.extend(
             (job_id, data.get("name", job_id), data.get("name", job_id))
-            for job_id, data in jobs.get("body", {}).items()
+            for job_id, data in jobs.get("body", {}).items() if prefs.project_list == data.get("project_id")
         )
 
         # Make the first entry the current selection (optional)
