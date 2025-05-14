@@ -11,7 +11,7 @@ from .worker_utils import launch_in_terminal
 from .addon_packer import bundle_addons
 from .properties import blender_version_items
 import bpy  
-
+from .constants import POCKETBASE_URL
 # Build a lookup:  40 → "BLENDER40", 41 → "BLENDER41", …
 _enum_by_number = {
     int(code.replace("BLENDER", "")): code
@@ -102,7 +102,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "render_engine": scene.render.engine.upper(),
             "blender_version": blender_version,
             "ignore_errors": props.ignore_errors,
-            "pocketbase_url": prefs.pocketbase_url,
+            "pocketbase_url": POCKETBASE_URL,
             "user_token": prefs.user_token,
             "selected_project_id": prefs.project_list,
         }

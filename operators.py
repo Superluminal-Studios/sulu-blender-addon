@@ -3,7 +3,7 @@ import json
 import requests
 
 from .preferences import g_project_items, g_job_items
-
+from .constants import POCKETBASE_URL
 # -------------------------------------------------------------------
 #  Authentication
 # -------------------------------------------------------------------
@@ -14,7 +14,7 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
 
     def execute(self, context):
         prefs = context.preferences.addons[__package__].preferences
-        auth_url = f"{prefs.pocketbase_url}/api/collections/users/auth-with-password"
+        auth_url = f"{POCKETBASE_URL}/api/collections/users/auth-with-password"
         payload  = {"identity": prefs.username, "password": prefs.password}
 
         try:
@@ -60,7 +60,7 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
             self.report({"ERROR"}, "Not authenticated—log in first.")
             return {"CANCELLED"}
 
-        projects_url = f"{prefs.pocketbase_url}/api/collections/projects/records"
+        projects_url = f"{POCKETBASE_URL}/api/collections/projects/records"
         headers      = {"Authorization": prefs.user_token}
 
         try:
@@ -110,7 +110,7 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
         # ---------------------------------------------------------- #
         try:
             proj_resp = requests.get(
-                f"{prefs.pocketbase_url}/api/collections/projects/records",
+                f"{POCKETBASE_URL}/api/collections/projects/records",
                 headers={"Authorization": prefs.user_token},
                 params={"filter": f"(id='{project_id}')"},
                 timeout=30,
@@ -127,7 +127,7 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
         # ---------------------------------------------------------- #
         try:
             rq_resp = requests.get(
-                f"{prefs.pocketbase_url}/api/collections/render_queues/records",
+                f"{POCKETBASE_URL}/api/collections/render_queues/records",
                 headers={"Authorization": prefs.user_token},
                 params={"filter": f"(organization_id='{org_id}')"},
                 timeout=30,
@@ -142,7 +142,7 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
         #  Finally fetch the jobs from the farm
         # ---------------------------------------------------------- #
         try:
-            jobs_url = f"{prefs.pocketbase_url}/farm/{org_id}/api/job_list"
+            jobs_url = f"{POCKETBASE_URL}/farm/{org_id}/api/job_list"
             jobs_resp = requests.get(jobs_url, headers={"Auth-Token": user_key}, timeout=10)
             jobs_resp.raise_for_status()
             jobs = jobs_resp.json()

@@ -8,6 +8,8 @@ from pathlib import Path
 import bpy  
 from .worker_utils import launch_in_terminal
 import subprocess
+from .constants import POCKETBASE_URL
+
 class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
     """Download frames from the selected job
        by spawning an external worker process.
@@ -28,7 +30,7 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
             "selected_project_id": prefs.project_list,
             "job_id": self.job_id,
             "job_name": self.job_name,
-            "pocketbase_url": prefs.pocketbase_url,
+            "pocketbase_url": POCKETBASE_URL,
             "user_token": prefs.user_token,
         }
 

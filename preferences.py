@@ -43,10 +43,6 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     # ----------------------------------------------------------------
     #  Stored properties
     # ----------------------------------------------------------------
-    pocketbase_url: bpy.props.StringProperty(
-        name="PocketBase URL",
-        default="https://api.superlumin.al",
-    )
     username: bpy.props.StringProperty(name="Username")
     password: bpy.props.StringProperty(name="Password", subtype="PASSWORD")
     user_token: bpy.props.StringProperty(name="User Token")
