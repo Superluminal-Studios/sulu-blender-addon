@@ -5,8 +5,6 @@ import requests
 from .preferences import g_project_items, g_job_items
 from .constants import POCKETBASE_URL
 
-session = requests.Session()
-
 # -------------------------------------------------------------------
 #  Authentication
 # -------------------------------------------------------------------
@@ -21,7 +19,7 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
         payload  = {"identity": prefs.username, "password": prefs.password}
 
         try:
-            response = session.post(auth_url, json=payload, timeout=10)
+            response = requests.post(auth_url, json=payload, timeout=10)
             response.raise_for_status()
         except Exception as exc:
             self.report({"ERROR"}, f"Error logging in: {exc}")
@@ -67,7 +65,7 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
         headers      = {"Authorization": prefs.user_token}
 
         try:
-            response = session.get(projects_url, headers=headers, timeout=10)
+            response = requests.get(projects_url, headers=headers, timeout=10)
             response.raise_for_status()
         except Exception as exc:
             self.report({"ERROR"}, f"Error fetching projects: {exc}")
