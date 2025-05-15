@@ -43,6 +43,9 @@ class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
     bl_label = "Log out of Superluminal"
 
     def execute(self, context):
+        print("Logging out")
+        g_project_items.clear()
+        g_job_items.clear()
         prefs = context.preferences.addons[__package__].preferences
         prefs.user_token = ""
         self.report({"INFO"}, "Logged out.")

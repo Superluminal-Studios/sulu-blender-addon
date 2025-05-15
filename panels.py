@@ -1,57 +1,126 @@
+"""
+panels.py – Superluminal Render UI
+
+• “Included Add-ons” lives inside Advanced ▸ Included Add-ons (collapsible).
+• Selection is persisted per scene in
+      Scene.superluminal_settings.included_addons  (semicolon-separated).
+• Added extra spacing before warning/info labels so they don’t hug the buttons.
+"""
+
+from __future__ import annotations
+
+# ─── Blender / stdlib ─────────────────────────────────────────
 import bpy
+import importlib
+import sys
+from bpy.types import UILayout
+
+# ─── Local helpers -------------------------------------------
 from .preferences import (
     g_project_items,
     g_job_items,
     get_job_items,
 )
 
-# --------------------------------------------------------------------
-#  Utility helpers
-# --------------------------------------------------------------------
+from .constants import DEFAULT_ADDONS
+
+# ╭──────────────────  Global runtime list  ───────────────────╮
+addons_to_send: list[str] = []          # filled from scene property
+
+
+# ------------------------------------------------------------------
+#  Convenience helpers
+# ------------------------------------------------------------------
 def _projects_available() -> bool:
     return any(item[0] not in {"", "NONE"} for item in g_project_items)
+
 
 def _jobs_available() -> bool:
     return any(item[0] not in {"", "NONE"} for item in g_job_items)
 
 
+def _read_addons_from_scene(scene: bpy.types.Scene) -> None:
+    """Refresh the in-memory list from the scene property (read-only)."""
+    props = scene.superluminal_settings
+    addons_to_send.clear()
+    addons_to_send.extend([m for m in props.included_addons.split(";") if m])
+
+
+# ------------------------------------------------------------------
+#  Operators
+# ------------------------------------------------------------------
+class ToggleAddonSelectionOperator(bpy.types.Operator):
+    """Tick / untick an add-on for inclusion in the upload zip"""
+    bl_idname = "superluminal.toggle_addon_selection"
+    bl_label  = "Toggle Add-on Selection"
+
+    addon_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        if self.addon_name in addons_to_send:
+            addons_to_send.remove(self.addon_name)
+        else:
+            addons_to_send.append(self.addon_name)
+
+        # write back to .blend (allowed in operator context)
+        context.scene.superluminal_settings.included_addons = ";".join(addons_to_send)
+        context.area.tag_redraw()
+        return {"FINISHED"}
+
+
+# ------------------------------------------------------------------
+#  UI helpers
+# ------------------------------------------------------------------
+def _addon_row(layout: UILayout, mod_name: str, pretty_name: str) -> None:
+    enabled = mod_name in addons_to_send
+    row = layout.row(align=True)
+    row.operator(
+        ToggleAddonSelectionOperator.bl_idname,
+        text="",
+        icon="CHECKBOX_HLT" if enabled else "CHECKBOX_DEHLT",
+        emboss=False,
+    ).addon_name = mod_name
+    row.label(text=pretty_name)
+
+
+# ------------------------------------------------------------------
+#  Main panel
+# ------------------------------------------------------------------
 class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
-    bl_idname = "SUPERLUMINAL_PT_RenderPanel"
-    bl_label = "Superluminal Render"
-    bl_space_type = "PROPERTIES"
+    bl_idname      = "SUPERLUMINAL_PT_RenderPanel"
+    bl_label       = "Superluminal Render"
+    bl_space_type  = "PROPERTIES"
     bl_region_type = "WINDOW"
-    bl_context = "render"
+    bl_context     = "render"
 
-    # ------------------------------------------------------------------
-    #  UI helpers
-    # ------------------------------------------------------------------
+    # ── little UI helpers ─────────────────────────────────────
     @staticmethod
-    def draw_toggle_row(col, toggle_prop, content_prop, *, toggle_text="", content_text="", invert=False):
-        checkbox_row = col.row(align=True)
-        checkbox_row.prop(toggle_prop[0], toggle_prop[1], text=toggle_text)
-
-        value_row = col.row(align=True)
-        value_row.prop(content_prop[0], content_prop[1], text=content_text)
-        value_row.enabled = (toggle_prop[0].path_resolve(toggle_prop[1]) ^ invert)
+    def _toggle_row(col, toggle_prop, content_prop, *, toggle_text="", content_text="", invert=False):
+        r1 = col.row(align=True)
+        r1.prop(toggle_prop[0], toggle_prop[1], text=toggle_text)
+        r2 = col.row(align=True)
+        r2.prop(content_prop[0], content_prop[1], text=content_text)
+        r2.enabled = (toggle_prop[0].path_resolve(toggle_prop[1]) ^ invert)
 
     @staticmethod
-    def draw_section_header(box, prop_owner, prop_name, text):
-        header = box.row(align=True)
-        expanded = prop_owner.path_resolve(prop_name)
-        icon = "TRIA_DOWN" if expanded else "TRIA_RIGHT"
-        header.prop(prop_owner, prop_name, icon=icon, text="", emboss=False)
-        header.label(text=text)
+    def _section_header(box, owner, prop_name, text):
+        row      = box.row(align=True)
+        expanded = owner.path_resolve(prop_name)
+        row.prop(owner, prop_name,
+                 icon="TRIA_DOWN" if expanded else "TRIA_RIGHT",
+                 text="", emboss=False)
+        row.label(text=text)
         return expanded
 
-    # ------------------------------------------------------------------
-    #  Draw
-    # ------------------------------------------------------------------
+    # ── draw ─────────────────────────────────────────────────
     def draw(self, context):
-        layout = self.layout
-        layout.use_property_split = True
-        layout.use_property_decorate = False  # no anim-dots
-
         scene  = context.scene
+        _read_addons_from_scene(scene)            # refresh list (read-only)
+
+        layout = self.layout
+        layout.use_property_split   = True
+        layout.use_property_decorate = False
+
         props  = scene.superluminal_settings
         prefs  = context.preferences.addons[__package__].preferences
 
@@ -59,140 +128,147 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         projects_ok = _projects_available()
         jobs_ok     = _jobs_available()
 
-        # --------------------------------------------------------------
-        #  Project selector
-        # --------------------------------------------------------------
+        # --------------------------------------------------  Project selector
         row = layout.row(align=True)
-        prop_row = row.row(align=True)
-        prop_row.enabled = logged_in and projects_ok
-        prop_row.prop(prefs, "project_list", text="Project")
+        pr  = row.row(align=True)
+        pr.enabled = logged_in and projects_ok
+        pr.prop(prefs, "project_list", text="Project")
         row.operator("superluminal.fetch_projects", text="", icon="FILE_REFRESH")
 
         if not logged_in:
+            layout.separator()
             layout.label(text="Login in the preferences to enable uploads and downloads.", icon='ERROR')
 
-        # --------------------------------------------------------------
-        #  Project uploads
-        # --------------------------------------------------------------
-        project_box = layout.box()
-        if self.draw_section_header(project_box, props, "show_project_uploads", "Upload Settings"):
-            col = project_box.column(align=True)
-            col.prop(props, "upload_project_as_zip", text="Upload Project As Zip")
+        # --------------------------------------------------  Project upload settings
 
-            col = project_box.column(align=True)
-            col.prop(props, "automatic_project_path", text="Automatic Project Path")
+        pb = layout.box()
+        if self._section_header(pb, props, "upload_settings", "Upload Settings"):
+            col = pb.column(align=True)
+            col.prop(props, "upload_project_as_zip")
+            col = pb.column(align=True)
+            col.prop(props, "automatic_project_path")
             sub = col.column(align=True)
             sub.active = not props.automatic_project_path
-            sub.prop(props, "custom_project_path", text="Custom Project Path")
+            sub.prop(props, "custom_project_path")
             col.enabled = not props.upload_project_as_zip
 
-        # --------------------------------------------------------------
-        #  Upload section
-        # --------------------------------------------------------------
-        upload_box = layout.box()
-        if self.draw_section_header(upload_box, props, "show_upload", "Job Submission"):
-            col = upload_box.column(align=True)
+             # ---- Included Add-ons (collapsible) ----
+            col = pb.column(align=True)
+            adb = col.box()
+            if self._section_header(adb, props, "show_addon_list", "Include Enabled Addons"):
+                a_col = adb.column(align=True)
+                enabled_addons: list[tuple[str, str]] = []
+                for addon in bpy.context.preferences.addons:
+                    mod_name = addon.module
+                    if mod_name == __package__:
+                        continue
+                    if mod_name in DEFAULT_ADDONS:
+                        continue
+                    pretty = mod_name
+                    mod = sys.modules.get(mod_name)
+                    if not mod:
+                        try:
+                            mod = importlib.import_module(mod_name)
+                        except ModuleNotFoundError:
+                            mod = None
+                    if mod and hasattr(mod, "bl_info"):
+                        pretty = mod.bl_info.get("name", mod_name)
+                    enabled_addons.append((mod_name, pretty))
+                if not enabled_addons:
+                    a_col.label(text="No Add-ons Enabled", icon="INFO")
+                else:
+                    for mod_name, pretty in enabled_addons:
+                        _addon_row(a_col, mod_name, pretty)
 
-            self.draw_toggle_row(
-                col, (props, "use_file_name"), (props, "job_name"),
-                toggle_text="Use File Name as Job Name", content_text="Job Name", invert=True
-            )
+
+        # --------------------------------------------------  Upload section
+        ub = layout.box()
+        if self._section_header(ub, props, "show_upload", "Job Submission"):
+            col = ub.column(align=True)
+            self._toggle_row(col, (props, "use_file_name"), (props, "job_name"),
+                             toggle_text="Use File Name as Job Name", content_text="Job Name", invert=True)
             col.separator()
-
-            self.draw_toggle_row(
-                col, (props, "use_scene_render_format"), (props, "render_format"),
-                toggle_text="Use Scene Render Format", content_text="Render Format", invert=True
-            )
+            self._toggle_row(col, (props, "use_scene_render_format"), (props, "render_format"),
+                             toggle_text="Use Scene Render Format", content_text="Render Format", invert=True)
             col.separator()
-
-            col.prop(props, "render_type", text="Type")
+            col.prop(props, "render_type")
             col.separator()
-
-            frame_col = col.column(align=True)
-            use_scene_lbl = "Use Current Frame" if props.render_type == "IMAGE" else "Use Scene Range"
-            frame_col.prop(props, "use_scene_frame_range", text=use_scene_lbl)
-
-            sub = frame_col.column(align=True)
+            fc = col.column(align=True)
+            lbl = "Use Current Frame" if props.render_type == "IMAGE" else "Use Scene Range"
+            fc.prop(props, "use_scene_frame_range", text=lbl)
+            sub = fc.column(align=True)
             sub.active = not props.use_scene_frame_range
             if props.render_type == "IMAGE":
                 sub.prop(props, "frame_start", text="Frame")
             else:
                 sub.prop(props, "frame_start", text="Start")
                 sub.prop(props, "frame_end",   text="End")
-
             col.separator()
-            submit_row = col.row()
-            submit_row.enabled = logged_in and projects_ok
-            submit_row.operator("superluminal.submit_job", text="Submit Render Job", icon="RENDER_STILL")
+            sr = col.row()
+            sr.enabled = logged_in and projects_ok
+            sr.operator("superluminal.submit_job", text="Submit Render Job", icon="RENDER_STILL")
 
+            # ---- spacing before warnings ----
             if not logged_in:
+                col.separator()
                 col.label(text="Log in first.", icon='ERROR')
             elif not projects_ok:
+                col.separator()
                 col.label(text="Refresh project list and select a project.", icon='INFO')
 
-        # --------------------------------------------------------------
-        #  Download section
-        # --------------------------------------------------------------
-        download_box = layout.box()
-        if self.draw_section_header(download_box, props, "show_download", "Download"):
-            col = download_box.column(align=True)
-
-            id_row = col.row(align=True)
-            id_prop = id_row.row(align=True)
-            id_prop.enabled = logged_in and jobs_ok
-            id_prop.prop(props, "job_id", text="Job")
-            id_row.operator("superluminal.fetch_project_jobs", text="", icon="FILE_REFRESH")
+        # --------------------------------------------------  Download section
+        db = layout.box()
+        if self._section_header(db, props, "show_download", "Download"):
+            col = db.column(align=True)
+            ir = col.row(align=True)
+            ip = ir.row(align=True)
+            ip.enabled = logged_in and jobs_ok
+            ip.prop(props, "job_id", text="Job")
+            ir.operator("superluminal.fetch_project_jobs", text="", icon="FILE_REFRESH")
             col.separator()
-
-            col.prop(props, "download_path", text="Download Path")
+            col.prop(props, "download_path")
             col.separator()
-
-            dl_row = col.row()
-            dl_op  = dl_row.operator("superluminal.download_job", text="Download Job Output", icon="SORT_ASC")
-            dl_op.job_id = props.job_id
-
+            dr = col.row()
+            dop = dr.operator("superluminal.download_job", text="Download Job Output", icon="SORT_ASC")
+            dop.job_id = props.job_id
             job_name = ""
             for item in (get_job_items(self, context) or []):
                 if isinstance(item, (list, tuple)) and len(item) >= 2 and item[0] == props.job_id:
                     job_name = item[1]
                     break
-            dl_op.job_name = job_name
-            dl_row.enabled = logged_in and jobs_ok and bool(job_name)
+            dop.job_name = job_name
+            dr.enabled = logged_in and jobs_ok and bool(job_name)
 
+            # ---- spacing before warnings ----
             if not logged_in:
+                col.separator()
                 col.label(text="Log in first.", icon='ERROR')
             elif not jobs_ok:
+                col.separator()
                 col.label(text="Refresh job list and select a job.", icon='INFO')
 
-        # --------------------------------------------------------------
-        #  Advanced section
-        # --------------------------------------------------------------
-        adv_box = layout.box()
-        if self.draw_section_header(adv_box, props, "show_advanced", "Advanced"):
-            col = adv_box.column(align=True)
-            self.draw_toggle_row(
-                col,
-                (props, "auto_determine_blender_version"),
-                (props, "blender_version"),
-                toggle_text="Use Current Blender Version",
-                content_text="Blender Version",
-                invert=True,
-            )
+        # --------------------------------------------------  Advanced section (+ add-ons)
+        ab = layout.box()
+        if self._section_header(ab, props, "show_advanced", "Advanced"):
+            col = ab.column(align=True)
+            self._toggle_row(col, (props, "auto_determine_blender_version"), (props, "blender_version"),
+                             toggle_text="Use Current Blender Version", content_text="Blender Version", invert=True)
             col.separator()
-            col.prop(props, "ignore_errors", text="Complete on Error")
+            col.prop(props, "ignore_errors")
+            col.separator()
 
-
-# --------------------------------------------------------------------
-#  Registration helpers
-# --------------------------------------------------------------------
-classes = (SUPERLUMINAL_PT_RenderPanel,)
-
+# ------------------------------------------------------------------
+#  Registration
+# ------------------------------------------------------------------
+classes = (
+    ToggleAddonSelectionOperator,
+    SUPERLUMINAL_PT_RenderPanel,
+)
 
 def register():
     from bpy.utils import register_class
     for cls in classes:
         register_class(cls)
-
 
 def unregister():
     from bpy.utils import unregister_class

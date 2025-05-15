@@ -141,9 +141,9 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     #  Ignore errors
     # ────────────────────────────────────────────────────────────────
     ignore_errors: bpy.props.BoolProperty(
-        name="Ignore Errors",
+        name="Complete Job When Errored",
         default=False,
-        description="Ignore errors and continue rendering.",
+        description="Ignore errors and mark the job as completed.",
     )
 
     # ────────────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     show_download: bpy.props.BoolProperty(
         name="Show Download Section",
         description="Expand/Collapse the download section of the panel",
-        default=True,
+        default=False,
         options={'HIDDEN'},
     )
 
@@ -188,13 +188,27 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         options={'HIDDEN'},
     )
 
-    show_project_uploads: bpy.props.BoolProperty(
-        name="Show Project Uploads Section",
-        description="Expand/Collapse the project uploads section of the panel",
+    upload_settings: bpy.props.BoolProperty(
+        name="Show Upload Settings",
+        description="Expand/Collapse the upload settings section of the panel",
         default=False,
         options={'HIDDEN'},
     )
 
+    show_addon_list: bpy.props.BoolProperty(
+        name="Show Add-on List",
+        description="Expand/Collapse the add-on list section of the panel",
+        default=False,
+        options={'HIDDEN'},
+    )
+
+    included_addons: bpy.props.StringProperty(
+        name        = "Included Add-ons",
+        description = "Semicolon-separated list of Python module names "
+                      "that should be packed and uploaded with the job",
+        default     = "",                 # e.g.  "mesh_tools;my_fancy_addon"
+        options     = {'HIDDEN'},         # user never edits this directly
+    )
 
 # -------------------------------------------------------------------
 #  Registration helpers

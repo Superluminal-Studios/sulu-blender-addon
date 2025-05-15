@@ -1,5 +1,6 @@
 """
-submit_worker.py – external helper for Superluminal Submit.
+download_worker.py – Superluminal Submit: asset-download helper
+Relies on the generic utilities defined in submit_utils.py.
 """
 
 from __future__ import annotations
@@ -8,28 +9,26 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import subprocess
 import sys
-import tempfile
 import time
 import types
 from pathlib import Path
 from typing import Dict, List
-import webbrowser
 
-# third‑party
+# ─── third-party ────────────────────────────────────────────────
 import requests  # type: ignore
 
-# ╭────────────────────  read hand‑off  ─────────────────────╮
+
+# ╭────────────────────  read hand-off  ─────────────────────╮
 if len(sys.argv) != 2:
-    print("Usage: download_worker.py <handoff.json>")
+    _log("Usage: download_worker.py <handoff.json>")
     sys.exit(1)
 
 t_start = time.perf_counter()
 handoff_path = Path(sys.argv[1]).resolve(strict=True)
 data: Dict[str, object] = json.loads(handoff_path.read_text("utf-8"))
 
-# ╭─────────────────  import add‑on internals  ─────────────────╮
+# ╭─────────────────  import add-on internals  ─────────────────╮
 addon_dir = Path(data["addon_dir"]).resolve()
 pkg_name = addon_dir.name.replace("-", "_")
 sys.path.insert(0, str(addon_dir.parent))
@@ -37,93 +36,108 @@ pkg = types.ModuleType(pkg_name)
 pkg.__path__ = [str(addon_dir)]
 sys.modules[pkg_name] = pkg
 
+# Import rclone helpers from the shipped add-on
 rclone = importlib.import_module(f"{pkg_name}.rclone")
-rclone_url = rclone.get_rclone_url
+run_rclone = rclone.run_rclone
 ensure_rclone = rclone.ensure_rclone
 
+worker_utils = importlib.import_module(f"{pkg_name}.worker_utils")
 
-# ╭────────────────────  constants  ───────────────────────────╮
-CLOUDFLARE_ACCOUNT_ID = "f09fa628d989ddd93cbe3bf7f7935591"
-CLOUDFLARE_R2_DOMAIN = f"{CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
-COMMON_RCLONE_FLAGS = [
-    "--s3-provider", "Cloudflare",
-    "--s3-env-auth",
-    "--s3-region", "auto",
-    "--s3-no-check-bucket",
-]
-
-# ╭───────────────────  helpers  ──────────────────────────────╮
-def _log(msg: str) -> None:
-    print(msg, flush=True)
-
-def _short(p: str) -> str:
-    return p if p.startswith(":s3:") else Path(p).name
-
-
-
-def _build_base(rclone_bin: Path, endpoint: str, s3: Dict[str, str]) -> List[str]:
-    return [
-        str(rclone_bin),
-        "--s3-endpoint", endpoint,
-        "--s3-access-key-id",     s3["access_key_id"],
-        "--s3-secret-access-key", s3["secret_access_key"],
-        "--s3-session-token",     s3["session_token"],
-        "--s3-region", "auto",
-        *COMMON_RCLONE_FLAGS,
-    ]
-
-def _run_rclone(base: List[str], verb: str, src: str, dst: str, extra: list[str]) -> None:
-    _log(f"{verb.capitalize():9} {_short(src)}  →  {_short(dst)}")
-    cmd = [base[0], verb, src, dst, *extra, "--stats=1s", "--progress", *base[1:]]
-    subprocess.run(cmd, check=True)
+# ─── internal utils ────────────────────────────────────────────
+_log = worker_utils.logger
+_build_base = worker_utils._build_base
+_short = worker_utils._short
+is_blend_saved = worker_utils.is_blend_saved
+requests_retry_session = worker_utils.requests_retry_session
+CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
 
 # ╭───────────────────────  main  ───────────────────────────────╮
 def main() -> None:
-    hdr = {"Authorization": data["user_token"]}
+    # Use the resilient, retry-enabled session for *all* HTTP calls
+    session = requests_retry_session()
+    headers = {"Authorization": data["user_token"]}
 
-    proj = requests.get(
-    f"{data['pocketbase_url']}/api/collections/projects/records",
-    headers=hdr,
-    params={"filter": f"(id='{data['selected_project_id']}')"},
-    timeout=30,
-    ).json()["items"][0]
+    # ─────── fetch project meta ──────────────────────────────
+    try:
+        proj_resp = session.get(
+            f"{data['pocketbase_url']}/api/collections/projects/records",
+            headers=headers,
+            params={"filter": f"(id='{data['selected_project_id']}')"},
+            timeout=30,
+        )
+        proj_resp.raise_for_status()
+        proj = proj_resp.json()["items"][0]
+    except requests.RequestException as exc:
+        _log(f"❌  Could not retrieve project record: {exc}")
+        sys.exit(1)
 
-    
     project_name = proj["name"]
+    job_id: str = data["job_id"]
+    job_name: str = data["job_name"]
+    download_path: str = data["download_path"]
 
-    job_id = data["job_id"]
-    job_name = data["job_name"]
-    download_path = data["download_path"]
-
-    
-    # ───── credentials ─────
+    # ─────── obtain R2 credentials ───────────────────────────
     _log("🔑  Fetching R2 credentials…")
-    s3_request_url = f"{data['pocketbase_url']}/api/collections/project_storage/records"
-    s3_request = {"filter": f"(project_id='{data['selected_project_id']}' && bucket_name~'render-')"}
-    s3_response = requests.get(s3_request_url, headers=hdr, params=s3_request, timeout=30).json()["items"]
-    s3info = s3_response[0]
-    bucket = s3info["bucket_name"]
+    try:
+        s3_resp = session.get(
+            f"{data['pocketbase_url']}/api/collections/project_storage/records",
+            headers=headers,
+            params={
+                "filter": f"(project_id='{data['selected_project_id']}' && bucket_name~'render-')"
+            },
+            timeout=30,
+        )
+        s3_resp.raise_for_status()
+        s3info = s3_resp.json()["items"][0]
+        bucket = s3info["bucket_name"]
+    except (IndexError, requests.RequestException) as exc:
+        _log(f"❌  Failed to obtain bucket credentials: {exc}")
+        sys.exit(1)
 
-    # ───── rclone downloads ─────
+    # ─────── rclone download ─────────────────────────────────
     rclone_bin = ensure_rclone(logger=_log)
-    base = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
-    _log("🚀  Uploading assets…")
+    base_cmd: List[str] = _build_base(
+        rclone_bin,
+        f"https://{CLOUDFLARE_R2_DOMAIN}",
+        s3info,
+    )
 
-
-    rclone_args = ["--exclude", "thumbnails/**", "--transfers", "16", "--checkers", "16"]
+    # Build rclone arguments
+    rclone_args: list[str] = [
+        "--exclude",
+        "thumbnails/**",
+        "--transfers",
+        "16",
+        "--checkers",
+        "16",
+        "--stats=1s",
+        "--progress",
+    ]
     if not os.path.exists(download_path):
         rclone_args.extend(["--no-check-dest", "--ignore-times"])
 
-    _run_rclone(
-        base, "copy",
-        f":s3:{bucket}/{job_id}/output/",
-        f"{download_path}/{job_name}/",
-        rclone_args,
-        
-    )
+    # Ensure destination directory exists
+    dest_dir = os.path.join(download_path, job_name)
+    os.makedirs(dest_dir, exist_ok=True)
 
+    _log("🚀  Downloading render output…")
+    try:
+        run_rclone(
+            base_cmd,
+            "copy",
+            f":s3:{bucket}/{job_id}/output/",
+            dest_dir + "/",
+            rclone_args,
+        )
+    except RuntimeError as exc:
+        _log(f"❌  rclone failed: {exc}")
+        sys.exit(1)
+
+    elapsed = time.perf_counter() - t_start
     _log("🎉  Download complete!")
+    _log(f"🕒  Took {elapsed:.1f}s in total.")
     input("\nPress ENTER to close this window…")
+
 
 # ╭──────────────────  entry  ───────────────────╮
 if __name__ == "__main__":
@@ -131,6 +145,7 @@ if __name__ == "__main__":
         main()
     except Exception as exc:
         import traceback
+
         traceback.print_exc()
-        print(f"\n❌  Download failed: {exc}")
+        _log(f"\n❌  Download failed: {exc}")
         input("\nPress ENTER to close this window…")
