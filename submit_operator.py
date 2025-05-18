@@ -105,6 +105,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "pocketbase_url": POCKETBASE_URL,
             "user_token": prefs.user_token,
             "selected_project_id": prefs.project_list,
+            "use_bserver": props.use_bserver,
         }
         
         bpy.ops.wm.save_as_mainfile(filepath=handoff["temp_blend_path"], compress=True, copy=True, relative_remap=False)

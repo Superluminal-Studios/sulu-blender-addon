@@ -162,6 +162,12 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         subtype="DIR_PATH",
     )
 
+    use_bserver: bpy.props.BoolProperty(
+        name="Use B-Server",
+        default=False,
+        description="Use B-Server to render the job.",
+    )
+
     # ────────────────────────────────────────────────────────────────
     #  Show sections
     # ────────────────────────────────────────────────────────────────

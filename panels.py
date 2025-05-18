@@ -257,6 +257,10 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             col.prop(props, "ignore_errors")
             col.separator()
 
+            col = ab.column(align=True)
+            col.label(text="Experimental Features:")
+            col.prop(props, "use_bserver")
+
 # ------------------------------------------------------------------
 #  Registration
 # ------------------------------------------------------------------

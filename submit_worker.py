@@ -256,6 +256,7 @@ def main() -> None:
             "required_storage": required_storage,
             "zip": not use_project,
             "ignore_errors": data["ignore_errors"],
+            "use_bserver": data["use_bserver"],
         }
     }
 
