@@ -64,6 +64,14 @@ def main() -> None:
 
     headers = {"Authorization": data["user_token"]}
 
+    try:
+        rclone_bin = ensure_rclone(logger=_log)
+        
+    except Exception as e:
+        _log(f"❌  Failed to download rclone: {e}")
+        input("\nPress ENTER to close this window…")
+        sys.exit(1)
+
     # ─────── fetch project meta ──────────────────────────────
     try:
         proj_resp = session.get(
@@ -74,8 +82,10 @@ def main() -> None:
         )
         proj_resp.raise_for_status()
         proj = proj_resp.json()["items"][0]
+
     except requests.RequestException as exc:
         _log(f"❌  Could not retrieve project record: {exc}")
+        input("\nPress ENTER to close this window…")
         sys.exit(1)
 
     # ─────── verify farm availability ───────────────────────
@@ -86,9 +96,12 @@ def main() -> None:
             timeout=30,
         )
         farm_status.raise_for_status()
+
     except requests.RequestException as exc:
         _log(f"❌  Failed to fetch farm status: {exc}")
+        input("\nPress ENTER to close this window…")
         sys.exit(1)
+
 
     # ─────── local paths / settings ──────────────────────────
     blend_path: str = data["blend_path"]
@@ -170,7 +183,7 @@ def main() -> None:
         sys.exit(1)
 
     # ─────── rclone uploads ──────────────────────────────────
-    rclone_bin = ensure_rclone(logger=_log)
+    
     base_cmd = _build_base(
         rclone_bin,
         f"https://{CLOUDFLARE_R2_DOMAIN}",
