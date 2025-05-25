@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  packages: write
+  
 
 jobs:
   zip-files:
@@ -26,7 +28,8 @@ jobs:
       - name: Prepare folder structure
         run: |
           mkdir /tmp/SuperLuminalRender
-          cp -r . /tmp/SuperLuminalRender
+          ls -l /home/runner/work/sulu-blender-addon/sulu-blender-addon/
+          cp -r /home/runner/work/sulu-blender-addon/sulu-blender-addon/ /tmp/SuperLuminalRender/
 
       # Step 4: Release
       - name: Upload to Release
