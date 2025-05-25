@@ -28,20 +28,22 @@ jobs:
       - name: Prepare folder structure
         run: |
           mkdir /tmp/SuperLuminalRender
-          cp -r /home/runner/work/sulu-blender-addon/sulu-blender-addon/sulu-blender-addon/ /tmp/SuperLuminalRender/
-      
-      # Step 6: Move files to a folder named OctaRender
+          cp -r /home/runner/work/sulu-blender-addon/sulu-blender-addon/* /tmp/SuperLuminalRender/
+
+      # Step 4: Move files to a folder named OctaRender
       - name: List Files
         run: |
+          ls -l /home/runner/work/sulu-blender-addon/
+          ls -l /home/runner/work/sulu-blender-addon/sulu-blender-addon/
           ls -l /tmp/SuperLuminalRender/
           ls -l /tmp/
 
-      # Step 4: Run deploy.py
-      #- name: Run deploy.py
-        #run: |
-          #python3 /tmp/SuperLuminalRender/deploy.py --version ${{ github.ref_name }}
+      #Step 5: Run deploy.py
+      - name: Run deploy.py
+        run: |
+          python3 /tmp/SuperLuminalRender/deploy.py --version ${{ github.ref_name }}
 
-      # Step 5: Release
+      # Step 6: Release
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
@@ -49,4 +51,5 @@ jobs:
             /tmp/SuperLuminalRender.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
