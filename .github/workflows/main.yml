@@ -31,9 +31,9 @@ jobs:
           cp -r /home/runner/work/sulu-blender-addon/sulu-blender-addon/ /tmp/SuperLuminalRender/
 
       # Step 4: Run deploy.py
-      - name: Run deploy.py
-        run: |
-          python3 /tmp/SuperLuminalRender/deploy.py --version ${{ github.ref_name }}
+      #- name: Run deploy.py
+        #run: |
+          #python3 /tmp/SuperLuminalRender/deploy.py --version ${{ github.ref_name }}
 
       # Step 5: Release
       - name: Upload to Release
@@ -47,7 +47,6 @@ jobs:
       # Step 6: Move files to a folder named OctaRender
       - name: List Files
         run: |
-
           ls -l /home/runner/work/sulu-blender-addon/sulu-blender-addon/
           ls -l /tmp/SuperLuminalRender/
           ls -l /tmp/tmp/
