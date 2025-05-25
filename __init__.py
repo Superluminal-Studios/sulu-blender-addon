@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Superluminal Render Farm",
     "author": "Superluminal",
-    "version": (1, 0),
+    "version": (1, 0, 0),
     "blender": (4, 4, 0),
     "location": "Properties > Render > Superluminal",
     "description": "Submit render jobs to Superluminal Render Farm",
