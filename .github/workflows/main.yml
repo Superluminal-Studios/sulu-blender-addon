@@ -28,7 +28,13 @@ jobs:
       - name: Prepare folder structure
         run: |
           mkdir /tmp/SuperLuminalRender
-          cp -r /home/runner/work/sulu-blender-addon/sulu-blender-addon/ /tmp/SuperLuminalRender/
+          cp -r /home/runner/work/sulu-blender-addon/sulu-blender-addon/sulu-blender-addon/ /tmp/SuperLuminalRender/
+      
+      # Step 6: Move files to a folder named OctaRender
+      - name: List Files
+        run: |
+          ls -l /tmp/SuperLuminalRender/
+          ls -l /tmp/
 
       # Step 4: Run deploy.py
       #- name: Run deploy.py
@@ -44,9 +50,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 6: Move files to a folder named OctaRender
-      - name: List Files
-        run: |
-          ls -l /home/runner/work/sulu-blender-addon/sulu-blender-addon/
-          ls -l /tmp/SuperLuminalRender/
-          ls -l /tmp/
