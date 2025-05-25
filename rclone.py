@@ -8,7 +8,9 @@ from pathlib import Path
 import requests
 import subprocess
 from typing import List
-
+from urllib3.util import Retry
+from requests.adapters import HTTPAdapter
+from requests import Session
 # Map (normalized_os, normalized_arch) -> rclone's "os-arch" string
 # Extend as needed to cover additional platforms.
 SUPPORTED_PLATFORMS = {
@@ -113,9 +115,17 @@ def get_rclone_platform_dir(suffix: str) -> Path:
     return rclone_install_directory() / suffix
 
 def download_with_bar(url: str, dest: Path, logger=None) -> None:
+    s = Session()
+    retries = Retry(
+        total=3,
+        backoff_factor=0.1,
+        status_forcelist=[502, 503, 504],
+        allowed_methods={'POST', 'GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE', 'TRACE', 'CONNECT'},
+    )
+    s.mount('https://', HTTPAdapter(max_retries=retries))
     if logger:
         logger("⬇️  Downloading rclone")
-    resp = requests.get(url, stream=True, timeout=30)
+    resp = s.get(url, stream=True, timeout=600)
     resp.raise_for_status()
     total = int(resp.headers.get("Content-Length", 0))
     done = 0
