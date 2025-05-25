@@ -260,6 +260,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             col = ab.column(align=True)
             col.label(text="Experimental Features:")
             col.prop(props, "use_bserver")
+            col.prop(props, "use_async_upload")
 
 # ------------------------------------------------------------------
 #  Registration

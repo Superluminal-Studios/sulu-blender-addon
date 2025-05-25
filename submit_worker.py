@@ -257,6 +257,8 @@ def main() -> None:
             "zip": not use_project,
             "ignore_errors": data["ignore_errors"],
             "use_bserver": data["use_bserver"],
+            "use_async_upload": data["use_async_upload"],
+            # "tasks": [0,1,3,10]
         }
     }
 

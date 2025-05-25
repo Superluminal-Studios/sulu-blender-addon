@@ -168,6 +168,12 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         description="Use B-Server to render the job.",
     )
 
+    use_async_upload: bpy.props.BoolProperty(
+        name="Use Async Upload",
+        default=False,
+        description="Use async upload to render the job.",
+    )
+
     # ────────────────────────────────────────────────────────────────
     #  Show sections
     # ────────────────────────────────────────────────────────────────
