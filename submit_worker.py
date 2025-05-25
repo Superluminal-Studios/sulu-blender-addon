@@ -180,6 +180,7 @@ def main() -> None:
         bucket = s3info["bucket_name"]
     except (IndexError, requests.RequestException) as exc:
         _log(f"❌  Failed to obtain bucket credentials: {exc}")
+        input("\nPress ENTER to close this window…")
         sys.exit(1)
 
     # ─────── rclone uploads ──────────────────────────────────
@@ -271,7 +272,7 @@ def main() -> None:
             "ignore_errors": data["ignore_errors"],
             "use_bserver": data["use_bserver"],
             "use_async_upload": data["use_async_upload"],
-            # "tasks": [0,1,3,10]
+            "tasks": list(range(data["start_frame"], data["end_frame"] + 1, data["frame_stepping_size"]))
         }
     }
 
@@ -285,6 +286,7 @@ def main() -> None:
         post_resp.raise_for_status()
     except requests.RequestException as exc:
         _log(f"❌  Job submission failed: {exc}")
+        input("\nPress ENTER to close this window…")
         sys.exit(1)
 
     elapsed = time.perf_counter() - t_start

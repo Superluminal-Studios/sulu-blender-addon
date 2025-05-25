@@ -99,6 +99,9 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "end_frame": (
                 scene.frame_end if props.use_scene_frame_range else props.frame_end
             ),
+            "frame_stepping_size": (
+                scene.frame_step if props.use_scene_frame_range else props.frame_stepping_size
+            ),
             "render_engine": scene.render.engine.upper(),
             "blender_version": blender_version,
             "ignore_errors": props.ignore_errors,

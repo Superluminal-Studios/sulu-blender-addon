@@ -113,6 +113,13 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         default=250,
         description="Last frame to render when overriding the scene range.",
     )
+
+    frame_stepping_size: bpy.props.IntProperty(
+        name="Stepping",
+        default=1,
+        description="Stepping size for the frame range.",
+    )
+
     use_scene_frame_range: bpy.props.BoolProperty(
         name="Use Scene Frame Range",
         default=True,

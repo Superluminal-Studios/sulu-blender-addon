@@ -203,6 +203,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             else:
                 sub.prop(props, "frame_start", text="Start")
                 sub.prop(props, "frame_end",   text="End")
+                sub.prop(props, "frame_stepping_size", text="Stepping")
             col.separator()
             sr = col.row()
             sr.enabled = logged_in and projects_ok
