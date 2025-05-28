@@ -62,7 +62,25 @@ def main() -> None:
     # Single resilient session for *all* HTTP traffic
     session = requests_retry_session()
 
-    headers = {"Authorization": data["user_token"]}
+
+    try:
+        github_response = session.get(f"https://api.github.com/repos/Superluminal-Studios/sulu-blender-addon/releases/latest")
+        if github_response.status_code == 200:
+            latest_version = github_response.json().get("tag_name")
+            if latest_version:
+                latest_version = tuple(int(i) for i in latest_version.split('.'))
+                if latest_version > tuple(data["addon_version"]):
+                    answer = input(f"A new version of the Superluminal Render Farm addon is available, would you like to update? (y/n)")
+                    if answer.lower() == "y":
+                        webbrowser.open("https://superlumin.al/blender-addon")
+                        print("\nhttps://superlumin.al/blender-addon")
+                        _log("\nInstructions: \n    📥 Download the latest addon zip from the link above.\n    🔧 Install the latest version of the addon in Blender.\n    ❌ Close this window.\n    🔄 Restart Blender.")
+                        input("\nPress ENTER to close this window…")
+                        sys.exit(1)
+    except:
+        _log("❌ Failed to check for addon updates, continuing with job submission…")
+
+    headers = {"Authorization": data["user_token"]} 
 
     try:
         rclone_bin = ensure_rclone(logger=_log)

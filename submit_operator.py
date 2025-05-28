@@ -10,8 +10,10 @@ from .check_file_outputs import gather_render_outputs
 from .worker_utils import launch_in_terminal
 from .addon_packer import bundle_addons
 from .properties import blender_version_items
-import bpy  
+import bpy 
+import addon_utils
 from .constants import POCKETBASE_URL
+import requests
 # Build a lookup:  40 → "BLENDER40", 41 → "BLENDER41", …
 _enum_by_number = {
     int(code.replace("BLENDER", "")): code
@@ -45,6 +47,13 @@ def enum_from_bpy_version(bpy_version: tuple[int, int, int]) -> str:
 
     # Fallback (shouldn’t be reached)
     return blender_version_items[0][0]
+        
+def addon_version(addon_name: str):
+    addon_utils.modules(refresh=False)
+    for mod in addon_utils.addons_fake_modules.values():
+        name = mod.bl_info.get("name", "")
+        if name == addon_name:
+            return tuple(mod.bl_info.get("version"))
 
 class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
     """Submit the current .blend file to the Superluminal Render Farm
@@ -74,6 +83,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         job_id = uuid.uuid4()
         handoff = {
             "addon_dir": str(Path(__file__).resolve().parent),
+            "addon_version": addon_version("Superluminal Render Farm"),
             "packed_addons_path": tempfile.mkdtemp(prefix="blender_addons_"),
             "packed_addons": [],
             "job_id": str(job_id),
@@ -111,7 +121,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "use_bserver": props.use_bserver,
             "use_async_upload": props.use_async_upload,
         }
-        
+
         bpy.ops.wm.save_as_mainfile(filepath=handoff["temp_blend_path"], compress=True, copy=True, relative_remap=False)
 
         worker = Path(__file__).with_name("submit_worker.py")
