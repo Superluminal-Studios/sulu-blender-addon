@@ -1,51 +1,157 @@
-import bpy
-import json
-import requests
+"""
+Blender operators that communicate with PocketBase,
+using pocketbase_auth for automatic token management.
 
-from .preferences import g_project_items, g_job_items
+Changes in this revision
+------------------------
+* Before every farm “job_list” call we first hit
+  `/api/farm_status/<org_id>` to verify the render queue is up.
+  If that check fails we clear the jobs enum and exit early.
+"""
+
+from __future__ import annotations
+
+import json
+
+import bpy
+
 from .constants import POCKETBASE_URL
+from .preferences import g_project_items, g_job_items
+from .pocketbase_auth import authorized_request, NotAuthenticated
 
 # -------------------------------------------------------------------
 #  Authentication
 # -------------------------------------------------------------------
 class SUPERLUMINAL_OT_Login(bpy.types.Operator):
-    """Authenticate with PocketBase and store token."""
+    """Sign in to Superluminal"""
     bl_idname = "superluminal.login"
     bl_label = "Log in to Superluminal"
 
     def execute(self, context):
         prefs = context.preferences.addons[__package__].preferences
-        auth_url = f"{POCKETBASE_URL}/api/collections/users/auth-with-password"
-        payload  = {"identity": prefs.username, "password": prefs.password}
+        url   = f"{POCKETBASE_URL}/api/collections/users/auth-with-password"
+        data  = {"identity": prefs.username, "password": prefs.password}
 
+        import requests
         try:
-            response = requests.post(auth_url, json=payload, timeout=10)
-            response.raise_for_status()
+            r = requests.post(url, json=data, timeout=10)
+            r.raise_for_status()
+            token = r.json().get("token")
+            if not token:
+                self.report({"WARNING"}, "Login succeeded but no token returned.")
+                return {"CANCELLED"}
+            prefs.user_token = token
+        except Exception as err:
+            self.report({"ERROR"}, f"Login failed: {err}")
+            return {"CANCELLED"}
+
+        # ---------------- 1) Fetch projects --------------------------
+        try:
+            proj_resp = authorized_request(
+                prefs,
+                "GET",
+                f"{POCKETBASE_URL}/api/collections/projects/records",
+                refresh_first=True,
+            )
+            fetched_projects = [
+                (
+                    p.get("id", ""),
+                    p.get("name", p.get("id", "")),
+                    f"Project {p.get('name', '')}",
+                )
+                for p in proj_resp.json().get("items", [])
+            ]
         except Exception as exc:
-            self.report({"ERROR"}, f"Error logging in: {exc}")
-            return {"CANCELLED"}
+            fetched_projects = []
+            self.report(
+                {"WARNING"},
+                f"Logged in but could not fetch projects: {exc}",
+            )
 
-        token = response.json().get("token")
-        if not token:
-            self.report({"WARNING"}, "Login succeeded but no token was returned.")
-            return {"CANCELLED"}
+        g_project_items.clear()
+        if fetched_projects:
+            g_project_items.extend(fetched_projects)
+            prefs.stored_projects = json.dumps([list(t) for t in fetched_projects])
+            if not prefs.project_list or prefs.project_list == "NONE":
+                prefs.project_list = fetched_projects[0][0]
+        else:
+            prefs.stored_projects = ""
+            prefs.project_list   = ""
 
-        prefs.user_token = token
-        self.report({"INFO"}, "Logged in successfully.")
+        # ---------------- 2) Fetch jobs for selected project --------
+        g_job_items.clear()
+        if prefs.project_list:
+            try:
+                # (a) organisation ID
+                proj_resp = authorized_request(
+                    prefs,
+                    "GET",
+                    f"{POCKETBASE_URL}/api/collections/projects/records",
+                    params={"filter": f"(id='{prefs.project_list}')"},
+                )
+                proj   = proj_resp.json()["items"][0]
+                org_id = proj["organization_id"]
+
+                # (b) render-queue key
+                rq_resp = authorized_request(
+                    prefs,
+                    "GET",
+                    f"{POCKETBASE_URL}/api/collections/render_queues/records",
+                    params={"filter": f"(organization_id='{org_id}')"},
+                )
+                user_key = rq_resp.json()["items"][0]["user_key"]
+
+                # (c) verify farm availability
+                authorized_request(
+                    prefs,
+                    "GET",
+                    f"{POCKETBASE_URL}/api/farm_status/{org_id}",
+                    headers={"Auth-Token": user_key},
+                )
+
+                # (d) fetch jobs
+                jobs_resp = authorized_request(
+                    prefs,
+                    "GET",
+                    f"{POCKETBASE_URL}/farm/{org_id}/api/job_list",
+                    headers={"Auth-Token": user_key},
+                )
+                jobs = jobs_resp.json()
+
+                g_job_items.extend(
+                    (jid, d.get("name", jid), d.get("name", jid))
+                    for jid, d in jobs.get("body", {}).items()
+                    if prefs.project_list == d.get("project_id")
+                )
+                if g_job_items:
+                    context.scene.superluminal_settings.job_id = g_job_items[0][0]
+
+            except Exception as exc:
+                g_job_items.clear()
+                self.report(
+                    {"WARNING"},
+                    f"Projects loaded, but could not fetch jobs: {exc}",
+                )
+
+        # UI refresh
+        for area in context.screen.areas:
+            if area.type == "PROPERTIES":
+                area.tag_redraw()
+
+        self.report({"INFO"}, "Logged in and data preloaded.")
         return {"FINISHED"}
 
 
 class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
-    """Clear the stored PocketBase token."""
+    """Log out of Superluminal"""
     bl_idname = "superluminal.logout"
     bl_label = "Log out of Superluminal"
 
     def execute(self, context):
-        print("Logging out")
-        g_project_items.clear()
-        g_job_items.clear()
         prefs = context.preferences.addons[__package__].preferences
         prefs.user_token = ""
+        g_project_items.clear()
+        g_job_items.clear()
         self.report({"INFO"}, "Logged out.")
         return {"FINISHED"}
 
@@ -54,123 +160,146 @@ class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
 #  Project list utilities
 # -------------------------------------------------------------------
 class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
-    """Fetch PocketBase project list and cache it permanently."""
+    """Fetch the project list from Superluminal."""
     bl_idname = "superluminal.fetch_projects"
     bl_label = "Fetch Project List"
 
     def execute(self, context):
         prefs = context.preferences.addons[__package__].preferences
-        if not prefs.user_token:
-            self.report({"ERROR"}, "Not authenticated—log in first.")
-            return {"CANCELLED"}
-
-        projects_url = f"{POCKETBASE_URL}/api/collections/projects/records"
-        headers      = {"Authorization": prefs.user_token}
-
         try:
-            response = requests.get(projects_url, headers=headers, timeout=10)
-            response.raise_for_status()
+            resp = authorized_request(
+                prefs,
+                "GET",
+                f"{POCKETBASE_URL}/api/collections/projects/records",
+                refresh_first=True,
+            )
+        except NotAuthenticated as exc:
+            self.report({"ERROR"}, str(exc))
+            g_project_items.clear()
+            g_job_items.clear()
+            return {"CANCELLED"}
         except Exception as exc:
             self.report({"ERROR"}, f"Error fetching projects: {exc}")
+            g_project_items.clear()
+            g_job_items.clear()
             return {"CANCELLED"}
 
-        fetched_items = [
+        fetched = [
             (
                 proj.get("id", ""),
                 proj.get("name", proj.get("id", "")),
                 f"Project {proj.get('name', '')}",
             )
-            for proj in response.json().get("items", [])
+            for proj in resp.json().get("items", [])
         ]
-        if not fetched_items:
-            fetched_items = [("NONE", "No projects", "No projects")]
 
         g_project_items.clear()
-        g_project_items.extend(fetched_items)
-        prefs.stored_projects = json.dumps([list(t) for t in fetched_items])
+        if fetched:
+            g_project_items.extend(fetched)
+            prefs.stored_projects = json.dumps([list(t) for t in fetched])
+        else:
+            prefs.stored_projects = ""
 
         self.report({"INFO"}, "Projects fetched.")
         return {"FINISHED"}
 
 
 class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
-    """Fetch PocketBase job list for the active project and cache it."""
+    """Fetch the job list for the selected project from Superluminal."""
     bl_idname = "superluminal.fetch_project_jobs"
     bl_label = "Fetch Project Jobs"
 
     def execute(self, context):
         prefs = context.preferences.addons[__package__].preferences
-        if not prefs.user_token:
-            self.report({"ERROR"}, "Not authenticated—log in first.")
-            return {"CANCELLED"}
-
         project_id = prefs.project_list
         if not project_id:
             self.report({"ERROR"}, "No project selected.")
+            g_job_items.clear()
             return {"CANCELLED"}
 
-        # ---------------------------------------------------------- #
-        #  Resolve organisation ID – first grab that project record
-        # ---------------------------------------------------------- #
+        # 1) organisation ID
         try:
-            proj_resp = requests.get(
+            proj_resp = authorized_request(
+                prefs,
+                "GET",
                 f"{POCKETBASE_URL}/api/collections/projects/records",
-                headers={"Authorization": prefs.user_token},
                 params={"filter": f"(id='{project_id}')"},
-                timeout=30,
+                refresh_first=True,
             )
-            proj_resp.raise_for_status()
-            proj = proj_resp.json()["items"][0]
+            proj   = proj_resp.json()["items"][0]
             org_id = proj["organization_id"]
+        except NotAuthenticated as exc:
+            self.report({"ERROR"}, str(exc))
+            g_job_items.clear()
+            return {"CANCELLED"}
         except Exception as exc:
             self.report({"ERROR"}, f"Error fetching project info: {exc}")
+            g_job_items.clear()
             return {"CANCELLED"}
 
-        # ---------------------------------------------------------- #
-        #  Look up the user-key for that org’s render queue
-        # ---------------------------------------------------------- #
+        # 2) render-queue key
         try:
-            rq_resp = requests.get(
+            rq_resp = authorized_request(
+                prefs,
+                "GET",
                 f"{POCKETBASE_URL}/api/collections/render_queues/records",
-                headers={"Authorization": prefs.user_token},
                 params={"filter": f"(organization_id='{org_id}')"},
-                timeout=30,
             )
-
-            
-            rq_resp.raise_for_status()
             user_key = rq_resp.json()["items"][0]["user_key"]
+        except NotAuthenticated as exc:
+            self.report({"ERROR"}, str(exc))
+            g_job_items.clear()
+            return {"CANCELLED"}
         except Exception as exc:
             self.report({"ERROR"}, f"Error fetching render queue: {exc}")
+            g_job_items.clear()
             return {"CANCELLED"}
 
-        # ---------------------------------------------------------- #
-        #  Finally fetch the jobs from the farm
-        # ---------------------------------------------------------- #
+        # 3) verify farm availability
         try:
-            jobs_url = f"{POCKETBASE_URL}/farm/{org_id}/api/job_list"
-            jobs_resp = requests.get(jobs_url, headers={"Auth-Token": user_key}, timeout=10)
-            jobs_resp.raise_for_status()
+            authorized_request(
+                prefs,
+                "GET",
+                f"{POCKETBASE_URL}/api/farm_status/{org_id}",
+                headers={"Auth-Token": user_key},
+            )
+        except Exception as exc:
+            self.report({"ERROR"}, f"Farm not available: {exc}")
+            g_job_items.clear()
+            return {"CANCELLED"}
+
+        # 4) fetch jobs
+        try:
+            jobs_resp = authorized_request(
+                prefs,
+                "GET",
+                f"{POCKETBASE_URL}/farm/{org_id}/api/job_list",
+                headers={"Auth-Token": user_key},
+            )
             jobs = jobs_resp.json()
-            
+        except NotAuthenticated as exc:
+            self.report({"ERROR"}, str(exc))
+            g_job_items.clear()
+            return {"CANCELLED"}
         except Exception as exc:
             self.report({"ERROR"}, f"Error fetching jobs: {exc}")
+            g_job_items.clear()
             return {"CANCELLED"}
 
         g_job_items.clear()
         g_job_items.extend(
-            (job_id, data.get("name", job_id), data.get("name", job_id))
-            for job_id, data in jobs.get("body", {}).items() if prefs.project_list == data.get("project_id")
+            (jid, d.get("name", jid), d.get("name", jid))
+            for jid, d in jobs.get("body", {}).items()
+            if prefs.project_list == d.get("project_id")
         )
 
-        # Make the first entry the current selection (optional)
         if g_job_items:
             context.scene.superluminal_settings.job_id = g_job_items[0][0]
 
-        # Force UI refresh so the Properties-editor redraws immediately
         for area in context.screen.areas:
-            if area.type == 'PROPERTIES':
+            if area.type == "PROPERTIES":
                 area.tag_redraw()
+
         return {"FINISHED"}
 
 
@@ -184,19 +313,17 @@ classes = (
     SUPERLUMINAL_OT_FetchProjectJobs,
 )
 
-# Extra poll functions for the *existing* Submit/Download operators
 def _submit_poll(cls, context):
-    """Submit allowed only when logged in *and* a project exists."""
     prefs = context.preferences.addons[__package__].preferences
-    logged_in = bool(prefs.user_token)
+    logged_in   = bool(prefs.user_token)
     projects_ok = any(item[0] not in {"", "NONE"} for item in g_project_items)
     return logged_in and projects_ok
 
+
 def _download_poll(cls, context):
-    """Download allowed only when logged in *and* jobs exist."""
     prefs = context.preferences.addons[__package__].preferences
     logged_in = bool(prefs.user_token)
-    jobs_ok = any(item[0] not in {"", "NONE"} for item in g_job_items)
+    jobs_ok   = any(item[0] not in {"", "NONE"} for item in g_job_items)
     return logged_in and jobs_ok
 
 
@@ -204,7 +331,6 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    # Patch poll functions if the target operators are registered
     sub_cls = bpy.types.Operator.bl_rna_get_subclass_py("superluminal.submit_job")
     if sub_cls:
         sub_cls.poll = classmethod(_submit_poll)
@@ -215,13 +341,12 @@ def register():
 
 
 def unregister():
-    # Restore default polls (optional)
     sub_cls = bpy.types.Operator.bl_rna_get_subclass_py("superluminal.submit_job")
-    if sub_cls and sub_cls.poll is _submit_poll:
+    if sub_cls and getattr(sub_cls, "poll", None) is _submit_poll:
         del sub_cls.poll
 
     dl_cls = bpy.types.Operator.bl_rna_get_subclass_py("superluminal.download_job")
-    if dl_cls and dl_cls.poll is _download_poll:
+    if dl_cls and getattr(dl_cls, "poll", None) is _download_poll:
         del dl_cls.poll
 
     for cls in reversed(classes):

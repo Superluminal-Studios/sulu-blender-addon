@@ -11,10 +11,8 @@ import subprocess
 from .constants import POCKETBASE_URL
 
 class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
-    """Download frames from the selected job
-       by spawning an external worker process.
-    """
-
+    """Download the rendered frames from the selected job."""
+    
     bl_idname = "superluminal.download_job"
     bl_label = "Download Job Frames"
     job_id: bpy.props.StringProperty(name="Job ID")

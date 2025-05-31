@@ -21,7 +21,7 @@ from .preferences import (
     g_job_items,
     get_job_items,
 )
-
+from .version_utils import get_blender_version_string
 from .constants import DEFAULT_ADDONS
 
 # ╭──────────────────  Global runtime list  ───────────────────╮
@@ -194,7 +194,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             col.prop(props, "render_type")
             col.separator()
             fc = col.column(align=True)
-            lbl = "Use Current Frame" if props.render_type == "IMAGE" else "Use Scene Range"
+            lbl = "Use Current Frame" if props.render_type == "IMAGE" else "Use Scene Frame Range"
             fc.prop(props, "use_scene_frame_range", text=lbl)
             sub = fc.column(align=True)
             sub.active = not props.use_scene_frame_range
@@ -262,13 +262,12 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         if self._section_header(ab, props, "show_advanced", "Advanced"):
             col = ab.column(align=True)
             self._toggle_row(col, (props, "auto_determine_blender_version"), (props, "blender_version"),
-                             toggle_text="Use Current Blender Version", content_text="Blender Version", invert=True)
-            col.separator()
-            col.prop(props, "ignore_errors")
+                             toggle_text=f"Use Current Blender Version [{get_blender_version_string()}]", content_text="Blender Version", invert=True)
             col.separator()
 
             col = ab.column(align=True)
-            col.label(text="Experimental Features:")
+            col.label(text="Experimental Features:", icon="EXPERIMENTAL")
+            col.prop(props, "ignore_errors")
             col.prop(props, "use_bserver")
             col.prop(props, "use_async_upload")
 

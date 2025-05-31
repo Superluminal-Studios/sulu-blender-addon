@@ -9,7 +9,7 @@ from __future__ import annotations
 import bpy
 
 from .preferences import get_job_items
-
+from .version_utils import get_blender_version_string
 # -------------------------------------------------------------------
 #  Enum items
 # -------------------------------------------------------------------
@@ -46,18 +46,23 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     upload_project_as_zip: bpy.props.BoolProperty(
         name="Upload Project As Zip",
         default=True,
-        description="Upload the entire project directory as a zip file.",
+        description=(
+            "When enabled, this blend file together with all of its dependencies"
+            " is uploaded as a single ZIP archive. When disabled, each file is "
+            "uploaded to a project folder on the render farm, and subsequent "
+            "uploads send only files that have changed. Disabling this option can eliminate most of the upload time."
+        ),
     )
 
     automatic_project_path: bpy.props.BoolProperty(
         name="Automatic Project Path",
         default=True,
-        description="Automatically determine the project path based on all of the files in the project.",
+        description="When enabled, the root of your project is automatically determined based on the paths of the individual files this blend file has as dependencies. When disabled, you can manually specify the project root path below. (Only used if 'Upload Project As Zip' is disabled.)",
     )
     custom_project_path: bpy.props.StringProperty(
         name="Custom Project Path",
         default="",
-        description="Path to the project directory to upload. This is only used if Automatic Project Path is disabled.",
+        description="Specify the root of your project manually. (Only used if 'Upload Project As Zip' is disabled and 'Automatic Project Path' is disabled.)",
         subtype="DIR_PATH",
     )
 
@@ -67,12 +72,12 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     job_name: bpy.props.StringProperty(
         name="Job Name",
         default="My Render Job",
-        description="Custom name shown in the Superluminal dashboard.",
+        description="Custom render job name.",
     )
     use_file_name: bpy.props.BoolProperty(
         name="Use File Name",
         default=True,
-        description="Ignore the custom job name and use the .blend filename.",
+        description='Use the current .blend file name as the render job name instead of the custom name below.',
     )
 
     # ────────────────────────────────────────────────────────────────
@@ -82,14 +87,12 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         name="Image Format",
         items=image_format_items,
         default="PNG",
-        description="Image/sequence file format to use when overriding the "
-                    "scene’s output settings.",
+        description='Preset image formats to use when rendering if "Use Scene Image Format" is disabled. (Uses reasonable defaults for each format, enable "Use Scene Image Format" for more fine-grained control.)',
     )
     use_scene_image_format: bpy.props.BoolProperty(
         name="Use Scene Format",
         default=True,
-        description="Keep whatever format is already set in the scene "
-                    "and ignore the override above.",
+        description="Use the image format settings selected in Blender's render output settings instead of the preset image formats below.",
     )
 
     # ────────────────────────────────────────────────────────────────
@@ -126,8 +129,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     use_scene_frame_range: bpy.props.BoolProperty(
         name="Use Scene Frame Range",
         default=True,
-        description="Render the frame range already set in the Timeline "
-                    "instead of the override above.",
+        description="Use the scene's start/end frame range instead of the values below.",
     )
 
     # ────────────────────────────────────────────────────────────────
@@ -144,16 +146,16 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     auto_determine_blender_version: bpy.props.BoolProperty(
         name="Auto Determine Blender Version",
         default=True,
-        description="Automatically determine the Blender version to use based on the scene.",
+        description=f"Determine the Blender version to use on the farm based on the one you're currently using. Right now you're using Blender {get_blender_version_string()}.",
     )
 
     # ────────────────────────────────────────────────────────────────
     #  Ignore errors
     # ────────────────────────────────────────────────────────────────
     ignore_errors: bpy.props.BoolProperty(
-        name="Complete Job When Errored",
+        name="Finish Frame When Errored",
         default=False,
-        description="Ignore errors and mark the job as completed.",
+        description="Consider a frame finished even if the render process errors on the farm. This can be useful if you find that blender often crashes after the output file has already been written.",
     )
 
     # ────────────────────────────────────────────────────────────────
@@ -162,7 +164,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     job_id: bpy.props.EnumProperty(
         name="Job",
         items=get_job_items,
-        description="Select the job to render.",
+        description="Select the job to download the rendered frames from.",
     )
 
     download_path: bpy.props.StringProperty(
@@ -173,15 +175,15 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     )
 
     use_bserver: bpy.props.BoolProperty(
-        name="Use B-Server",
+        name="Persistence Engine",
         default=False,
-        description="Use B-Server to render the job.",
+        description="The Persistence Engine keeps Blender running between frames. This ensures memory is kept around, which can significantly speed up your renders, especially if you have persistent data enabled.",
     )
 
     use_async_upload: bpy.props.BoolProperty(
-        name="Use Async Upload",
+        name="Async Frame Upload",
         default=False,
-        description="Use async upload to render the job.",
+        description="Upload frames asynchronously to the farm. Frames are uploaded while the next frame is already rendering. This makes the cost needed to upload the render results to the server essentially free if the render is slower than the upload, which is the case for most renders.",
     )
 
     # ────────────────────────────────────────────────────────────────

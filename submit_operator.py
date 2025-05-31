@@ -8,45 +8,10 @@ from pathlib import Path
 from .check_file_outputs import gather_render_outputs
 from .worker_utils import launch_in_terminal
 from .addon_packer import bundle_addons
-from .properties import blender_version_items
 import bpy
 import addon_utils
 from .constants import POCKETBASE_URL
 import requests
-
-# Build a lookup:  40 → "BLENDER40", 41 → "BLENDER41", …
-_enum_by_number = {
-    int(code.replace("BLENDER", "")): code
-    for code, *_ in blender_version_items
-}
-_enum_numbers_sorted = sorted(_enum_by_number)     # e.g. [40, 41, 42, 43, 44]
-
-def enum_from_bpy_version(bpy_version: tuple[int, int, int]) -> str:
-    """
-    Return the enum key that best matches the running Blender version.
-
-    • If the build is *newer* than anything in the list → return the
-      **highest** enum we have.
-    • If it’s *older* than anything in the list → return the **lowest**.
-    • Otherwise pick the exact match or, if the minor revision isn’t
-      represented, the nearest lower entry (4.2.3 maps to 4.2).
-    """
-    major, minor, _ = bpy_version
-    numeric = major * 10 + minor     # 4.3 → 43
-
-    # Clamp to list boundaries
-    if numeric <= _enum_numbers_sorted[0]:
-        return _enum_by_number[_enum_numbers_sorted[0]]
-    if numeric >= _enum_numbers_sorted[-1]:
-        return _enum_by_number[_enum_numbers_sorted[-1]]
-
-    # Inside the known range – find the closest lower-or-equal entry
-    for n in reversed(_enum_numbers_sorted):
-        if n <= numeric:
-            return _enum_by_number[n]
-
-    # Fallback (shouldn’t be reached)
-    return blender_version_items[0][0]
         
 
 def addon_version(addon_name: str):
@@ -58,9 +23,7 @@ def addon_version(addon_name: str):
 
 
 class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
-    """Submit the current .blend file to the Superluminal Render Farm
-       by spawning an external worker process.
-    """
+    """Submit the current .blend file and all of its dependencies to Superluminal"""
 
     bl_idname = "superluminal.submit_job"
     bl_label = "Submit Job to Superluminal (external)"
@@ -78,7 +41,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         layers = outputs[0]["layers"]
 
         if props.auto_determine_blender_version:
-            blender_version = enum_from_bpy_version(bpy.app.version)
+            blender_version = enum_from_bpy_version()
         else:
             blender_version = props.blender_version
 

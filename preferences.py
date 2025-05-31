@@ -47,11 +47,12 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     password: bpy.props.StringProperty(name="Password", subtype="PASSWORD")
     user_token: bpy.props.StringProperty(name="User Token")
     stored_projects: bpy.props.StringProperty(
-        name="Cached Projects (JSON)", options={'HIDDEN'}
+        name="Cached Projects (JSON)", options={'HIDDEN'},
     )
     project_list: bpy.props.EnumProperty(
         name="Project",
         items=get_project_list_items,
+        description="Select the Superluminal project to submit your render job to.",
     )
 
     # ----------------------------------------------------------------
