@@ -188,8 +188,8 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             self._toggle_row(col, (props, "use_file_name"), (props, "job_name"),
                              toggle_text="Use File Name as Job Name", content_text="Job Name", invert=True)
             col.separator()
-            self._toggle_row(col, (props, "use_scene_render_format"), (props, "render_format"),
-                             toggle_text="Use Scene Render Format", content_text="Render Format", invert=True)
+            self._toggle_row(col, (props, "use_scene_image_format"), (props, "image_format"),
+                             toggle_text="Use Scene Image Format", content_text="Image Format", invert=True)
             col.separator()
             col.prop(props, "render_type")
             col.separator()
@@ -206,8 +206,17 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
                 sub.prop(props, "frame_stepping_size", text="Stepping")
             col.separator()
             sr = col.row()
-            sr.enabled = logged_in and projects_ok
+            using_video_format = bpy.context.scene.render.image_settings.file_format in ["FFMPEG", "AVI_JPEG", "AVI_RAW"]
+            sr.enabled = logged_in and projects_ok and not (using_video_format and props.use_scene_image_format)
             sr.operator("superluminal.submit_job", text="Submit Render Job", icon="RENDER_STILL")
+
+            if using_video_format and props.use_scene_image_format:
+                col.separator()
+                col.label(text=f"Video formats are not supported for rendering. Output is set to {bpy.context.scene.render.image_settings.file_format}.", icon="ERROR")
+
+            if bpy.data.is_dirty:
+                row = col.row()
+                row.label(text="You have unsaved changes. Some changes may not be included in the render job.", icon="ERROR")
 
             # ---- spacing before warnings ----
             if not logged_in:

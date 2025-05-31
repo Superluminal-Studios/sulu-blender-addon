@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import json
 import sys
 import tempfile
@@ -10,10 +9,11 @@ from .check_file_outputs import gather_render_outputs
 from .worker_utils import launch_in_terminal
 from .addon_packer import bundle_addons
 from .properties import blender_version_items
-import bpy 
+import bpy
 import addon_utils
 from .constants import POCKETBASE_URL
 import requests
+
 # Build a lookup:  40 → "BLENDER40", 41 → "BLENDER41", …
 _enum_by_number = {
     int(code.replace("BLENDER", "")): code
@@ -48,12 +48,14 @@ def enum_from_bpy_version(bpy_version: tuple[int, int, int]) -> str:
     # Fallback (shouldn’t be reached)
     return blender_version_items[0][0]
         
+
 def addon_version(addon_name: str):
     addon_utils.modules(refresh=False)
     for mod in addon_utils.addons_fake_modules.values():
         name = mod.bl_info.get("name", "")
         if name == addon_name:
             return tuple(mod.bl_info.get("version"))
+
 
 class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
     """Submit the current .blend file to the Superluminal Render Farm
@@ -80,6 +82,26 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         else:
             blender_version = props.blender_version
 
+        # ---------------------------------------------
+        # Frame range logic (handles IMAGE vs. ANIMATION)
+        # ---------------------------------------------
+        start_frame = (
+            scene.frame_start if props.use_scene_frame_range else props.frame_start
+        )
+        end_frame = (
+            scene.frame_end if props.use_scene_frame_range else props.frame_end
+        )
+
+        # If we are rendering a single image, ensure end_frame equals start_frame
+
+        if props.render_type == "IMAGE":
+            if props.use_scene_frame_range:
+                start_frame = scene.frame_current
+                end_frame = scene.frame_current
+            else:
+                start_frame = props.frame_start
+                end_frame = props.frame_start
+
         job_id = uuid.uuid4()
         handoff = {
             "addon_dir": str(Path(__file__).resolve().parent),
@@ -98,22 +120,19 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
                 else props.job_name
             ),
             "render_passes": layers,
-            "render_format": (
+            "image_format": (
                 scene.render.image_settings.file_format
-                if props.use_scene_render_format
-                else props.render_format
+                if props.use_scene_image_format
+                else props.image_format
             ),
-            "start_frame": (
-                scene.frame_start if props.use_scene_frame_range else props.frame_start
-            ),
-            "end_frame": (
-                scene.frame_end if props.use_scene_frame_range else props.frame_end
-            ),
+            "use_scene_image_format": props.use_scene_image_format,
+            "start_frame": start_frame,
+            "end_frame": end_frame,
             "frame_stepping_size": (
                 scene.frame_step if props.use_scene_frame_range else props.frame_stepping_size
             ),
             "render_engine": scene.render.engine.upper(),
-            "blender_version": blender_version,
+            "blender_version": blender_version.lower(),
             "ignore_errors": props.ignore_errors,
             "pocketbase_url": POCKETBASE_URL,
             "user_token": prefs.user_token,

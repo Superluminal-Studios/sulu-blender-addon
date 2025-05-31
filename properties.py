@@ -13,10 +13,13 @@ from .preferences import get_job_items
 # -------------------------------------------------------------------
 #  Enum items
 # -------------------------------------------------------------------
-render_format_items = [
+image_format_items = [
     ("PNG",      "PNG",      "Save each frame as a PNG image"),
     ("JPEG",     "JPEG",     "Save each frame as JPEG image"),
-    ("OPEN_EXR", "OpenEXR",  "Save multilayer OpenEXR files."),
+    ("EXR", "OpenEXR",  "Save multilayer OpenEXR files."),
+    ("EXR_LOSSY", "OpenEXR Lossy", "Save lossy OpenEXR files."),
+    ("EXR_MULTILAYER", "OpenEXR Multilayer", "Save multilayer OpenEXR files."),
+    ("EXR_MULTILAYER_LOSSY", "OpenEXR Multilayer Lossy", "Save lossy multilayer OpenEXR files."),
 ]
 
 blender_version_items = [
@@ -75,14 +78,14 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     # ────────────────────────────────────────────────────────────────
     #  Output format
     # ────────────────────────────────────────────────────────────────
-    render_format: bpy.props.EnumProperty(
-        name="Render Format",
-        items=render_format_items,
+    image_format: bpy.props.EnumProperty(
+        name="Image Format",
+        items=image_format_items,
         default="PNG",
         description="Image/sequence file format to use when overriding the "
                     "scene’s output settings.",
     )
-    use_scene_render_format: bpy.props.BoolProperty(
+    use_scene_image_format: bpy.props.BoolProperty(
         name="Use Scene Format",
         default=True,
         description="Keep whatever format is already set in the scene "
