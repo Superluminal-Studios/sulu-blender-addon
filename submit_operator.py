@@ -12,6 +12,7 @@ import bpy
 import addon_utils
 from .constants import POCKETBASE_URL
 import requests
+from .version_utils import enum_from_bpy_version
         
 
 def addon_version(addon_name: str):
