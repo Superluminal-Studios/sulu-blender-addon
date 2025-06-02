@@ -198,7 +198,6 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
         logger(f"{verb.capitalize():9} {src} → {dst}")
 
     cmd = [base[0], verb, src, dst, *extra, "--stats=0.1s", "--use-json-log", "--stats-log-level", "NOTICE", *base[1:]]
-
     with subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -256,4 +255,5 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
         if bar:
             bar.close()
         if code:
+            logger(f"❌  Rclone failed with code {code}", line)
             raise subprocess.CalledProcessError(code, cmd)

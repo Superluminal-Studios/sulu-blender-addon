@@ -46,10 +46,8 @@ ensure_rclone = rclone.ensure_rclone
 # ─── internal utils ────────────────────────────────────────────
 
 worker_utils = importlib.import_module(f"{pkg_name}.worker_utils")
-
 _log = worker_utils.logger
 _build_base = worker_utils._build_base
-_short = worker_utils._short
 is_blend_saved = worker_utils.is_blend_saved
 requests_retry_session = worker_utils.requests_retry_session
 CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
@@ -98,7 +96,7 @@ def main() -> None:
         )
         if proj_resp.status_code != 200:
             _log(f"❌  Failed to fetch project record: {proj_resp.json()}")
-            _log("❌  Please try logging in again.")
+            _log("⚠️  Check that your project is selected, and that you are logged in. You can also try logging out and back in again.")
             input("\nPress ENTER to close this window…")
             sys.exit(1)
 
@@ -118,12 +116,13 @@ def main() -> None:
         )
         if farm_status.status_code != 200:
             _log(f"❌  Failed to fetch farm status: {farm_status.json()}")
-            _log("❌  Please check that your project is selected and try again.")
+            _log("⚠️  Check that your project is selected, and that you are logged in. You can also try logging out and back in again.")
             input("\nPress ENTER to close this window…")
             sys.exit(1)
-    except:
-        _log(f"❌  Failed to fetch farm status: {farm_status.json()}")
-        _log("❌  Please check that your project is selected and try again.")
+
+    except Exception as exc:
+        _log(f"❌  Failed to fetch farm status: {exc}")
+        _log("⚠️  Check that your project is selected, and that you are logged in. You can also try logging out and back in again.")
         input("\nPress ENTER to close this window…")
         sys.exit(1)
 
@@ -148,6 +147,7 @@ def main() -> None:
     # ─────── wait until .blend is fully written ──────────────
     is_blend_saved(blend_path)
 
+
     # ─────── PACK ASSETS ─────────────────────────────────────
     if use_project:
         _log("🔍  Finding dependencies…")
@@ -160,42 +160,54 @@ def main() -> None:
 
         required_storage = 0
         file_list = [str(f).replace("\\", "/") for f in fmap.keys()]
-        main_blend_s3 = file_list.pop(0).replace("\\", "/")
+        main_blend_s3 = file_list.pop(0)
 
         # Auto-detect base folder unless overridden
-        if automatic_project_path:
-            all_paths = []
-            different_disk = []
-            same_disk = True
-            for idx, f in enumerate(file_list):
-                path = os.path.abspath(os.path.join(project_path, f))
+        same_disk = True
+        for idx, f in enumerate(list(file_list)):
+            path = os.path.abspath(os.path.join(project_path, f))
 
-                if os.path.splitdrive(main_blend_s3)[0] == os.path.splitdrive(path)[0]:
+            if os.path.splitdrive(main_blend_s3)[0] == os.path.splitdrive(path)[0]:
+                if os.path.isfile(path):
                     _log(f"✅  [{idx}/{len(file_list) - 1}] adding {shorten_path(path)}")
-                    all_paths.append(os.path.abspath(os.path.join(project_path, f)))
-
+                    required_storage += os.path.getsize(path)
                 else:
-                    same_disk = False
-                    _log(f"❌  [{idx}/{len(file_list) - 1}] File is on a different disk {shorten_path(path)}")
-                    different_disk.append(os.path.abspath(os.path.join(project_path, f)))
+                    _log(f"❌  [{idx}/{len(file_list) - 1}] File not found {shorten_path(path)}")
+                    file_list.remove(f)
 
-
-            common_path = os.path.commonpath(all_paths).replace("\\", "/")
-            if same_disk:
-                _log("✅  All files are on the same disk")
             else:
-                _log("❌  Files are on different disks")
+                same_disk = False
+                if os.path.isfile(path):
+                    _log(f"❌  [{idx}/{len(file_list) - 1}] Off disk {shorten_path(path)}")
+                    file_list.remove(f) 
+                else:
+                    _log(f"❌  [{idx}/{len(file_list) - 1}] File not found {shorten_path(path)}")
+                    file_list.remove(f)
 
+        if same_disk:
+            _log("✅  All files are on the same disk")
+        else:
+            _log("⚠️  Files are on different disks")
+
+        if automatic_project_path:
+            if len(file_list) == 0:
+                common_path = os.path.dirname(main_blend_s3)
+            else:
+                common_path = os.path.commonpath(file_list).replace("\\", "/")
         else:
             common_path = custom_project_path
 
-        packed_file_list = [
-            f.replace(common_path + "/", "") for f in file_list
-        ]
         main_blend_s3 = main_blend_s3.replace(common_path + "/", "")
+
+        packed_file_list = [f.replace(common_path + "/", "") for f in file_list]
+
+        if len(file_list) == 0:
+            _log("⚠️  No dependencies found, if this project is not a single blend file, check project path and try again.")
 
         with filelist.open("w", encoding="utf-8") as fp:
             fp.writelines(f"{f}\n" for f in packed_file_list)
+
+
 
     else:
         _log("📦  Creating .zip archive…")
@@ -216,12 +228,16 @@ def main() -> None:
         s3_response.raise_for_status()
         if s3_response.status_code != 200:
             _log(f"❌  Failed to obtain bucket credentials: {s3_response.json()}")
+            _log("⚠️  Check that your project is selected, and that you are logged in. You can also try logging out and back in again.")
             input("\nPress ENTER to close this window…")
             sys.exit(1)
+
         s3info = s3_response.json()["items"][0]
         bucket = s3info["bucket_name"]
+
     except (IndexError, requests.RequestException) as exc:
         _log(f"❌  Failed to obtain bucket credentials: {exc}")
+        _log("⚠️  Check that your project is selected, and that you are logged in. You can also try logging out and back in again.")
         input("\nPress ENTER to close this window…")
         sys.exit(1)
 
@@ -238,15 +254,16 @@ def main() -> None:
         if not use_project:
             run_rclone(base_cmd, "copy", str(zip_file), f":s3:{bucket}/", [])
         else:
-            # 1) Copy project files
-            _log(f"\n📤  Uploading dependencies…")
-            run_rclone(
-                base_cmd,
-                "copy",
-                str(common_path),
-                f":s3:{bucket}/{project_name}/",
-                ["--files-from", str(filelist), "--checksum"],
-            )
+            if len(file_list) > 0:
+                # 1) Copy project files
+                _log(f"\n📤  Uploading dependencies…")
+                run_rclone(
+                    base_cmd,
+                    "copy",
+                    str(common_path),
+                    f":s3:{bucket}/{project_name}/",
+                    ["--files-from", str(filelist), "--checksum"],
+                )
 
             # 2) Upload the manifest so the worker knows what to grab
             with filelist.open("a", encoding="utf-8") as fp:
@@ -284,6 +301,7 @@ def main() -> None:
             )
     except RuntimeError as exc:
         _log(f"\n❌  rclone failed: {exc}")
+        input("\nPress ENTER to close this window…")
         sys.exit(1)
     finally:
         # Clean up local temp artefacts if possible
@@ -355,6 +373,7 @@ def main() -> None:
         webbrowser.open(web_url)
         _log(f"🌐  Opened {web_url} in your browser.")
         input("\nPress ENTER to close this window…")
+        sys.exit(1)
 
 
 # ╭──────────────────  entry  ───────────────────╮

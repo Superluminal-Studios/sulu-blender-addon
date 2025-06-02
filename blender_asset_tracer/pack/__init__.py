@@ -126,8 +126,6 @@ class Packer:
 
         self._shorten = functools.partial(shorten_path, self.project)
 
-        if noop:
-            log.warning("Running in no-op mode, only showing what will be done.")
 
         # Filled by strategise()
         self._actions = collections.defaultdict(AssetAction)  # type: typing.DefaultDict[pathlib.Path, AssetAction]
