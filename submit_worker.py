@@ -22,9 +22,6 @@ import requests  # type: ignore
 
 
 # ╭────────────────────  read hand-off  ─────────────────────╮
-if len(sys.argv) != 2:
-    _log("Usage: submit_worker.py <handoff.json>")
-    sys.exit(1)
 
 t_start = time.perf_counter()
 handoff_path = Path(sys.argv[1]).resolve(strict=True)
@@ -38,6 +35,7 @@ pkg = types.ModuleType(pkg_name)
 pkg.__path__ = [str(addon_dir)]
 sys.modules[pkg_name] = pkg
 
+shorten_path = importlib.import_module(f"{pkg_name}.worker_utils").shorten_path
 bat_utils = importlib.import_module(f"{pkg_name}.bat_utils")
 pack_blend = bat_utils.pack_blend
 rclone = importlib.import_module(f"{pkg_name}.rclone")
@@ -62,7 +60,6 @@ def main() -> None:
     # Single resilient session for *all* HTTP traffic
     session = requests_retry_session()
 
-
     try:
         github_response = session.get(f"https://api.github.com/repos/Superluminal-Studios/sulu-blender-addon/releases/latest")
         if github_response.status_code == 200:
@@ -77,6 +74,7 @@ def main() -> None:
                         _log("\nInstructions: \n    📥 Download the latest addon zip from the link above.\n    🔧 Install the latest version of the addon in Blender.\n    ❌ Close this window.\n    🔄 Restart Blender.")
                         input("\nPress ENTER to close this window…")
                         sys.exit(1)
+
     except:
         _log("❌ Failed to check for addon updates, continuing with job submission…")
 
@@ -98,7 +96,12 @@ def main() -> None:
             params={"filter": f"(id='{data['selected_project_id']}')"},
             timeout=30,
         )
-        proj_resp.raise_for_status()
+        if proj_resp.status_code != 200:
+            _log(f"❌  Failed to fetch project record: {proj_resp.json()}")
+            _log("❌  Please try logging in again.")
+            input("\nPress ENTER to close this window…")
+            sys.exit(1)
+
         proj = proj_resp.json()["items"][0]
 
     except requests.RequestException as exc:
@@ -113,12 +116,17 @@ def main() -> None:
             headers=headers,
             timeout=30,
         )
-        farm_status.raise_for_status()
-
-    except requests.RequestException as exc:
-        _log(f"❌  Failed to fetch farm status: {exc}")
+        if farm_status.status_code != 200:
+            _log(f"❌  Failed to fetch farm status: {farm_status.json()}")
+            _log("❌  Please check that your project is selected and try again.")
+            input("\nPress ENTER to close this window…")
+            sys.exit(1)
+    except:
+        _log(f"❌  Failed to fetch farm status: {farm_status.json()}")
+        _log("❌  Please check that your project is selected and try again.")
         input("\nPress ENTER to close this window…")
         sys.exit(1)
+
 
 
     # ─────── local paths / settings ──────────────────────────
@@ -151,28 +159,40 @@ def main() -> None:
         )
 
         required_storage = 0
-        file_list: list[str] = []
-
-        for idx, (src, _) in enumerate(fmap.items(), 1):
-            # first item is always the main .blend
-            if src == Path(blend_path):
-                main_blend_s3 = str(src).replace("\\", "/")
-            required_storage += os.path.getsize(src)
-            _log(f"    [{idx}/{len(fmap) - 1}] adding {src}")
-            file_list.append(str(src).replace("\\", "/"))
+        file_list = [str(f).replace("\\", "/") for f in fmap.keys()]
+        main_blend_s3 = file_list.pop(0).replace("\\", "/")
 
         # Auto-detect base folder unless overridden
         if automatic_project_path:
-            project_path_base = os.path.commonpath(
-                [os.path.abspath(os.path.join(project_path, f)) for f in file_list]
-            ).replace("\\", "/")
+            all_paths = []
+            different_disk = []
+            same_disk = True
+            for idx, f in enumerate(file_list):
+                path = os.path.abspath(os.path.join(project_path, f))
+
+                if os.path.splitdrive(main_blend_s3)[0] == os.path.splitdrive(path)[0]:
+                    _log(f"✅  [{idx}/{len(file_list) - 1}] adding {shorten_path(path)}")
+                    all_paths.append(os.path.abspath(os.path.join(project_path, f)))
+
+                else:
+                    same_disk = False
+                    _log(f"❌  [{idx}/{len(file_list) - 1}] File is on a different disk {shorten_path(path)}")
+                    different_disk.append(os.path.abspath(os.path.join(project_path, f)))
+
+
+            common_path = os.path.commonpath(all_paths).replace("\\", "/")
+            if same_disk:
+                _log("✅  All files are on the same disk")
+            else:
+                _log("❌  Files are on different disks")
+
         else:
-            project_path_base = custom_project_path
+            common_path = custom_project_path
 
         packed_file_list = [
-            f.replace(project_path_base + "/", "") for f in file_list
+            f.replace(common_path + "/", "") for f in file_list
         ]
-        main_blend_s3 = main_blend_s3.replace(project_path_base + "/", "")
+        main_blend_s3 = main_blend_s3.replace(common_path + "/", "")
 
         with filelist.open("w", encoding="utf-8") as fp:
             fp.writelines(f"{f}\n" for f in packed_file_list)
@@ -194,6 +214,10 @@ def main() -> None:
             timeout=30,
         )
         s3_response.raise_for_status()
+        if s3_response.status_code != 200:
+            _log(f"❌  Failed to obtain bucket credentials: {s3_response.json()}")
+            input("\nPress ENTER to close this window…")
+            sys.exit(1)
         s3info = s3_response.json()["items"][0]
         bucket = s3info["bucket_name"]
     except (IndexError, requests.RequestException) as exc:
@@ -215,10 +239,11 @@ def main() -> None:
             run_rclone(base_cmd, "copy", str(zip_file), f":s3:{bucket}/", [])
         else:
             # 1) Copy project files
+            _log(f"\n📤  Uploading dependencies…")
             run_rclone(
                 base_cmd,
                 "copy",
-                str(project_path_base),
+                str(common_path),
                 f":s3:{bucket}/{project_name}/",
                 ["--files-from", str(filelist), "--checksum"],
             )
@@ -227,6 +252,7 @@ def main() -> None:
             with filelist.open("a", encoding="utf-8") as fp:
                 fp.write(main_blend_s3.replace("\\", "/"))
 
+            _log(f"\n📤  Uploading dependencies manifest…")
             run_rclone(
                 base_cmd,
                 "move",
@@ -236,6 +262,7 @@ def main() -> None:
             )
 
             # 3) Move the temp blend into place (fast, server-side)
+            _log(f"\n📤  Uploading main blend…")
             move_to_path = f"{project_name}/{main_blend_s3}".lstrip("/")
             run_rclone(
                 base_cmd,
@@ -246,15 +273,17 @@ def main() -> None:
             )
 
         # Always move packed add-ons
-        run_rclone(
-            base_cmd,
-            "moveto",
-            data["packed_addons_path"],
-            f":s3:{bucket}/{job_id}/addons/",
-            ["--checksum", "--ignore-times"],
-        )
+        if data["packed_addons"]:
+            _log(f"\n📤  Uploading packed add-ons…")
+            run_rclone(
+                base_cmd,
+                "moveto",
+                data["packed_addons_path"],
+                f":s3:{bucket}/{job_id}/addons/",
+                ["--checksum", "--ignore-times"],
+            )
     except RuntimeError as exc:
-        _log(f"❌  rclone failed: {exc}")
+        _log(f"\n❌  rclone failed: {exc}")
         sys.exit(1)
     finally:
         # Clean up local temp artefacts if possible
@@ -265,7 +294,7 @@ def main() -> None:
                 pass
 
     # ─────── register job ────────────────────────────────────
-    _log("🗄️   Submitting job to Superluminal…")
+    _log("\n🗄️   Submitting job to Superluminal…")
     payload: Dict[str, object] = {
         "job_data": {
             "id": job_id,
@@ -304,7 +333,7 @@ def main() -> None:
         )
         post_resp.raise_for_status()
     except requests.RequestException as exc:
-        _log(f"❌  Job submission failed: {exc}")
+        _log(f"\n❌  Job submission failed: {exc}")
         input("\nPress ENTER to close this window…")
         sys.exit(1)
 

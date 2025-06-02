@@ -11,7 +11,7 @@ from .addon_packer import bundle_addons
 import bpy
 import addon_utils
 from .constants import POCKETBASE_URL
-import requests
+import os
 from .version_utils import enum_from_bpy_version
         
 
@@ -77,7 +77,8 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "temp_blend_path": str(Path(tempfile.gettempdir()) / bpy.path.basename(bpy.context.blend_data.filepath)),
             "use_project_upload": not bool(props.upload_project_as_zip),
             "automatic_project_path": bool(props.automatic_project_path),
-            "custom_project_path": props.custom_project_path,
+            "custom_project_path": os.path.abspath(bpy.path.abspath(props.custom_project_path)).replace("\\", "/"),
+
             "job_name": (
                 Path(bpy.data.filepath).stem
                 if props.use_file_name

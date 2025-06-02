@@ -33,6 +33,18 @@ def logger(msg: str) -> None:
     (and flush it immediately)."""
     print(msg, flush=True)
 
+def shorten_path(path: str) -> str:
+    """Return a version of `path` no longer than 64 characters,
+    inserting “...” in the middle if it’s longer."""
+    max_len = 64
+    dots = "..."
+    if len(path) <= max_len:
+        return path
+
+    keep = max_len - len(dots)
+    left = keep // 2
+    right = keep - left
+    return f"{path[:left]}{dots}{path[-right:]}"
 
 def open_folder(path: str) -> None:
     try:
