@@ -1,12 +1,14 @@
 """
 Blender operators that communicate with PocketBase,
-using pocketbase_auth for automatic token management.
+using the simplified pocketbase_auth for token handling.
 
 Changes in this revision
 ------------------------
-* Before every farm “job_list” call we first hit
-  `/api/farm_status/<org_id>` to verify the render queue is up.
-  If that check fails we clear the jobs enum and exit early.
+• All automatic refresh logic removed – we rely on the backend to return
+  401 when the JWT is no longer valid.
+• Calls to `authorized_request()` no longer pass the old `refresh_first`
+  parameter.
+• Error-handling text unchanged; behaviour is simply clearer.
 """
 
 from __future__ import annotations
@@ -51,7 +53,6 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
                 prefs,
                 "GET",
                 f"{POCKETBASE_URL}/api/collections/projects/records",
-                refresh_first=True,
             )
             fetched_projects = [
                 (
@@ -171,7 +172,6 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
                 prefs,
                 "GET",
                 f"{POCKETBASE_URL}/api/collections/projects/records",
-                refresh_first=True,
             )
         except NotAuthenticated as exc:
             self.report({"ERROR"}, str(exc))
@@ -224,7 +224,6 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
                 "GET",
                 f"{POCKETBASE_URL}/api/collections/projects/records",
                 params={"filter": f"(id='{project_id}')"},
-                refresh_first=True,
             )
             proj   = proj_resp.json()["items"][0]
             org_id = proj["organization_id"]
