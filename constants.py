@@ -1,6 +1,6 @@
 
-# POCKETBASE_URL = "https://api.superlumin.al"
-POCKETBASE_URL = "http://localhost:8080"
+POCKETBASE_URL = "https://api.superlumin.al"
+# POCKETBASE_URL = "http://localhost:8080"
 
 DEFAULT_ADDONS = {
     "io_anim_bvh",
