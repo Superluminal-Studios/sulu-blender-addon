@@ -71,7 +71,9 @@ def main() -> None:
                         print("\nhttps://superlumin.al/blender-addon")
                         _log("\nInstructions: \n    📥 Download the latest addon zip from the link above.\n    🔧 Install the latest version of the addon in Blender.\n    ❌ Close this window.\n    🔄 Restart Blender.")
                         input("\nPress ENTER to close this window…")
-                        sys.exit(1)
+
+    except SystemExit:
+        sys.exit(0)
 
     except:
         _log("❌ Failed to check for addon updates, continuing with job submission…")
@@ -338,6 +340,7 @@ def main() -> None:
             "ignore_errors": data["ignore_errors"],
             "use_bserver": data["use_bserver"],
             "use_async_upload": data["use_async_upload"],
+            "defer_status": data["use_async_upload"],
             "tasks": list(range(data["start_frame"], data["end_frame"] + 1, data["frame_stepping_size"]))
         }
     }
