@@ -22,7 +22,6 @@ from .transfers.download import download_operator
 from . import panels
 from . import operators
 
-
 def get_prefs():
     addon_name = __name__
     prefs_container = bpy.context.preferences.addons.get(addon_name)
@@ -38,7 +37,6 @@ def register():
     download_operator.register()
     panels.register()
     operators.register()
-
 
 def unregister():
     operators.unregister()

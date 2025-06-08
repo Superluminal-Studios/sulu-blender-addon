@@ -1,6 +1,6 @@
 from ..constants import POCKETBASE_URL
 from ..pocketbase_auth import authorized_request
-
+from .prefs import get_prefs
 def fetch_projects():
     """Return all visible projects."""
     resp = authorized_request(
@@ -22,6 +22,9 @@ def get_render_queue_key(org_id: str) -> str:
 
 def fetch_jobs(org_id: str, user_key: str, project_id: str):
     """Verify farm availability and return (display_jobs, raw_jobs_json) for *project_id*."""
+    prefs = get_prefs()
+    prefs.jobs.clear()
+
     # (a) farm status
     authorized_request(
         "GET",
@@ -36,5 +39,13 @@ def fetch_jobs(org_id: str, user_key: str, project_id: str):
         headers={"Auth-Token": user_key},
     )
     jobs = jobs_resp.json()["body"]
+
+    for job_id, job in jobs.items():
+        item = prefs.jobs.add()
+        item.id              = job_id
+        item.name            = job["name"]
+        item.submission_time = "12:00"
+        item.status          = job["status"]
+
     return jobs
 

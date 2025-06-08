@@ -22,6 +22,7 @@ from .preferences import (
 from .utils.version_utils import get_blender_version_string
 from .constants import DEFAULT_ADDONS
 from .storage import Storage
+from .preferences import refresh_jobs_collection
 # ╭──────────────────  Global runtime list  ───────────────────╮
 addons_to_send: list[str] = []          # filled from scene property
 
@@ -110,6 +111,8 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
 
         props  = scene.superluminal_settings
         prefs  = context.preferences.addons[__package__].preferences
+
+        refresh_jobs_collection(prefs)
 
         Storage.load()
 
@@ -222,7 +225,15 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             ir = col.row(align=True)
             ip = ir.row(align=True)
             ip.enabled = logged_in and jobs_ok
-            ip.prop(prefs, "job_id", text="Job")
+            # ip.prop(prefs, "job_id", text="Job")
+
+            ip.template_list(
+                "SUPERLUMINAL_UL_job_items",
+                "",                         # list_ID – leave empty
+                prefs, "jobs",              # CollectionProperty
+                prefs, "active_job_index",  # IntProperty that stores the active row
+                rows=3                      # tweak as you like
+            )
             ir.operator("superluminal.fetch_project_jobs", text="", icon="FILE_REFRESH")
             col.separator()
             col.prop(props, "download_path")

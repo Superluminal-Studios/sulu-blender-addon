@@ -1,8 +1,7 @@
 import bpy
 import json
 from .storage import Storage
-
-
+from .utils.date_utils import format_submitted
 def get_project_items(self, context):
     # get projects from the stored json in storage
     projects = Storage.data["projects"]
@@ -25,6 +24,33 @@ def get_job_items(self, context):
     ]
     
     return jobs
+
+def refresh_jobs_collection(prefs):
+    """Sync prefs.jobs ↔ Storage.data['jobs']."""
+    Storage.load()
+    prefs.jobs.clear()
+    for job_id, job in Storage.data["jobs"].items():
+        item = prefs.jobs.add()
+        item.id              = job_id
+        item.name            = job["name"]
+        item.status          = job.get("status", "unknown")
+        item.submission_time = format_submitted(job.get("submit_time", 0))
+
+class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
+    """Shows name • status • submission time in three columns"""
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.label(text=item.name, icon='RENDER_RESULT')
+        row.label(text=item.status)
+        row.label(text=item.submission_time)
+
+
+class SuperluminalJobItem(bpy.types.PropertyGroup):
+    id:              bpy.props.StringProperty()      # PocketBase ID
+    name:            bpy.props.StringProperty()
+    submission_time: bpy.props.StringProperty()      # ISO string or localised
+    status:          bpy.props.StringProperty()      # queued / running / done …
+
 
 # -------------------------------------------------------------------
 #  Preferences
@@ -50,6 +76,9 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
         description="Select the job to download the rendered frames from.",
     )
 
+    jobs:              bpy.props.CollectionProperty(type=SuperluminalJobItem)
+    active_job_index:  bpy.props.IntProperty()   # keeps selection in UIList
+
 
     # ----------------------------------------------------------------
     #  UI
@@ -68,12 +97,18 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
             layout.operator("superluminal.login", text="Log in")
 
 
-# -------------------------------------------------------------------
-#  Registration helpers
-# -------------------------------------------------------------------
-def register():
-    bpy.utils.register_class(SuperluminalAddonPreferences)
+classes = (
+    SuperluminalJobItem,          # 1  ← must be first
+    SUPERLUMINAL_UL_job_items,    # 2  (order doesn’t matter for UIList)
+    SuperluminalAddonPreferences, # 3  ← can only be registered after 1
+)
 
+def register():
+    from bpy.utils import register_class
+    for cls in classes:
+        register_class(cls)
 
 def unregister():
-    bpy.utils.unregister_class(SuperluminalAddonPreferences)
+    from bpy.utils import unregister_class
+    for cls in reversed(classes):
+        unregister_class(cls)
