@@ -14,7 +14,7 @@ import tempfile
 import time
 import types
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 import webbrowser
 
 # ─── third-party ────────────────────────────────────────────────
@@ -35,22 +35,24 @@ pkg = types.ModuleType(pkg_name)
 pkg.__path__ = [str(addon_dir)]
 sys.modules[pkg_name] = pkg
 
-shorten_path = importlib.import_module(f"{pkg_name}.worker_utils").shorten_path
-bat_utils = importlib.import_module(f"{pkg_name}.bat_utils")
+shorten_path = importlib.import_module(f"{pkg_name}.utils.worker_utils").shorten_path
+bat_utils = importlib.import_module(f"{pkg_name}.utils.bat_utils")
 pack_blend = bat_utils.pack_blend
-rclone = importlib.import_module(f"{pkg_name}.rclone")
+rclone = importlib.import_module(f"{pkg_name}.transfers.rclone")
 run_rclone = rclone.run_rclone
 rclone_url = rclone.get_rclone_url
 ensure_rclone = rclone.ensure_rclone
 
 # ─── internal utils ────────────────────────────────────────────
 
-worker_utils = importlib.import_module(f"{pkg_name}.worker_utils")
+worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
 _log = worker_utils.logger
 _build_base = worker_utils._build_base
 is_blend_saved = worker_utils.is_blend_saved
 requests_retry_session = worker_utils.requests_retry_session
 CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
+
+proj = data["project"]
 
 
 # ╭───────────────────────  main  ───────────────────────────────╮
@@ -85,27 +87,6 @@ def main() -> None:
         
     except Exception as e:
         _log(f"❌  Failed to download rclone: {e}")
-        input("\nPress ENTER to close this window…")
-        sys.exit(1)
-
-    # ─────── fetch project meta ──────────────────────────────
-    try:
-        proj_resp = session.get(
-            f"{data['pocketbase_url']}/api/collections/projects/records",
-            headers=headers,
-            params={"filter": f"(id='{data['selected_project_id']}')"},
-            timeout=30,
-        )
-        if proj_resp.status_code != 200:
-            _log(f"❌  Failed to fetch project record: {proj_resp.json()}")
-            _log("⚠️  Check that your project is selected, and that you are logged in. You can also try logging out and back in again.")
-            input("\nPress ENTER to close this window…")
-            sys.exit(1)
-
-        proj = proj_resp.json()["items"][0]
-
-    except requests.RequestException as exc:
-        _log(f"❌  Could not retrieve project record: {exc}")
         input("\nPress ENTER to close this window…")
         sys.exit(1)
 
@@ -223,7 +204,7 @@ def main() -> None:
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
             headers=headers,
             params={
-                "filter": f"(project_id='{data['selected_project_id']}' && bucket_name~'render-')"
+                "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')"
             },
             timeout=30,
         )
@@ -318,7 +299,7 @@ def main() -> None:
     payload: Dict[str, object] = {
         "job_data": {
             "id": job_id,
-            "project_id": data["selected_project_id"],
+            "project_id": data["project"]["id"],
             "packed_addons": data["packed_addons"],
             "organization_id": org_id,
             "main_file": Path(blend_path).name if not use_project else main_blend_s3,

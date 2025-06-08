@@ -1,6 +1,6 @@
 from pathlib import Path
-from .blender_asset_tracer.pack import Packer
-from .blender_asset_tracer.pack import zipped
+from ..blender_asset_tracer.pack import Packer
+from ..blender_asset_tracer.pack import zipped
 
 def create_packer(bpath, ppath, target):
     packer = Packer(

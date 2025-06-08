@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 
+import bpy
 import json
 import sys
 import tempfile
 from pathlib import Path
-import bpy  
-from .worker_utils import launch_in_terminal
-import subprocess
-from .constants import POCKETBASE_URL
-
+from ...utils.worker_utils import launch_in_terminal
+from ...constants import POCKETBASE_URL
+from ...utils.prefs import get_prefs, get_addon_dir
+from ...storage import Storage
 class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
     """Download the rendered frames from the selected job."""
     
@@ -20,16 +20,15 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
     def execute(self, context):  
         scene = context.scene
         props = scene.superluminal_settings
-        prefs = context.preferences.addons[__package__].preferences
-        
+        prefs = get_prefs()
         handoff = {
-            "addon_dir": str(Path(__file__).resolve().parent),
+            "addon_dir": str(get_addon_dir()),
             "download_path": props.download_path,
-            "selected_project_id": prefs.project_list,
+            "project": [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0],
             "job_id": self.job_id,
             "job_name": self.job_name,
             "pocketbase_url": POCKETBASE_URL,
-            "user_token": prefs.user_token,
+            "user_token": Storage.data["user_token"],
         }
 
         tmp_json = Path(tempfile.gettempdir()) / f"superluminal_download_{self.job_id}.json"

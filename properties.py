@@ -9,7 +9,7 @@ from __future__ import annotations
 import bpy
 
 from .preferences import get_job_items
-from .version_utils import get_blender_version_string
+from .utils.version_utils import get_blender_version_string
 # -------------------------------------------------------------------
 #  Enum items
 # -------------------------------------------------------------------
@@ -161,11 +161,6 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     # ────────────────────────────────────────────────────────────────
     #  Download stuff
     # ────────────────────────────────────────────────────────────────
-    job_id: bpy.props.EnumProperty(
-        name="Job",
-        items=get_job_items,
-        description="Select the job to download the rendered frames from.",
-    )
 
     download_path: bpy.props.StringProperty(
         name="Download Path",

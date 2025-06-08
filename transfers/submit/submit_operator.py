@@ -1,19 +1,20 @@
 from __future__ import annotations
 
+import bpy
+import addon_utils
 import json
 import sys
 import tempfile
 import uuid
 from pathlib import Path
-from .check_file_outputs import gather_render_outputs
-from .worker_utils import launch_in_terminal
+from ...utils.check_file_outputs import gather_render_outputs
+from ...utils.worker_utils import launch_in_terminal
 from .addon_packer import bundle_addons
-import bpy
-import addon_utils
-from .constants import POCKETBASE_URL
+from ...constants import POCKETBASE_URL
 import os
-from .version_utils import enum_from_bpy_version
-        
+from ...utils.version_utils import enum_from_bpy_version
+from ...storage import Storage
+from ...utils.prefs import get_prefs, get_addon_dir
 
 def addon_version(addon_name: str):
     addon_utils.modules(refresh=False)
@@ -32,8 +33,9 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
     def execute(self, context):  
         scene = context.scene
         props = scene.superluminal_settings
-        prefs = context.preferences.addons[__package__].preferences
-
+        prefs = get_prefs()
+        addon_dir = get_addon_dir()
+        print(addon_dir)
         if not bpy.data.filepath:
             self.report({"ERROR"}, "Please save your .blend file first.")
             return {"CANCELLED"}
@@ -68,7 +70,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
 
         job_id = uuid.uuid4()
         handoff = {
-            "addon_dir": str(Path(__file__).resolve().parent),
+            "addon_dir": str(addon_dir),
             "addon_version": addon_version("Superluminal Render Farm"),
             "packed_addons_path": tempfile.mkdtemp(prefix="blender_addons_"),
             "packed_addons": [],
@@ -100,8 +102,8 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "blender_version": blender_version.lower(),
             "ignore_errors": props.ignore_errors,
             "pocketbase_url": POCKETBASE_URL,
-            "user_token": prefs.user_token,
-            "selected_project_id": prefs.project_list,
+            "user_token": Storage.data["user_token"],
+            "project": [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0],
             "use_bserver": props.use_bserver,
             "use_async_upload": props.use_async_upload,
         }
@@ -110,14 +112,11 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
 
         worker = Path(__file__).with_name("submit_worker.py")
 
-        # try:
         handoff["packed_addons"] = bundle_addons(handoff["packed_addons_path"])
-        # except Exception as e:
-            # self.report({"ERROR"}, f"Failed to pack addons: {e}")
-
-
         tmp_json = Path(tempfile.gettempdir()) / f"superluminal_{job_id}.json"
         tmp_json.write_text(json.dumps(handoff), encoding="utf-8")
+
+
         try:
             launch_in_terminal([sys.executable, "-u", str(worker), str(tmp_json)])
         except Exception as e:

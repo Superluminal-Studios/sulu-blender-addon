@@ -4,13 +4,11 @@ import tempfile
 import uuid
 import zipfile
 import os
-from pathlib import Path
 import subprocess
-from typing import List
 from urllib3.util import Retry
 from requests.adapters import HTTPAdapter
 from requests import Session
-from tqdm import tqdm
+from ..tqdm import tqdm
 import sys
 import json
 

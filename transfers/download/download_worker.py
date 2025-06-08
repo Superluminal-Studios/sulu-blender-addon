@@ -37,11 +37,11 @@ pkg.__path__ = [str(addon_dir)]
 sys.modules[pkg_name] = pkg
 
 # Import rclone helpers from the shipped add-on
-rclone = importlib.import_module(f"{pkg_name}.rclone")
+rclone = importlib.import_module(f"{pkg_name}.transfers.rclone")
 run_rclone = rclone.run_rclone
 ensure_rclone = rclone.ensure_rclone
 
-worker_utils = importlib.import_module(f"{pkg_name}.worker_utils")
+worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
 
 # ─── internal utils ────────────────────────────────────────────
 _log = worker_utils.logger
@@ -57,21 +57,6 @@ def main() -> None:
     session = requests_retry_session()
     headers = {"Authorization": data["user_token"]}
 
-    # ─────── fetch project meta ──────────────────────────────
-    try:
-        proj_resp = session.get(
-            f"{data['pocketbase_url']}/api/collections/projects/records",
-            headers=headers,
-            params={"filter": f"(id='{data['selected_project_id']}')"},
-            timeout=30,
-        )
-        proj_resp.raise_for_status()
-        proj = proj_resp.json()["items"][0]
-    except requests.RequestException as exc:
-        _log(f"❌  Could not retrieve project record: {exc}")
-        sys.exit(1)
-
-    project_name = proj["name"]
     job_id: str = data["job_id"]
     job_name: str = data["job_name"]
     download_path: str = data["download_path"]
@@ -83,7 +68,7 @@ def main() -> None:
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
             headers=headers,
             params={
-                "filter": f"(project_id='{data['selected_project_id']}' && bucket_name~'render-')"
+                "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')"
             },
             timeout=30,
         )

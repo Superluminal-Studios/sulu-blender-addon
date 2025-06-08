@@ -17,26 +17,13 @@ from bpy.types import UILayout
 
 # ─── Local helpers -------------------------------------------
 from .preferences import (
-    g_project_items,
-    g_job_items,
     get_job_items,
 )
-from .version_utils import get_blender_version_string
+from .utils.version_utils import get_blender_version_string
 from .constants import DEFAULT_ADDONS
-
+from .storage import Storage
 # ╭──────────────────  Global runtime list  ───────────────────╮
 addons_to_send: list[str] = []          # filled from scene property
-
-
-# ------------------------------------------------------------------
-#  Convenience helpers
-# ------------------------------------------------------------------
-def _projects_available() -> bool:
-    return any(item[0] not in {"", "NONE"} for item in g_project_items)
-
-
-def _jobs_available() -> bool:
-    return any(item[0] not in {"", "NONE"} for item in g_job_items)
 
 
 def _read_addons_from_scene(scene: bpy.types.Scene) -> None:
@@ -124,15 +111,17 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         props  = scene.superluminal_settings
         prefs  = context.preferences.addons[__package__].preferences
 
-        logged_in   = bool(prefs.user_token)
-        projects_ok = _projects_available()
-        jobs_ok     = _jobs_available()
+        Storage.load()
+
+        logged_in   = bool(Storage.data["user_token"])
+        projects_ok = len(Storage.data["projects"]) > 0
+        jobs_ok     = len(Storage.data["jobs"]) > 0
 
         # --------------------------------------------------  Project selector
         row = layout.row(align=True)
         pr  = row.row(align=True)
         pr.enabled = logged_in and projects_ok
-        pr.prop(prefs, "project_list", text="Project")
+        pr.prop(prefs, "project_id", text="Project")
         row.operator("superluminal.fetch_projects", text="", icon="FILE_REFRESH")
 
         if not logged_in:
@@ -233,17 +222,17 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             ir = col.row(align=True)
             ip = ir.row(align=True)
             ip.enabled = logged_in and jobs_ok
-            ip.prop(props, "job_id", text="Job")
+            ip.prop(prefs, "job_id", text="Job")
             ir.operator("superluminal.fetch_project_jobs", text="", icon="FILE_REFRESH")
             col.separator()
             col.prop(props, "download_path")
             col.separator()
             dr = col.row()
             dop = dr.operator("superluminal.download_job", text="Download Job Output", icon="SORT_ASC")
-            dop.job_id = props.job_id
+            dop.job_id = prefs.job_id
             job_name = ""
             for item in (get_job_items(self, context) or []):
-                if isinstance(item, (list, tuple)) and len(item) >= 2 and item[0] == props.job_id:
+                if isinstance(item, (list, tuple)) and len(item) >= 2 and item[0] == prefs.job_id:
                     job_name = item[1]
                     break
             dop.job_name = job_name

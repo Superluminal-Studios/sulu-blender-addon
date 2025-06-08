@@ -1,6 +1,6 @@
 import bpy, os, zipfile, addon_utils
 from pathlib import Path
-from .constants import DEFAULT_ADDONS
+from ...constants import DEFAULT_ADDONS
 
 def bundle_addons(zip_path, addons_to_send=None):
     """
@@ -11,7 +11,7 @@ def bundle_addons(zip_path, addons_to_send=None):
     """
     # Fall back to the runtime list from the UI
     if addons_to_send is None:
-        from .panels import addons_to_send as _ui_list  # noqa: F401  (relative import)
+        from ...panels import addons_to_send as _ui_list  # noqa: F401  (relative import)
         addons_to_send = list(_ui_list)
 
     wanted = {name.strip() for name in addons_to_send if name.strip()}

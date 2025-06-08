@@ -9,23 +9,8 @@ PocketBase JWT helpers for the Superluminal Blender add-on
 """
 
 from __future__ import annotations
-
 import requests
-
-from .constants import POCKETBASE_URL
-from .preferences import g_project_items, g_job_items
 from .storage import Storage
-
-# ------------------------------------------------------------------
-#  Internal utilities
-# ------------------------------------------------------------------
-def _clear_session(prefs) -> None:
-    """Wipe local auth + cached project/job lists."""
-    prefs.user_token = ""
-    g_project_items.clear()
-    g_job_items.clear()
-
-
 # ------------------------------------------------------------------
 #  Public API
 # ------------------------------------------------------------------
@@ -34,7 +19,6 @@ class NotAuthenticated(RuntimeError):
 
 
 def authorized_request(
-    prefs,
     method: str,
     url: str,
     **kwargs,
@@ -48,22 +32,22 @@ def authorized_request(
     4. If the server replies 401 → clears the session and raises
        NotAuthenticated.
     """
-    if not prefs.user_token:
+    if not Storage.data["user_token"]:
         raise NotAuthenticated("Not logged in")
 
     headers = (kwargs.pop("headers", {}) or {}).copy()
-    headers["Authorization"] = prefs.user_token
+    headers["Authorization"] = Storage.data["user_token"]
 
     try:
         res = Storage.session.request(
             method,
             url,
             headers=headers,
-            timeout=Storage.timeout
+            timeout=Storage.timeout,
             **kwargs,
         )
         if res.status_code == 401:
-            _clear_session(prefs)
+            Storage.clear()
             raise NotAuthenticated("Session expired - please log in again")
 
         res.raise_for_status()

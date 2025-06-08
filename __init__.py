@@ -14,12 +14,20 @@ import bpy
 # -------------------------------------------------------------------
 #  Internal Imports
 # -------------------------------------------------------------------
+from . import constants
 from . import preferences
 from . import properties
-from . import submit_operator
-from . import download_operator
+from .transfers.submit import submit_operator
+from .transfers.download import download_operator
 from . import panels
 from . import operators
+
+
+def get_prefs():
+    addon_name = __name__
+    prefs_container = bpy.context.preferences.addons.get(addon_name)
+    return prefs_container and prefs_container.preferences
+
 # -------------------------------------------------------------------
 #  Registration
 # -------------------------------------------------------------------
