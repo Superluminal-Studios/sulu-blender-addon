@@ -14,6 +14,8 @@ import bpy
 # -------------------------------------------------------------------
 #  Internal Imports
 # -------------------------------------------------------------------
+from . import icons
+icons.load_icons()
 from . import constants
 from . import preferences
 from . import properties
@@ -21,7 +23,6 @@ from .transfers.submit import submit_operator
 from .transfers.download import download_operator
 from . import panels
 from . import operators
-
 def get_prefs():
     addon_name = __name__
     prefs_container = bpy.context.preferences.addons.get(addon_name)
@@ -45,6 +46,7 @@ def unregister():
     download_operator.unregister()
     properties.unregister()
     preferences.unregister()
+    icons.unload_icons()
 
 
 if __name__ == "__main__":

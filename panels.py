@@ -23,6 +23,7 @@ from .utils.version_utils import get_blender_version_string
 from .constants import DEFAULT_ADDONS
 from .storage import Storage
 from .preferences import refresh_jobs_collection
+from .icons import preview_collections
 # ╭──────────────────  Global runtime list  ───────────────────╮
 addons_to_send: list[str] = []          # filled from scene property
 
@@ -99,6 +100,10 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
                  text="", emboss=False)
         row.label(text=text)
         return expanded
+    
+    def draw_header(self, context):
+        layout = self.layout
+        layout.label(text="", icon_value=preview_collections["main"].get("SULU").icon_id)
 
     # ── draw ─────────────────────────────────────────────────
     def draw(self, context):
@@ -225,7 +230,12 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             ir = col.row(align=True)
             ip = ir.row(align=True)
             ip.enabled = logged_in and jobs_ok
+
+
             # ip.prop(prefs, "job_id", text="Job")
+
+            # column visibility
+            layout.menu("SUPERLUMINAL_MT_job_columns", icon='DOWNARROW_HLT', text="")
 
             ip.template_list(
                 "SUPERLUMINAL_UL_job_items",
