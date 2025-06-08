@@ -14,12 +14,7 @@ import requests
 
 from .constants import POCKETBASE_URL
 from .preferences import g_project_items, g_job_items
-
-# ------------------------------------------------------------------
-#  Configuration
-# ------------------------------------------------------------------
-_TIMEOUT = 10  # seconds for every HTTP request
-
+from .storage import Storage
 
 # ------------------------------------------------------------------
 #  Internal utilities
@@ -60,11 +55,11 @@ def authorized_request(
     headers["Authorization"] = prefs.user_token
 
     try:
-        res = requests.request(
+        res = Storage.session.request(
             method,
             url,
             headers=headers,
-            timeout=_TIMEOUT,
+            timeout=Storage.timeout
             **kwargs,
         )
         if res.status_code == 401:

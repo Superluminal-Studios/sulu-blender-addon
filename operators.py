@@ -20,6 +20,8 @@ import bpy
 from .constants import POCKETBASE_URL
 from .preferences import g_project_items, g_job_items
 from .pocketbase_auth import authorized_request, NotAuthenticated
+from .storage import Storage
+
 
 # -------------------------------------------------------------------
 #  Authentication
@@ -34,9 +36,8 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
         url   = f"{POCKETBASE_URL}/api/collections/users/auth-with-password"
         data  = {"identity": prefs.username, "password": prefs.password}
 
-        import requests
         try:
-            r = requests.post(url, json=data, timeout=10)
+            r = Storage.session.post(url, json=data, timeout=Storage.timeout)
             r.raise_for_status()
             token = r.json().get("token")
             if not token:
