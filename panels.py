@@ -355,50 +355,48 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
 
 
 
-            row = download_box.row(align=True)
+            job_info_row = download_box.row(align=True)
 
             job_id = ""
+            job_name = ""
             if prefs.active_job_index < len(Storage.data["jobs"]):
                 job_id = list(Storage.data["jobs"].keys())[prefs.active_job_index]
                 job_data = Storage.data["jobs"][job_id]
-                row.label(text=str(job_data["name"]), icon="FILE")
+                job_name = job_data["name"]
 
-            if job_id:
-                web_button_row = download_box.row()
-                browser_button = web_button_row.operator(
-                    "superluminal.open_browser",
-                    text="Open Job in Browser",
-                    icon="INTERNET"
-                )   
+            browser_button = job_info_row.operator(
+                "superluminal.open_browser",
+                text="",
+                icon="INTERNET"
+            )   
+            job_info_row.label(text=str(job_name), icon="RESTRICT_INSTANCED_OFF")
 
-                browser_button.job_id = job_id
-                browser_button.project_id = prefs.project_id
 
+            browser_button.job_id = job_id
+            browser_button.project_id = prefs.project_id
+
+        
             
-                
-                download_box.prop(props, "download_path")
+            download_box.prop(props, "download_path")
 
-                download_button_row = download_box.row()
-                download_operator = download_button_row.operator(
-                    "superluminal.download_job",
-                    text="Download Job Output",
-                    icon="SORT_ASC"
-                )
+            download_button_row = download_box.row()
+            download_operator = download_button_row.operator(
+                "superluminal.download_job",
+                text="Download Job Output",
+                icon="SORT_ASC"
+            )
 
-                download_operator.job_id = job_id
-                download_operator.job_name = job_data["name"]
+            download_operator.job_id = job_id
+            download_operator.job_name = job_data["name"]
 
-            download_button_row.enabled = (
+            enable_job_actions = (
                 logged_in and jobs_ok and bool(job_data["name"]) and job_id != ""
             )
 
+            download_button_row.enabled = enable_job_actions
+            job_info_row.enabled = enable_job_actions
 
 
-
-
-
-
-            # ---- spacing before warnings ----
             if not logged_in:
                 download_box.separator()
                 download_box.label(text="Log in first.", icon='ERROR')
