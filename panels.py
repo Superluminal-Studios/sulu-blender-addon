@@ -362,7 +362,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             if prefs.active_job_index < len(Storage.data["jobs"]):
                 job_id = list(Storage.data["jobs"].keys())[prefs.active_job_index]
                 job_data = Storage.data["jobs"][job_id]
-                job_name = job_data["name"]
+                job_name = job_data.get("name", "")
 
             browser_button = job_info_row.operator(
                 "superluminal.open_browser",
@@ -376,7 +376,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             browser_button.project_id = prefs.project_id
 
         
-            
             download_box.prop(props, "download_path")
 
             download_button_row = download_box.row()
@@ -387,10 +386,10 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             )
 
             download_operator.job_id = job_id
-            download_operator.job_name = job_data["name"]
+            download_operator.job_name = job_name
 
             enable_job_actions = (
-                logged_in and jobs_ok and bool(job_data["name"]) and job_id != ""
+                logged_in and jobs_ok and bool(job_name) and job_id != ""
             )
 
             download_button_row.enabled = enable_job_actions
