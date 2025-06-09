@@ -363,29 +363,30 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
                 job_data = Storage.data["jobs"][job_id]
                 row.label(text=str(job_data["name"]), icon="FILE")
 
-            web_button_row = download_box.row()
-            browser_button = web_button_row.operator(
-                "superluminal.open_browser",
-                text="Open Job in Browser",
-                icon="INTERNET"
-            )   
+            if job_id:
+                web_button_row = download_box.row()
+                browser_button = web_button_row.operator(
+                    "superluminal.open_browser",
+                    text="Open Job in Browser",
+                    icon="INTERNET"
+                )   
 
-            browser_button.job_id = job_id
-            browser_button.project_id = prefs.project_id
+                browser_button.job_id = job_id
+                browser_button.project_id = prefs.project_id
 
-        
             
-            download_box.prop(props, "download_path")
+                
+                download_box.prop(props, "download_path")
 
-            download_button_row = download_box.row()
-            download_operator = download_button_row.operator(
-                "superluminal.download_job",
-                text="Download Job Output",
-                icon="SORT_ASC"
-            )
+                download_button_row = download_box.row()
+                download_operator = download_button_row.operator(
+                    "superluminal.download_job",
+                    text="Download Job Output",
+                    icon="SORT_ASC"
+                )
 
-            download_operator.job_id = job_id
-            download_operator.job_name = job_data["name"]
+                download_operator.job_id = job_id
+                download_operator.job_name = job_data["name"]
 
             download_button_row.enabled = (
                 logged_in and jobs_ok and bool(job_data["name"]) and job_id != ""
