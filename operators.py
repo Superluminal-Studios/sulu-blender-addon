@@ -9,7 +9,7 @@ from .storage import Storage
 from .utils.request_utils import fetch_projects, get_render_queue_key, fetch_jobs
 from .utils.logging import report_exception
 from operator import setitem
-
+import webbrowser
 # -----------------------------------------------------------------------------
 #  Authentication
 # -----------------------------------------------------------------------------
@@ -148,6 +148,20 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
 
         return {"FINISHED"}
 
+class SUPERLUMINAL_OT_OpenBrowser(bpy.types.Operator):
+    """Open the job in the browser."""
+
+    bl_idname = "superluminal.open_browser"
+    bl_label = "Open Job in Browser"
+    job_id: bpy.props.StringProperty(name="Job ID")
+    project_id: bpy.props.StringProperty(name="Project ID")
+
+    def execute(self, context):
+        if not self.job_id:
+            return {"CANCELLED"}
+        webbrowser.open(f"https://superlumin.al/p/{self.project_id}/farm/jobs/{self.job_id}")
+        return {"FINISHED"}
+
 
 # -----------------------------------------------------------------------------
 #  Registration helpers
@@ -157,6 +171,7 @@ classes = (
     SUPERLUMINAL_OT_Logout,
     SUPERLUMINAL_OT_FetchProjects,
     SUPERLUMINAL_OT_FetchProjectJobs,
+    SUPERLUMINAL_OT_OpenBrowser,
 )
 
 
