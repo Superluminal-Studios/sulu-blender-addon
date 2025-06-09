@@ -96,7 +96,6 @@ def main() -> None:
         "--checkers",
         "16",
         "--stats=1s",
-        "--progress",
     ]
     if not os.path.exists(download_path):
         rclone_args.extend(["--no-check-dest", "--ignore-times"])

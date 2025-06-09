@@ -56,7 +56,12 @@ def refresh_jobs_collection(prefs):
     """Sync prefs.jobs ←→ Storage.data['jobs'] and format fields."""
     prefs.jobs.clear()
 
+    selected_project =  [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0]
+
     for jid, job in Storage.data["jobs"].items():
+        if job.get("project_id") != selected_project.get("id"):
+            continue
+
         it = prefs.jobs.add()
         it.id               = jid
         it.name             = job.get("name", "")
@@ -135,7 +140,6 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
         for key in self.order:
             if not getattr(prefs, f"show_col_{key}"):
                 continue
-
             if key == "name":
                 cols.label(text=item.name, icon_value=STATUS_ICONS.get(item.status, "FILE_FOLDER"))
             elif key == "status":

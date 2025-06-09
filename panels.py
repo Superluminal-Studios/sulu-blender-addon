@@ -353,16 +353,16 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
                 rows=3
             )
 
-
-
             job_info_row = download_box.row(align=True)
 
-            job_id = ""
-            job_name = ""
-            if prefs.active_job_index < len(Storage.data["jobs"]):
-                job_id = list(Storage.data["jobs"].keys())[prefs.active_job_index]
-                job_data = Storage.data["jobs"][job_id]
-                job_name = job_data.get("name", "")
+            selected_project =  [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0]
+            selected_project_jobs = [j for j in Storage.data["jobs"].values() if j.get("project_id") == selected_project.get("id")]
+
+            job_id, job_name = "", ""
+
+            if prefs.active_job_index < len(selected_project_jobs):
+                job_id = selected_project_jobs[prefs.active_job_index].get("id", "")
+                job_name = selected_project_jobs[prefs.active_job_index].get("name", "")
 
             job_info_row.label(text=str(job_name))
             browser_button = job_info_row.operator(
@@ -370,7 +370,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
                 text="Open in Browser",
                 icon="INTERNET"
             )   
-
 
             browser_button.job_id = job_id
             browser_button.project_id = prefs.project_id

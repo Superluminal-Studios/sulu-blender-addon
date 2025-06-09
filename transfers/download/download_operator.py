@@ -26,10 +26,13 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
         scene = context.scene
         props = scene.superluminal_settings
         prefs = get_prefs()
+
+        selected_project =  [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0]
+
         handoff = {
             "addon_dir": str(get_addon_dir()),
             "download_path": props.download_path,
-            "project": [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0],
+            "project": selected_project,
             "job_id": self.job_id,
             "job_name": self.job_name,
             "pocketbase_url": POCKETBASE_URL,
