@@ -317,7 +317,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         # --------------------------------------------------  Download section
         download_box = layout.box()
         if self._section_header(download_box, props,
-                                "show_download", "Jobs"):
+                                "show_download", "Render Jobs"):
 
             # ── Header row ────────────────────────────────────────────
             hdr = download_box.row()                # one horizontal strip
@@ -364,12 +364,12 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
                 job_data = Storage.data["jobs"][job_id]
                 job_name = job_data.get("name", "")
 
+            job_info_row.label(text=str(job_name))
             browser_button = job_info_row.operator(
                 "superluminal.open_browser",
-                text="",
+                text="Open in Browser",
                 icon="INTERNET"
             )   
-            job_info_row.label(text=str(job_name), icon="RESTRICT_INSTANCED_OFF")
 
 
             browser_button.job_id = job_id
