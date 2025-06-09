@@ -56,6 +56,9 @@ def refresh_jobs_collection(prefs):
     """Sync prefs.jobs ←→ Storage.data['jobs'] and format fields."""
     prefs.jobs.clear()
 
+    if not Storage.data["projects"]:
+        return
+
     selected_project =  [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0]
 
     for jid, job in Storage.data["jobs"].items():

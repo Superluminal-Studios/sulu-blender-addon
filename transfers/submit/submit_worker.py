@@ -321,8 +321,8 @@ def main() -> None:
             "ignore_errors": data["ignore_errors"],
             "use_bserver": data["use_bserver"],
             "use_async_upload": data["use_async_upload"],
-            #"defer_status": data["use_async_upload"],
-            #"farm_url": "http://178.156.186.106/farm/c62428l2yjuh50b/api/",
+            "defer_status": data["use_async_upload"],
+            "farm_url": data["farm_url"],
             "tasks": list(range(data["start_frame"], data["end_frame"] + 1, data["frame_stepping_size"]))
         }
     }

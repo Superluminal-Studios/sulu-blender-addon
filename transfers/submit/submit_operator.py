@@ -10,7 +10,7 @@ from pathlib import Path
 from ...utils.check_file_outputs import gather_render_outputs
 from ...utils.worker_utils import launch_in_terminal
 from .addon_packer import bundle_addons
-from ...constants import POCKETBASE_URL
+from ...constants import POCKETBASE_URL, FARM_IP
 import os
 from ...utils.version_utils import enum_from_bpy_version
 from ...storage import Storage
@@ -106,6 +106,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "project": [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0],
             "use_bserver": props.use_bserver,
             "use_async_upload": props.use_async_upload,
+            "farm_url": f"{FARM_IP}/farm/{Storage.data['org_id']}/api/",
         }
 
         bpy.ops.wm.save_as_mainfile(filepath=handoff["temp_blend_path"], compress=True, copy=True, relative_remap=False)

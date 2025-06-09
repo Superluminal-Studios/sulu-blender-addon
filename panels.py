@@ -355,14 +355,25 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
 
             job_info_row = download_box.row(align=True)
 
-            selected_project =  [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0]
-            selected_project_jobs = [j for j in Storage.data["jobs"].values() if j.get("project_id") == selected_project.get("id")]
+            projects = Storage.data.get("projects", [])              # always a list
+
+            selected_project = next(                                 # None if not found / empty
+                (p for p in projects if p.get("id") == prefs.project_id),
+                None
+            )
+
+            # Collect jobs only if we actually have a project
+            selected_project_jobs = (
+                [j for j in Storage.data.get("jobs", {}).values()
+                if j.get("project_id") == selected_project.get("id")]
+                if selected_project else []
+            )
 
             job_id, job_name = "", ""
-
-            if prefs.active_job_index < len(selected_project_jobs):
-                job_id = selected_project_jobs[prefs.active_job_index].get("id", "")
-                job_name = selected_project_jobs[prefs.active_job_index].get("name", "")
+            if selected_project_jobs and prefs.active_job_index < len(selected_project_jobs):
+                sel_job = selected_project_jobs[prefs.active_job_index]
+                job_id   = sel_job.get("id", "")
+                job_name = sel_job.get("name", "")
 
             job_info_row.label(text=str(job_name))
             browser_button = job_info_row.operator(
