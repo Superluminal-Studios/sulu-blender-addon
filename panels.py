@@ -291,10 +291,33 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
                     text="Refresh project list and select a project.", icon='INFO'
                 )
 
+
+        # --------------------------------------------------  Advanced section (+ add-ons)
+        advanced_box = layout.box()
+        if self._section_header(advanced_box, props,
+                                "show_advanced", "Advanced"):
+
+            col = advanced_box.column(align=True)
+            self._toggle_row(
+                col,
+                (props, "auto_determine_blender_version"), (props, "blender_version"),
+                toggle_text=f"Use Current Blender Version [{get_blender_version_string()}]",
+                content_text="Blender Version",
+                invert=True
+            )
+            col.separator()
+
+            col = advanced_box.column(align=True)
+            col.label(text="Experimental Features:", icon="EXPERIMENTAL")
+            col.prop(props, "ignore_errors")
+            col.prop(props, "use_bserver")
+            col.prop(props, "use_async_upload")
+
+
         # --------------------------------------------------  Download section
         download_box = layout.box()
         if self._section_header(download_box, props,
-                                "show_download", "Download"):
+                                "show_download", "Jobs"):
 
             # ── Header row ────────────────────────────────────────────
             hdr = download_box.row()                # one horizontal strip
@@ -365,27 +388,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
                 download_box.label(
                     text="Refresh job list and select a job.", icon='INFO'
                 )
-
-        # --------------------------------------------------  Advanced section (+ add-ons)
-        advanced_box = layout.box()
-        if self._section_header(advanced_box, props,
-                                "show_advanced", "Advanced"):
-
-            col = advanced_box.column(align=True)
-            self._toggle_row(
-                col,
-                (props, "auto_determine_blender_version"), (props, "blender_version"),
-                toggle_text=f"Use Current Blender Version [{get_blender_version_string()}]",
-                content_text="Blender Version",
-                invert=True
-            )
-            col.separator()
-
-            col = advanced_box.column(align=True)
-            col.label(text="Experimental Features:", icon="EXPERIMENTAL")
-            col.prop(props, "ignore_errors")
-            col.prop(props, "use_bserver")
-            col.prop(props, "use_async_upload")
 
 # ------------------------------------------------------------------
 #  Registration

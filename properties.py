@@ -11,7 +11,6 @@ This version splits the settings into two separate PropertyGroups:
 from __future__ import annotations
 import bpy
 
-from .preferences import get_job_items
 from .utils.prefs import get_prefs
 from .utils.version_utils import get_blender_version_string
 from .utils.request_utils import fetch_jobs
