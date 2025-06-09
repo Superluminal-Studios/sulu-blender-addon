@@ -10,7 +10,7 @@ bl_info = {
 }
 
 import bpy
-
+import atexit
 # -------------------------------------------------------------------
 #  Internal Imports
 # -------------------------------------------------------------------
@@ -23,6 +23,7 @@ from .transfers.submit import submit_operator
 from .transfers.download import download_operator
 from . import panels
 from . import operators
+from .storage import Storage
 def get_prefs():
     addon_name = __name__
     prefs_container = bpy.context.preferences.addons.get(addon_name)
@@ -32,6 +33,7 @@ def get_prefs():
 #  Registration
 # -------------------------------------------------------------------
 def register():
+    atexit.register(Storage.save)
     preferences.register()
     properties.register()
     submit_operator.register()

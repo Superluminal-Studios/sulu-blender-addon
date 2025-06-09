@@ -3,17 +3,9 @@ import os
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
-
-class _TopLevelAutoSave(dict):
-    def __setitem__(self, key, value):
-        super().__setitem__(key, value)
-        Storage.save()
-
-    def __delitem__(self, key):
-        super().__delitem__(key)
-        Storage.save()
-
+from functools import lru_cache
+import threading
+import queue
 
 class Storage:
     session = requests.Session()
@@ -22,16 +14,18 @@ class Storage:
     timeout = 15
     session.mount("http://", HTTPAdapter(max_retries=retries))
 
+    enable_job_thread = False
+
     addon_dir = os.path.dirname(os.path.abspath(__file__))
     _file = os.path.join(addon_dir, "session.json")
 
-    data = _TopLevelAutoSave({
+    data = {
         "user_token": "",
         "org_id": "",
         "user_key": "",
         "projects": [],
-        "jobs": [],
-    })
+        "jobs": {},
+    }
 
     @classmethod
     def save(cls):
@@ -39,11 +33,16 @@ class Storage:
             json.dump(cls.data, f, indent=2)
 
     @classmethod
+    @lru_cache(maxsize=1)
+    def load_cached(cls, date_modified=None):
+        with open(cls._file, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+        cls.data.update(loaded)
+
+    @classmethod
     def load(cls):
         if os.path.exists(cls._file):
-            with open(cls._file, "r", encoding="utf-8") as f:
-                loaded = json.load(f)
-            cls.data.update(loaded)
+            cls.load_cached(os.path.getmtime(cls._file))
         else:
             cls.save()
 
@@ -54,6 +53,8 @@ class Storage:
             org_id="",
             user_key="",
             projects=[],
-            jobs=[],
+            jobs={},
         )
         cls.save()
+
+Storage.load()

@@ -17,7 +17,12 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
     bl_label = "Download Job Frames"
     job_id: bpy.props.StringProperty(name="Job ID")
     job_name: bpy.props.StringProperty(name="Job Name")
+
     def execute(self, context):  
+        if self.job_id == "":
+            self.report({"ERROR"}, "No job selected")
+            return {"CANCELLED"}
+        
         scene = context.scene
         props = scene.superluminal_settings
         prefs = get_prefs()

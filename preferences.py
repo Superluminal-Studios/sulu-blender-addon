@@ -2,10 +2,24 @@
 import bpy
 from .storage            import Storage
 from .utils.date_utils   import format_submitted   # ← your helper
-from .icons import preview_collections
+from .icons              import preview_collections
 
 print(preview_collections)
 
+# ─────────────────────────  Constants  ─────────────────────────
+COLUMN_ORDER = [
+    "name",
+    "status",
+    "submission_time",
+    "started_time",
+    "finished_time",
+    "start_frame",
+    "end_frame",
+    "progress",
+    "finished_frames",
+    "blender_version",
+    "type",
+]
 
 STATUS_ICONS = {
     "queued":   preview_collections["main"].get("QUEUED").icon_id,
@@ -17,17 +31,29 @@ STATUS_ICONS = {
 
 # ╭──────────────────  Helpers  ───────────────────────────────╮
 def get_project_items(self, context):
-    Storage.load()
     return [(p["id"], p["name"], p["name"]) for p in Storage.data["projects"]]
 
-#  (Enum fallback still allowed elsewhere in the add-on if you need it)
 def get_job_items(self, context):
-    Storage.load()
     return [(jid, j["name"], j["name"]) for jid, j in Storage.data["jobs"].items()]
 
+# ── stand-alone column-header drawer ──────────────────────────
+def draw_header_row(layout, prefs):
+    """
+    Draw a header row with the same enabled columns and labels that
+    SUPERLUMINAL_UL_job_items uses internally.
+    """
+    row = layout.row(align=True)
+    row.scale_y = 0.6  # Optional: make it shorter like a true header
+
+    for key in COLUMN_ORDER:
+        if getattr(prefs, f"show_col_{key}"):
+            box = row.box()
+            label = "Prog." if key == "progress" else key.replace("_", " ").title()
+            box.label(text=label)
+
+# ── Sync jobs from Storage → prefs.jobs ───────────────────────
 def refresh_jobs_collection(prefs):
     """Sync prefs.jobs ←→ Storage.data['jobs'] and format fields."""
-    Storage.load()
     prefs.jobs.clear()
 
     for jid, job in Storage.data["jobs"].items():
@@ -61,10 +87,10 @@ class SuperluminalJobItem(bpy.types.PropertyGroup):
     blender_version:  bpy.props.StringProperty()
     type:             bpy.props.StringProperty()
 
-# ╭──────────────────  Column toggle menu  ────────────────────╮
+# ╭──────────────────  Column-toggle menu  ────────────────────╮
 class SUPERLUMINAL_MT_job_columns(bpy.types.Menu):
     bl_label = "Columns"
-    cols = (
+    cols = (  # order MUST match COLUMN_ORDER
         ("show_col_name",            "Name"),
         ("show_col_status",          "Status"),
         ("show_col_submission_time", "Submitted"),
@@ -87,38 +113,51 @@ class SUPERLUMINAL_MT_job_columns(bpy.types.Menu):
 # ╭──────────────────  UIList  ────────────────────────────────╮
 class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
     """List of render jobs with user-selectable columns."""
-    order = [                        # draw order
-        "name", "status", "submission_time", "started_time", "finished_time",
-        "start_frame", "end_frame", "progress", "finished_frames",
-        "blender_version", "type",
-    ]
+    order = COLUMN_ORDER  # single source-of-truth for column order
 
     def draw_item(self, context, layout, data, item, icon,
                   active_data, active_propname, index):
         prefs = context.preferences.addons[__package__].preferences
 
         # ---- Header row -----------------------------------------------------
-        if index == -1:                       # -1 is header
+        if index == -1:  # built-in header (still here for template_list)
             for key in self.order:
                 if getattr(prefs, f"show_col_{key}"):
-                    text = key.replace("_", " ").title()
-                    layout.label(text=text if key != "progress" else "Prog.")
+                    text = "Prog." if key == "progress" else key.replace("_", " ").title()
+                    layout.label(text=text)
             layout.menu("SUPERLUMINAL_MT_job_columns", icon='DOWNARROW_HLT', text="")
             return
 
         # ---- Data rows ------------------------------------------------------
-        row = layout.row(align=True)
-        if prefs.show_col_name:            row.label(text=item.name,   icon_value=STATUS_ICONS.get(item.status, "FILE_FOLDER"))
-        if prefs.show_col_start_frame:     row.label(text=str(item.start_frame))
-        if prefs.show_col_end_frame:       row.label(text=str(item.end_frame))
-        if prefs.show_col_finished_frames: row.label(text=str(item.finished_frames))
-        if prefs.show_col_blender_version: row.label(text=item.blender_version)
-        if prefs.show_col_type:            row.label(text=item.type)
-        if prefs.show_col_submission_time: row.label(text=item.submission_time)
-        if prefs.show_col_started_time:    row.label(text=item.started_time)
-        if prefs.show_col_finished_time:   row.label(text=item.finished_time)
-        if prefs.show_col_status:          row.label(text=item.status)
-        if prefs.show_col_progress:        row.prop(item, "progress", text="")
+        enabled_cols = [k for k in self.order if getattr(prefs, f"show_col_{k}")]
+        cols = layout.column_flow(columns=len(enabled_cols))
+
+        for key in self.order:
+            if not getattr(prefs, f"show_col_{key}"):
+                continue
+
+            if key == "name":
+                cols.label(text=item.name, icon_value=STATUS_ICONS.get(item.status, "FILE_FOLDER"))
+            elif key == "status":
+                cols.label(text=item.status)
+            elif key == "submission_time":
+                cols.label(text=item.submission_time)
+            elif key == "started_time":
+                cols.label(text=item.started_time)
+            elif key == "finished_time":
+                cols.label(text=item.finished_time)
+            elif key == "start_frame":
+                cols.label(text=str(item.start_frame))
+            elif key == "end_frame":
+                cols.label(text=str(item.end_frame))
+            elif key == "progress":
+                cols.progress(factor=item.progress, type='BAR', text=f"{item.progress * 100:.0f}%")
+            elif key == "finished_frames":
+                cols.label(text=str(item.finished_frames))
+            elif key == "blender_version":
+                cols.label(text=item.blender_version)
+            elif key == "type":
+                cols.label(text=item.type)
 
 # ╭──────────────────  Add-on preferences  ───────────────────╮
 class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
@@ -128,7 +167,6 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     username: bpy.props.StringProperty(name="Username")
     password: bpy.props.StringProperty(name="Password", subtype="PASSWORD")
     project_id: bpy.props.EnumProperty(name="Project", items=get_project_items)
-    job_id:     bpy.props.EnumProperty(name="Job (legacy)", items=get_job_items)
 
     # ▸ job table
     jobs:             bpy.props.CollectionProperty(type=SuperluminalJobItem)
@@ -150,7 +188,6 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     # ▸ UI
     def draw(self, context):
         layout = self.layout
-        Storage.load()
         if Storage.data["user_token"]:
             layout.operator("superluminal.logout", text="Log out")
         else:

@@ -43,24 +43,17 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
 
         if projects:
             Storage.data["projects"] = projects
-            if prefs.project_id in {"", "NONE"}:
-                prefs.project_id = projects[0]["id"]
-        else:
-            prefs.project_id = ""
+            project = projects[0]
+            prefs.project_id = project["id"]
+            org_id = project["organization_id"]
 
-        # --- 2) jobs for selected project -----------------------------------
-        if prefs.project_id:
             try:
-                sel_proj = next((p for p in projects if p["id"] == prefs.project_id), projects[0])
-                org_id   = sel_proj["organization_id"]
                 user_key = get_render_queue_key(org_id)
 
-                prefs.org_id   = org_id
-                prefs.user_key = user_key
-
-                jobs = fetch_jobs(org_id, user_key, prefs.project_id)
                 Storage.data["org_id"] = org_id
                 Storage.data["user_key"] = user_key
+
+                jobs = fetch_jobs(org_id, user_key, prefs.project_id)
                 Storage.data["jobs"] = jobs
 
                 if jobs:
@@ -68,7 +61,7 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
             except Exception as exc:
                 report_exception(self, exc, "Projects loaded, but could not fetch jobs")
 
-        Storage.load()
+        Storage.save()
 
         # --- refresh UI ------------------------------------------------------
         for area in context.screen.areas:
@@ -146,7 +139,6 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
         except Exception as exc:
             return report_exception(self, exc, "Error fetching jobs")
 
-        Storage.data["jobs"] = jobs
         if jobs:
             context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
 
