@@ -36,8 +36,11 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
             "job_id": self.job_id,
             "job_name": self.job_name,
             "pocketbase_url": POCKETBASE_URL,
+            "sarfis_url": f"https://api.superlumin.al/farm/{Storage.data['org_id']}",
             "user_token": Storage.data["user_token"],
+            "sarfis_token": Storage.data["user_key"]
         }
+        
 
         tmp_json = Path(tempfile.gettempdir()) / f"superluminal_download_{self.job_id}.json"
         tmp_json.write_text(json.dumps(handoff), encoding="utf-8")

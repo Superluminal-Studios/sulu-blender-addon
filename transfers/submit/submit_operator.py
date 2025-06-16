@@ -35,7 +35,6 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         props = scene.superluminal_settings
         prefs = get_prefs()
         addon_dir = get_addon_dir()
-        print(addon_dir)
         if not bpy.data.filepath:
             self.report({"ERROR"}, "Please save your .blend file first.")
             return {"CANCELLED"}

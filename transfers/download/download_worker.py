@@ -14,52 +14,129 @@ import time
 import types
 from pathlib import Path
 from typing import Dict, List
+import traceback
 
-# ─── third-party ────────────────────────────────────────────────
-import requests  # type: ignore
+# ───────────────────  third-party  ─────────────────────
+import requests 
 
 
-# ╭────────────────────  read hand-off  ─────────────────────╮
-if len(sys.argv) != 2:
-    _log("Usage: download_worker.py <handoff.json>")
+# ───────────────────  read hand-off  ─────────────────────
+try:
+    t_start = time.perf_counter()
+    handoff_path = Path(sys.argv[1]).resolve(strict=True)
+    data: Dict[str, object] = json.loads(handoff_path.read_text("utf-8"))
+
+    # ────────────────  import add-on internals  ─────────────────
+    addon_dir = Path(data["addon_dir"]).resolve()
+    pkg_name = addon_dir.name.replace("-", "_")
+    sys.path.insert(0, str(addon_dir.parent))
+    pkg = types.ModuleType(pkg_name)
+    pkg.__path__ = [str(addon_dir)]
+    sys.modules[pkg_name] = pkg
+
+    # ───────────────────  import helpers  ─────────────────────
+    rclone = importlib.import_module(f"{pkg_name}.transfers.rclone")
+    run_rclone = rclone.run_rclone
+    ensure_rclone = rclone.ensure_rclone
+    worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
+
+    # ───────────────────  internal utils  ─────────────────────
+    _log = worker_utils.logger
+    _build_base = worker_utils._build_base
+    is_blend_saved = worker_utils.is_blend_saved
+    requests_retry_session = worker_utils.requests_retry_session
+    CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
+
+except Exception as exc:
+    print(f"❌  Failed to import helpers: {exc}")
+    print(f"Error type: {type(exc)}")
+
+    traceback.print_exc()
+    input("\nPress ENTER to close this window…")
     sys.exit(1)
 
-t_start = time.perf_counter()
-handoff_path = Path(sys.argv[1]).resolve(strict=True)
-data: Dict[str, object] = json.loads(handoff_path.read_text("utf-8"))
 
-# ╭─────────────────  import add-on internals  ─────────────────╮
-addon_dir = Path(data["addon_dir"]).resolve()
-pkg_name = addon_dir.name.replace("-", "_")
-sys.path.insert(0, str(addon_dir.parent))
-pkg = types.ModuleType(pkg_name)
-pkg.__path__ = [str(addon_dir)]
-sys.modules[pkg_name] = pkg
+def single_downloader():
+    base_cmd = _build_base(
+        rclone_bin,
+        f"https://{CLOUDFLARE_R2_DOMAIN}",
+        s3info,
+    )
 
-# Import rclone helpers from the shipped add-on
-rclone = importlib.import_module(f"{pkg_name}.transfers.rclone")
-run_rclone = rclone.run_rclone
-ensure_rclone = rclone.ensure_rclone
+    rclone_args = [
+        "--exclude",
+        "thumbnails/**",
+        "--transfers",
+        "16",
+        "--checkers",
+        "16",
+    ]
 
-worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
+    dest_dir = os.path.join(download_path, job_name)
+    
+    if not os.path.exists(dest_dir):
+        os.makedirs(dest_dir, exist_ok=True)
+        rclone_args.extend(["--no-check-dest", "--ignore-times"])
 
-# ─── internal utils ────────────────────────────────────────────
-_log = worker_utils.logger
-_build_base = worker_utils._build_base
-_short = worker_utils._short
-is_blend_saved = worker_utils.is_blend_saved
-requests_retry_session = worker_utils.requests_retry_session
-CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
+    try:
+        run_rclone(
+            base_cmd,
+            "copy",
+            f":s3:{bucket}/{job_id}/output/",
+            dest_dir + "/",
+            rclone_args,
+            logger=_log,
+        )   
+    except RuntimeError as exc:
+        _log(f"❌  rclone failed: {exc}")
+        sys.exit(1)
 
-# ╭───────────────────────  main  ───────────────────────────────╮
+
+def auto_downloader():
+    keep_running = True
+    finished_frames = 0
+    while keep_running:
+        response = session.get(f"{data['sarfis_url']}/api/job_details?job_id={job_id}", headers={"Auth-Token": data["sarfis_token"]})
+        if response.status_code == 200:
+            job_data = response.json().get("body", {})
+            
+            trigger = (finished_frames + job_data["total_tasks"] // 10) < job_data["tasks"]["finished"] and job_data["status"] != "finished"
+
+            if trigger:
+                _log(f"\n🔄  {job_data['tasks']['finished'] - finished_frames} new frames since last download")
+                finished_frames = job_data["tasks"]["finished"]
+                single_downloader()
+
+            if job_data["status"] == "finished":
+                _log("\n📥  Downloading remaining frames!")
+                single_downloader()
+                keep_running = False
+
+        else:
+            _log(f"❌  Failed to get job data: {response.status_code}")
+
+        time.sleep(1)
+
+
+
+
+# ───────────────────  main  ───────────────────────────────
 def main() -> None:
-    # Use the resilient, retry-enabled session for *all* HTTP calls
+    global session
+    global job_id
+    global job_name
+    global download_path
+    global rclone_bin
+    global s3info
+    global bucket
+    
+    
     session = requests_retry_session()
     headers = {"Authorization": data["user_token"]}
-
-    job_id: str = data["job_id"]
-    job_name: str = data["job_name"]
-    download_path: str = data["download_path"]
+    job_id = data["job_id"]
+    job_name = data["job_name"]
+    download_path = data["download_path"]
+    rclone_bin = ensure_rclone(logger=_log)
 
     # ─────── obtain R2 credentials ───────────────────────────
     _log("🔑  Fetching R2 credentials…")
@@ -80,50 +157,33 @@ def main() -> None:
         sys.exit(1)
 
     # ─────── rclone download ─────────────────────────────────
-    rclone_bin = ensure_rclone(logger=_log)
-    base_cmd: List[str] = _build_base(
-        rclone_bin,
-        f"https://{CLOUDFLARE_R2_DOMAIN}",
-        s3info,
-    )
+    
+    
+    # if data["download_type"] == "single":
+    #     _log("🚀  Downloading render output…")
+    #     single_downloader()
+    #     elapsed = time.perf_counter() - t_start
+    #     _log("🎉  Download complete!")
+    #     _log(f"🕒  Took {elapsed:.1f}s in total.")
+    #     input("\nPress ENTER to close this window…")
 
-    # Build rclone arguments
-    rclone_args: list[str] = [
-        "--exclude",
-        "thumbnails/**",
-        "--transfers",
-        "16",
-        "--checkers",
-        "16",
-        "--stats=1s",
-    ]
-    if not os.path.exists(download_path):
-        rclone_args.extend(["--no-check-dest", "--ignore-times"])
-
-    # Ensure destination directory exists
-    dest_dir = os.path.join(download_path, job_name)
-    os.makedirs(dest_dir, exist_ok=True)
-
-    _log("🚀  Downloading render output…")
+    # elif data["download_type"] == "auto":
+    #     _log("🔄  Waiting for frames to download…")
+    #     auto_downloader()
+    #     elapsed = time.perf_counter() - t_start
+    #     _log("🎉  Download complete!")
+    #     input("\nPress ENTER to close this window…")
     try:
-        run_rclone(
-            base_cmd,
-            "copy",
-            f":s3:{bucket}/{job_id}/output/",
-            dest_dir + "/",
-            rclone_args,
-        )
-    except RuntimeError as exc:
-        _log(f"❌  rclone failed: {exc}")
-        sys.exit(1)
-
-    elapsed = time.perf_counter() - t_start
-    _log("🎉  Download complete!")
-    _log(f"🕒  Took {elapsed:.1f}s in total.")
-    input("\nPress ENTER to close this window…")
+        _log("🔄  Waiting for frames to download…")
+        auto_downloader()
+        _log("🎉  Download complete!")
+        input("\nPress ENTER to close this window…")
+    except Exception as exc:
+        _log(f"❌  Download failed: {exc}")
+        input("\nPress ENTER to close this window…")
 
 
-# ╭──────────────────  entry  ───────────────────╮
+# ───────────────────  entry  ─────────────────────
 if __name__ == "__main__":
     try:
         main()

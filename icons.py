@@ -7,14 +7,6 @@ def load_icons():
     pcoll = bpy.utils.previews.new()
     icons_dir = os.path.join(os.path.dirname(__file__), "icons")
 
-    print(icons_dir)
-    print(os.path.join(icons_dir, "logo.png"))
-    print(os.path.join(icons_dir, "error.png"))
-    print(os.path.join(icons_dir, "finished.png"))
-    print(os.path.join(icons_dir, "paused.png"))
-    print(os.path.join(icons_dir, "running.png"))
-    print(os.path.join(icons_dir, "queued.png"))
-
     pcoll.load("SULU", os.path.join(icons_dir, "logo.png"), 'IMAGE')
 
     pcoll.load("ERROR",   os.path.join(icons_dir, "error.png"),   'IMAGE')

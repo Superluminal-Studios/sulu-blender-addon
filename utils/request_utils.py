@@ -31,9 +31,6 @@ def request_jobs(org_id: str, user_key: str, project_id: str):
     prefs = get_prefs()
     prefs.jobs.clear()
 
-    print("user_key", user_key)
-    print(f"{POCKETBASE_URL}/farm/{org_id}/api/job_list")
-
     # (a) farm status
     authorized_request(
         "GET",
@@ -64,7 +61,6 @@ def pulse():
 
 def request_job_loop(org_id: str, user_key: str, project_id: str):
     global job_thread_running
-    print("requesting jobs", flush=True)
     while Storage.enable_job_thread:
         request_jobs(org_id, user_key, project_id)
         time.sleep(2)

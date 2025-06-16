@@ -4,7 +4,6 @@ from .storage            import Storage
 from .utils.date_utils   import format_submitted   # ← your helper
 from .icons              import preview_collections
 
-print(preview_collections)
 
 # ─────────────────────────  Constants  ─────────────────────────
 COLUMN_ORDER = [

@@ -253,5 +253,10 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
         if bar:
             bar.close()
         if code:
-            logger(f"❌  Rclone failed with code {code}", line)
+            if logger:
+                # Log the failure – avoid passing multiple arguments to logger which expects a single string
+                logger(f"❌  Rclone failed with code {code}")
+            else:
+                # Fallback to printing if no logger was provided
+                print(f"❌  Rclone failed with code {code}")
             raise subprocess.CalledProcessError(code, cmd)

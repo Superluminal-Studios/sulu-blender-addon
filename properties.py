@@ -49,7 +49,6 @@ render_type_items = [
 def live_job_update(self, context):
     prefs = get_prefs()
     if self.live_job_updates:
-        print("live job updates")
         fetch_jobs(
             Storage.data["org_id"],
             Storage.data["user_key"],
@@ -57,7 +56,6 @@ def live_job_update(self, context):
             True
         )
     else:
-        print("no live job updates")
         Storage.enable_job_thread = False
 
 
