@@ -379,7 +379,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             browser_button = job_info_row.operator(
                 "superluminal.open_browser",
                 text="Open in Browser",
-                icon="INTERNET"
+                icon="URL"
             )   
 
             browser_button.job_id = job_id
