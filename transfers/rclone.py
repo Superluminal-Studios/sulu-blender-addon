@@ -155,7 +155,7 @@ def download_with_bar(url: str, dest: Path, logger=None) -> None:
         print()
 
 def ensure_rclone(logger=None) -> Path:
-    logger("🔍  Checking for rclone")
+    logger("🔍  Checking for Rclone")
     suf = get_platform_suffix()
     bin_name = "rclone.exe" if suf.startswith("windows") else "rclone"
     rclone_bin = get_rclone_platform_dir(suf) / bin_name
@@ -192,6 +192,7 @@ def _bytes_from_stats(obj):
 
 def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
     extra = extra or []
+    dst = dst.replace("\\", "/")
     if logger:
         logger(f"{verb.capitalize():9} {src} → {dst}")
 

@@ -95,20 +95,26 @@ def single_downloader():
 def auto_downloader():
     keep_running = True
     finished_frames = 0
+    notification_sent = False
+
     while keep_running:
         response = session.get(f"{data['sarfis_url']}/api/job_details?job_id={job_id}", headers={"Auth-Token": data["sarfis_token"]})
         if response.status_code == 200:
             job_data = response.json().get("body", {})
             
-            trigger = (finished_frames + job_data["total_tasks"] // 10) < job_data["tasks"]["finished"] and job_data["status"] != "finished"
+            if not notification_sent:
+                if job_data["status"] in ["running", "queued"]:
+                    _log("\nℹ️  Keep this window open to automatically download frames as they finish.")
+                    _log("🔄  Waiting for at least 10% of frames to be finished.")
+                    notification_sent = True
 
-            if trigger:
-                _log(f"\n🔄  {job_data['tasks']['finished'] - finished_frames} new frames since last download")
+            if (finished_frames + job_data["total_tasks"] // 10) < job_data["tasks"]["finished"] and (job_data["status"] in ["running", "queued"]):
+                _log(f"\n🔄  {job_data['tasks']['finished'] - finished_frames} new frames since last download.")
                 finished_frames = job_data["tasks"]["finished"]
                 single_downloader()
 
-            if job_data["status"] == "finished":
-                _log("\n📥  Downloading remaining frames!")
+            if job_data["status"] in ["finished", "paused", "error"]:
+                _log("\n🔄  Downloading remaining frames.")
                 single_downloader()
                 keep_running = False
 
@@ -174,9 +180,9 @@ def main() -> None:
     #     _log("🎉  Download complete!")
     #     input("\nPress ENTER to close this window…")
     try:
-        _log("🔄  Waiting for frames to download…")
+        
         auto_downloader()
-        _log("🎉  Download complete!")
+        _log("✅  Download complete!")
         input("\nPress ENTER to close this window…")
     except Exception as exc:
         _log(f"❌  Download failed: {exc}")
