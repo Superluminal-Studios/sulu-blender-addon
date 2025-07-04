@@ -195,7 +195,6 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
     dst = dst.replace("\\", "/")
     if logger:
         logger(f"{verb.capitalize():9} {src} → {dst}")
-
     cmd = [base[0], verb, src, dst, *extra, "--stats=0.1s", "--use-json-log", "--stats-log-level", "NOTICE", *base[1:]]
     with subprocess.Popen(
         cmd,
