@@ -11,7 +11,7 @@ from __future__ import annotations
 
 # ─── Blender / stdlib ─────────────────────────────────────────
 import bpy
-import importlib
+import addon_utils
 import sys
 from bpy.types import UILayout
 
@@ -179,17 +179,12 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
                     if mod_name in DEFAULT_ADDONS:
                         continue
 
-                    pretty_name = mod_name
-                    mod = sys.modules.get(mod_name)
-                    if not mod:
-                        try:
-                            mod = importlib.import_module(mod_name)
-                        except ModuleNotFoundError:
-                            mod = None
-                    if mod and hasattr(mod, "bl_info"):
-                        pretty_name = mod.bl_info.get("name", mod_name)
+                    mod = None
+                    mod = [m for m in addon_utils.modules() if m.__name__ == mod_name][0]
 
-                    enabled_addons.append((mod_name, pretty_name))
+                    if mod:
+                        pretty_name = addon_utils.module_bl_info(mod).get("name", mod_name)
+                        enabled_addons.append((mod_name, pretty_name))
 
                 if not enabled_addons:
                     addons_column.label(text="No Add-ons Enabled", icon="INFO")
