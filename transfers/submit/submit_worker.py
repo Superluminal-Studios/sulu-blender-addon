@@ -1,3 +1,4 @@
+# submit_worker.py
 """
 submit_worker.py – Superluminal Submit worker (robust, with retries).
 Business logic only; all generic helpers live in submit_utils.py.
@@ -312,6 +313,12 @@ def main() -> None:
 
     #register job
     _log("\n🗄️   Submitting job to Superluminal…")
+
+    # derive use_scene_image_format if older operators didn't pass it
+    use_scene_image_format = bool(data.get("use_scene_image_format")) or (
+        str(data.get("image_format", "")).upper() == "SCENE"
+    )
+
     payload: Dict[str, object] = {
         "job_data": {
             "id": job_id,
@@ -328,7 +335,7 @@ def main() -> None:
             "batch_size": 1,
             "render_passes": data["render_passes"],
             "image_format": data["image_format"],
-            "use_scene_image_format": data["use_scene_image_format"],
+            "use_scene_image_format": use_scene_image_format,
             "render_engine": data["render_engine"],
             "version": "20241125",
             "blender_version": data["blender_version"],

@@ -165,6 +165,17 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
             elif key == "type":
                 cols.label(text=item.type)
 
+
+def draw_login(layout):
+    prefs = bpy.context.preferences.addons[__package__].preferences
+    
+    if Storage.data["user_token"]:
+        layout.operator("superluminal.logout", text="Log out")
+    else:
+        layout.prop(prefs, "username")
+        layout.prop(prefs, "password")
+        layout.operator("superluminal.login", text="Log in")
+
 # ╭──────────────────  Add-on preferences  ───────────────────╮
 class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
@@ -194,12 +205,7 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     # ▸ UI
     def draw(self, context):
         layout = self.layout
-        if Storage.data["user_token"]:
-            layout.operator("superluminal.logout", text="Log out")
-        else:
-            layout.prop(self, "username")
-            layout.prop(self, "password")
-            layout.operator("superluminal.login", text="Log in")
+        draw_login(layout)
 
 # ╭──────────────────  Register helpers  ─────────────────────╮
 classes = (

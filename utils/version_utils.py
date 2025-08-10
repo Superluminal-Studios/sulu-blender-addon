@@ -6,6 +6,7 @@ blender_version_items = [
     ("BLENDER42", "Blender 4.2", "Use Blender 4.2 on the farm"),
     ("BLENDER43", "Blender 4.3", "Use Blender 4.3 on the farm"),
     ("BLENDER44", "Blender 4.4", "Use Blender 4.4 on the farm"),
+    ("BLENDER45", "Blender 4.5", "Use Blender 4.5 on the farm"),
 ]
 
 # Build a lookup:  40 → "BLENDER40", 41 → "BLENDER41", …

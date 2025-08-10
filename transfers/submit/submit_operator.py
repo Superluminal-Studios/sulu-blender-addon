@@ -1,3 +1,4 @@
+# submit_job_operator.py
 from __future__ import annotations
 
 import bpy
@@ -30,7 +31,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
     bl_idname = "superluminal.submit_job"
     bl_label = "Submit Job to Superluminal (external)"
 
-    def execute(self, context):  
+    def execute(self, context):
         scene = context.scene
         props = scene.superluminal_settings
         prefs = get_prefs()
@@ -38,7 +39,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         if not bpy.data.filepath:
             self.report({"ERROR"}, "Please save your .blend file first.")
             return {"CANCELLED"}
-        
+
         outputs = gather_render_outputs(scene)["outputs"]
         layers = outputs[0]["layers"]
 
@@ -58,7 +59,6 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         )
 
         # If we are rendering a single image, ensure end_frame equals start_frame
-
         if props.render_type == "IMAGE":
             if props.use_scene_frame_range:
                 start_frame = scene.frame_current
@@ -66,6 +66,15 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             else:
                 start_frame = props.frame_start
                 end_frame = props.frame_start
+
+        # ---------------------------------------------
+        # Image format selection (enum includes SCENE option)
+        # ---------------------------------------------
+        use_scene_image_format = (props.image_format == 'SCENE')
+        image_format_val = (
+            scene.render.image_settings.file_format
+            if use_scene_image_format else props.image_format
+        )
 
         job_id = uuid.uuid4()
         handoff = {
@@ -76,7 +85,9 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "job_id": str(job_id),
             "blend_path": bpy.data.filepath,
             "temp_blend_path": str(Path(tempfile.gettempdir()) / bpy.path.basename(bpy.context.blend_data.filepath)),
-            "use_project_upload": not bool(props.upload_project_as_zip),
+
+            # new enum controls this:
+            "use_project_upload": (props.upload_type == 'PROJECT'),
             "automatic_project_path": bool(props.automatic_project_path),
             "custom_project_path": os.path.abspath(bpy.path.abspath(props.custom_project_path)).replace("\\", "/"),
 
@@ -86,12 +97,10 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
                 else props.job_name
             ),
             "render_passes": layers,
-            "image_format": (
-                scene.render.image_settings.file_format
-                if props.use_scene_image_format
-                else props.image_format
-            ),
-            "use_scene_image_format": props.use_scene_image_format,
+            "image_format": image_format_val,
+            # keep for backward compatibility with worker / API
+            "use_scene_image_format": use_scene_image_format,
+
             "start_frame": start_frame,
             "end_frame": end_frame,
             "frame_stepping_size": (
@@ -115,7 +124,6 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         handoff["packed_addons"] = bundle_addons(handoff["packed_addons_path"])
         tmp_json = Path(tempfile.gettempdir()) / f"superluminal_{job_id}.json"
         tmp_json.write_text(json.dumps(handoff), encoding="utf-8")
-
 
         try:
             launch_in_terminal([sys.executable, "-u", str(worker), str(tmp_json)])

@@ -1,10 +1,13 @@
+# panels.py
 """
-panels.py – Superluminal Render UI
+panels.py – Superluminal Render UI (native-style)
 
-• “Included Add-ons” lives inside Advanced ▸ Included Add-ons (collapsible).
-• Selection is persisted per scene in
-      Scene.superluminal_settings.included_addons  (semicolon-separated).
-• Added extra spacing before warning/info labels so they don’t hug the buttons.
+• Real nested sub-panels (bl_parent_id) so open/closed state persists.
+• Per-panel layout.use_property_split / use_property_decorate like Blender’s own panels.
+• "Auto Refresh" (value-column aligned), Refresh + Columns in same row with separator.
+• "Submit Render Job" button now formatted exactly like the Download button.
+• Unsaved-changes warning uses a fixed row to avoid layout jumps.
+• "Advanced" renamed to "Render Node".
 """
 
 from __future__ import annotations
@@ -12,18 +15,16 @@ from __future__ import annotations
 # ─── Blender / stdlib ─────────────────────────────────────────
 import bpy
 import addon_utils
-import sys
 from bpy.types import UILayout
 
 # ─── Local helpers -------------------------------------------
-from .preferences import (
-    get_job_items,
-)
 from .utils.version_utils import get_blender_version_string
 from .constants import DEFAULT_ADDONS
 from .storage import Storage
 from .preferences import refresh_jobs_collection, draw_header_row
 from .icons import preview_collections
+from .preferences import draw_login
+
 
 # ╭──────────────────  Global runtime list  ───────────────────╮
 addons_to_send: list[str] = []          # filled from scene property
@@ -34,6 +35,31 @@ def _read_addons_from_scene(scene: bpy.types.Scene) -> None:
     props = scene.superluminal_settings
     addons_to_send.clear()
     addons_to_send.extend([m for m in props.included_addons.split(";") if m])
+
+
+def _addon_row(layout: UILayout, mod_name: str, pretty_name: str) -> None:
+    enabled = mod_name in addons_to_send
+    row = layout.row(align=True)
+    row.operator(
+        ToggleAddonSelectionOperator.bl_idname,
+        text="",
+        icon="CHECKBOX_HLT" if enabled else "CHECKBOX_DEHLT",
+        emboss=False,
+    ).addon_name = mod_name
+    row.label(text=pretty_name)
+
+
+def _value_row(layout: UILayout, *, align: bool = False) -> UILayout:
+    """
+    Return a row aligned with the *value* column when property split is on.
+    Use for tools that should visually align with property rows.
+    """
+    r = layout.row(align=align)
+    r.label(text="")  # occupy label column
+    sub = r.row(align=align)
+    sub.use_property_split = False
+    sub.use_property_decorate = False
+    return sub
 
 
 # ------------------------------------------------------------------
@@ -54,27 +80,13 @@ class ToggleAddonSelectionOperator(bpy.types.Operator):
 
         # write back to .blend (allowed in operator context)
         context.scene.superluminal_settings.included_addons = ";".join(addons_to_send)
-        context.area.tag_redraw()
+        if context.area:
+            context.area.tag_redraw()
         return {"FINISHED"}
 
 
 # ------------------------------------------------------------------
-#  UI helpers
-# ------------------------------------------------------------------
-def _addon_row(layout: UILayout, mod_name: str, pretty_name: str) -> None:
-    enabled = mod_name in addons_to_send
-    row = layout.row(align=True)
-    row.operator(
-        ToggleAddonSelectionOperator.bl_idname,
-        text="",
-        icon="CHECKBOX_HLT" if enabled else "CHECKBOX_DEHLT",
-        emboss=False,
-    ).addon_name = mod_name
-    row.label(text=pretty_name)
-
-
-# ------------------------------------------------------------------
-#  Main panel
+#  Main panel (parent)
 # ------------------------------------------------------------------
 class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
     bl_idname      = "SUPERLUMINAL_PT_RenderPanel"
@@ -83,332 +95,341 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
     bl_region_type = "WINDOW"
     bl_context     = "render"
 
-    # ── little UI helpers ─────────────────────────────────────
-    @staticmethod
-    def _toggle_row(col, toggle_prop, content_prop, *,
-                    toggle_text="", content_text="", invert=False):
-        toggle_row = col.row(align=True)
-        toggle_row.prop(toggle_prop[0], toggle_prop[1], text=toggle_text)
-
-        content_row = col.row(align=True)
-        content_row.prop(content_prop[0], content_prop[1], text=content_text)
-        content_row.enabled = (toggle_prop[0].path_resolve(toggle_prop[1]) ^ invert)
-
-    @staticmethod
-    def _section_header(box, owner, prop_name, text):
-        header_row = box.row(align=True)
-        expanded   = owner.path_resolve(prop_name)
-        header_row.prop(
-            owner, prop_name,
-            icon="TRIA_DOWN" if expanded else "TRIA_RIGHT",
-            text="", emboss=False
-        )
-        header_row.label(text=text)
-        return expanded
-    
     def draw_header(self, context):
         self.layout.label(
             text="", icon_value=preview_collections["main"].get("SULU").icon_id
         )
 
-    # ── draw ─────────────────────────────────────────────────
     def draw(self, context):
-        scene  = context.scene
-        _read_addons_from_scene(scene)            # refresh list (read-only)
+        # Keep the parent panel minimal; put content in sub-panels
+        scene = context.scene
+        _read_addons_from_scene(scene)  # keep runtime list fresh
 
         layout = self.layout
-        layout.use_property_split   = True
+        layout.use_property_split = True
         layout.use_property_decorate = False
 
+        prefs = context.preferences.addons[__package__].preferences
+
+        refresh_jobs_collection(prefs)
+
+        logged_in   = bool(Storage.data.get("user_token"))
+        projects_ok = len(Storage.data.get("projects", [])) > 0
+
+        if not logged_in:
+            box = layout.box()
+            draw_login(box)
+            return
+
+        # Project selector row (always visible)
+        row = layout.row(align=True)
+        row.enabled = logged_in and projects_ok
+        row.prop(prefs, "project_id", text="Project")
+        row.operator("superluminal.fetch_projects", text="", icon="FILE_REFRESH")
+
+
+
+# ------------------------------------------------------------------
+#  Sub-panels (native look & feel)
+# ------------------------------------------------------------------
+class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
+    bl_idname      = "SUPERLUMINAL_PT_UploadSettings"
+    bl_label       = "Upload Settings"
+    bl_parent_id   = "SUPERLUMINAL_PT_RenderPanel"
+    bl_space_type  = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context     = "render"
+    bl_options     = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        props = context.scene.superluminal_settings
+
+        # Upload type selector (always visible)
+        layout.prop(props, "upload_type", text="Upload Type")
+
+        # Only show project-path options when 'Project' is selected
+        if props.upload_type == 'PROJECT':
+            col = layout.column()
+            col.prop(props, "automatic_project_path")
+
+            sub = col.column()
+            sub.active = not props.automatic_project_path
+            sub.prop(props, "custom_project_path")
+
+
+class SUPERLUMINAL_PT_IncludeAddons(bpy.types.Panel):
+    bl_idname      = "SUPERLUMINAL_PT_IncludeAddons"
+    bl_label       = "Include Enabled Addons"
+    bl_parent_id   = "SUPERLUMINAL_PT_UploadSettings"
+    bl_space_type  = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context     = "render"
+    bl_options     = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = False
+        layout.use_property_decorate = False
+
+        _read_addons_from_scene(context.scene)
+
+        enabled_addons: list[tuple[str, str]] = []
+        for addon in bpy.context.preferences.addons:
+            mod_name = addon.module
+            if mod_name == __package__:
+                continue
+            if mod_name in DEFAULT_ADDONS:
+                continue
+
+            mod = next((m for m in addon_utils.modules() if m.__name__ == mod_name), None)
+            if mod:
+                pretty_name = addon_utils.module_bl_info(mod).get("name", mod_name)
+                enabled_addons.append((mod_name, pretty_name))
+
+        if not enabled_addons:
+            layout.label(text="No Add-ons Enabled", icon="INFO")
+        else:
+            for mod_name, pretty in enabled_addons:
+                _addon_row(layout, mod_name, pretty)
+
+
+class SUPERLUMINAL_PT_Submission(bpy.types.Panel):
+    bl_idname      = "SUPERLUMINAL_PT_Submission"
+    bl_label       = "Job Submission"
+    bl_parent_id   = "SUPERLUMINAL_PT_RenderPanel"
+    bl_space_type  = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context     = "render"
+    bl_options     = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        scene  = context.scene
+        props  = scene.superluminal_settings
+        prefs  = context.preferences.addons[__package__].preferences
+
+        logged_in   = bool(Storage.data.get("user_token"))
+        projects_ok = len(Storage.data.get("projects", [])) > 0
+
+        # Job name toggle + field
+        col = layout.column()
+        col.prop(props, "use_file_name", text="Use File Name as Job Name")
+        sub = col.column()
+        sub.active = not props.use_file_name
+        sub.prop(props, "job_name", text="Job Name")
+
+        # Image format (enum with "Scene Image Format" option)
+        col = layout.column()
+        col.prop(props, "image_format", text="Image Format")
+
+        # Render type
+        col = layout.column()
+        col.prop(props, "render_type", text="Render Type")
+
+        # Frame range override
+        col = layout.column()
+        frame_toggle_label = "Use Current Frame" if props.render_type == "IMAGE" else "Use Scene Frame Range"
+        col.prop(props, "use_scene_frame_range", text=frame_toggle_label)
+
+        sub = col.column()
+        sub.active = not props.use_scene_frame_range
+        if props.render_type == "IMAGE":
+            sub.prop(props, "frame_start", text="Frame")
+        else:
+            sub.prop(props, "frame_start", text="Start")
+            sub.prop(props, "frame_end",   text="End")
+            sub.prop(props, "frame_stepping_size", text="Stepping")
+
+        # Submit button — same formatting as Download button (plain row)
+        VIDEO_FORMATS = {"FFMPEG", "AVI_JPEG", "AVI_RAW"}
+        effective_format = (
+            scene.render.image_settings.file_format
+            if props.image_format == "SCENE" else props.image_format
+        )
+        using_video_format = effective_format in VIDEO_FORMATS
+
+        row = layout.row()
+        row.enabled = (logged_in and projects_ok and not using_video_format)
+
+        submit_job_text = "Submit Render Job" if logged_in else "Log in to submit a job"
+        row.operator("superluminal.submit_job", text=submit_job_text, icon="RENDER_STILL")
+
+        if not logged_in:
+            return
+
+        # Other info/warnings (plain rows)
+        if using_video_format:
+            if props.image_format == "SCENE":
+                layout.label(
+                    text=f"Video formats are not supported for rendering. Scene output is set to {scene.render.image_settings.file_format}.",
+                    icon="ERROR"
+                )
+            else:
+                layout.label(
+                    text=f"Video formats are not supported for rendering ({effective_format}).",
+                    icon="ERROR"
+                )
+
+        # Fixed-height unsaved-changes row (plain row)
+        warn_row = layout.row()
+        if bpy.data.is_dirty:
+            warn_row.label(
+                text="You have unsaved changes. Some changes may not be included in the render job.",
+                icon="ERROR"
+            )
+        else:
+            warn_row.label(text="")  # placeholder keeps panel height stable
+
+
+
+# ─────────────────────────────────────────────────────────────
+#  "Render Node" settings (renamed from Advanced)
+# ─────────────────────────────────────────────────────────────
+class SUPERLUMINAL_PT_RenderNode(bpy.types.Panel):
+    bl_idname      = "SUPERLUMINAL_PT_RenderNode"
+    bl_label       = "Render Node"
+    bl_parent_id   = "SUPERLUMINAL_PT_RenderPanel"
+    bl_space_type  = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context     = "render"
+    bl_options     = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        props  = context.scene.superluminal_settings
+
+        # Blender version (auto toggle + version enum)
+        col = layout.column()
+        col.prop(
+            props,
+            "auto_determine_blender_version",
+            text=f"Use Current Blender Version [{get_blender_version_string()}]",
+        )
+        sub = col.column()
+        sub.active = not props.auto_determine_blender_version
+        sub.prop(props, "blender_version", text="Blender Version")
+
+
+class SUPERLUMINAL_PT_RenderNode_Experimental(bpy.types.Panel):
+    """Separate sub-panel to mirror native grouping."""
+    bl_idname      = "SUPERLUMINAL_PT_RenderNode_Experimental"
+    bl_label       = "Experimental"
+    bl_parent_id   = "SUPERLUMINAL_PT_RenderNode"
+    bl_space_type  = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context     = "render"
+    bl_options     = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        props  = context.scene.superluminal_settings
+
+        col = layout.column()
+        col.prop(props, "ignore_errors", text="Finish Frame When Errored")
+        col.prop(props, "use_bserver", text="Persistence Engine")
+        col.prop(props, "use_async_upload", text="Async Frame Upload")
+
+
+class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
+    bl_idname      = "SUPERLUMINAL_PT_Jobs"
+    bl_label       = "Render Jobs"
+    bl_parent_id   = "SUPERLUMINAL_PT_RenderPanel"
+    bl_space_type  = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context     = "render"
+    bl_options     = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        scene  = context.scene
         props  = scene.superluminal_settings
         wm_props = scene.sulu_wm_settings
         prefs  = context.preferences.addons[__package__].preferences
 
         refresh_jobs_collection(prefs)
 
-        logged_in   = bool(Storage.data["user_token"])
-        projects_ok = len(Storage.data["projects"]) > 0
-        jobs_ok     = len(Storage.data["jobs"]) > 0
+        logged_in = bool(Storage.data.get("user_token"))
+        jobs_ok   = len(Storage.data.get("jobs", {})) > 0
 
-        # --------------------------------------------------  Project selector
-        project_row_container = layout.row(align=True)
-        project_selection_row = project_row_container.row(align=True)
-        project_selection_row.enabled = logged_in and projects_ok
-        project_selection_row.prop(prefs, "project_id", text="Project")
-        project_row_container.operator(
-            "superluminal.fetch_projects", text="", icon="FILE_REFRESH"
+        # Top row: full width, shove everything to the absolute right
+        tools = layout.row(align=True)
+        tools.use_property_split = False
+        tools.use_property_decorate = False
+        tools.separator_spacer()  # eat all space → next items dock to the right edge
+        tools.prop(wm_props, "live_job_updates", text="Auto Refresh")
+        tools.operator("superluminal.fetch_project_jobs", text="", icon='FILE_REFRESH')
+        tools.separator()  # small gap
+        tools.menu("SUPERLUMINAL_MT_job_columns", text="", icon='DOWNARROW_HLT')
+
+        # Job list
+        col = layout.column()
+        col.enabled = logged_in and jobs_ok
+        draw_header_row(col, prefs)
+
+        if not logged_in or not jobs_ok:
+            box = col.box()
+            if not logged_in:
+                box.label(text="Log in to see your jobs.", icon='ERROR')
+            elif not jobs_ok:
+                box.label(text="No jobs found in selected project.", icon='INFO')
+            return
+
+        col.template_list(
+            "SUPERLUMINAL_UL_job_items", "",
+            prefs, "jobs",
+            prefs, "active_job_index",
+            rows=3
         )
 
-        if not logged_in:
-            layout.separator()
-            layout.label(
-                text="Login in the preferences to enable uploads and downloads.",
-                icon='ERROR'
-            )
+        # Determine selected job
+        projects = Storage.data.get("projects", [])
+        selected_project = next((p for p in projects if p.get("id") == prefs.project_id), None)
+        selected_project_jobs = (
+            [j for j in Storage.data.get("jobs", {}).values()
+             if j.get("project_id") == selected_project.get("id")]
+            if selected_project else []
+        )
 
-        # --------------------------------------------------  Project upload settings
-        upload_settings_box = layout.box()
-        if self._section_header(upload_settings_box, props,
-                                "upload_settings", "Upload Settings"):
+        job_id, job_name = "", ""
+        if selected_project_jobs and 0 <= prefs.active_job_index < len(selected_project_jobs):
+            sel_job = selected_project_jobs[prefs.active_job_index]
+            job_id   = sel_job.get("id", "")
+            job_name = sel_job.get("name", "")
 
-            col = upload_settings_box.column(align=True)
-            col.prop(props, "upload_project_as_zip")
+        # Selected job row + open button
+        row = layout.row(align=True)
+        row.enabled = logged_in and jobs_ok and bool(job_name) and job_id != ""
+        row.label(text=str(job_name))
+        op = row.operator("superluminal.open_browser", text="Open in Browser", icon="URL")
+        op.job_id = job_id
+        op.project_id = prefs.project_id
 
-            col = upload_settings_box.column(align=True)
-            col.prop(props, "automatic_project_path")
+        # Download path + button
+        layout.prop(props, "download_path", text="Download Path")
 
-            manual_project_path_col = col.column(align=True)
-            manual_project_path_col.active = not props.automatic_project_path
-            manual_project_path_col.prop(props, "custom_project_path")
-
-            col.enabled = not props.upload_project_as_zip
-
-            # ---- Included Add-ons (collapsible) ----
-            col = upload_settings_box.column(align=True)
-            addons_box = col.box()
-            if self._section_header(
-                addons_box, props, "show_addon_list", "Include Enabled Addons"
-            ):
-                addons_column = addons_box.column(align=True)
-                enabled_addons: list[tuple[str, str]] = []
-
-                for addon in bpy.context.preferences.addons:
-                    mod_name = addon.module
-                    if mod_name == __package__:
-                        continue
-                    if mod_name in DEFAULT_ADDONS:
-                        continue
-
-                    mod = None
-                    mod = [m for m in addon_utils.modules() if m.__name__ == mod_name][0]
-
-                    if mod:
-                        pretty_name = addon_utils.module_bl_info(mod).get("name", mod_name)
-                        enabled_addons.append((mod_name, pretty_name))
-
-                if not enabled_addons:
-                    addons_column.label(text="No Add-ons Enabled", icon="INFO")
-                else:
-                    for mod_name, pretty in enabled_addons:
-                        _addon_row(addons_column, mod_name, pretty)
-
-        # --------------------------------------------------  Upload section
-        submission_box = layout.box()
-        if self._section_header(submission_box, props,
-                                "show_upload", "Job Submission"):
-
-            col = submission_box.column(align=True)
-            self._toggle_row(
-                col,
-                (props, "use_file_name"), (props, "job_name"),
-                toggle_text="Use File Name as Job Name",
-                content_text="Job Name",
-                invert=True
-            )
-            col.separator()
-
-            self._toggle_row(
-                col,
-                (props, "use_scene_image_format"), (props, "image_format"),
-                toggle_text="Use Scene Image Format",
-                content_text="Image Format",
-                invert=True
-            )
-            col.separator()
-
-            col.prop(props, "render_type")
-            col.separator()
-
-            frame_column = col.column(align=True)
-            frame_toggle_label = (
-                "Use Current Frame" if props.render_type == "IMAGE"
-                else "Use Scene Frame Range"
-            )
-            frame_column.prop(props, "use_scene_frame_range", text=frame_toggle_label)
-
-            custom_frame_column = frame_column.column(align=True)
-            custom_frame_column.active = not props.use_scene_frame_range
-
-            if props.render_type == "IMAGE":
-                custom_frame_column.prop(props, "frame_start", text="Frame")
-            else:
-                custom_frame_column.prop(props, "frame_start", text="Start")
-                custom_frame_column.prop(props, "frame_end",   text="End")
-                custom_frame_column.prop(
-                    props, "frame_stepping_size", text="Stepping"
-                )
-
-            col.separator()
-
-            submit_row = col.row()
-            using_video_format = (
-                bpy.context.scene.render.image_settings.file_format
-                in ["FFMPEG", "AVI_JPEG", "AVI_RAW"]
-            )
-            submit_row.enabled = (
-                logged_in and projects_ok
-                and not (using_video_format and props.use_scene_image_format)
-            )
-            submit_row.operator(
-                "superluminal.submit_job",
-                text="Submit Render Job",
-                icon="RENDER_STILL"
-            )
-
-            if using_video_format and props.use_scene_image_format:
-                col.separator()
-                col.label(
-                    text=(
-                        "Video formats are not supported for rendering. "
-                        f"Output is set to "
-                        f"{bpy.context.scene.render.image_settings.file_format}."
-                    ),
-                    icon="ERROR"
-                )
-
-            if bpy.data.is_dirty:
-                warning_row = col.row()
-                warning_row.label(
-                    text=(
-                        "You have unsaved changes. "
-                        "Some changes may not be included in the render job."
-                    ),
-                    icon="ERROR"
-                )
-
-            # ---- spacing before warnings ----
-            if not logged_in:
-                col.separator()
-                col.label(text="Log in first.", icon='ERROR')
-            elif not projects_ok:
-                col.separator()
-                col.label(
-                    text="Refresh project list and select a project.", icon='INFO'
-                )
+        row = layout.row()
+        row.enabled = logged_in and jobs_ok and bool(job_name) and job_id != ""
+        op2 = row.operator("superluminal.download_job", text="Download Job Output", icon="SORT_ASC")
+        op2.job_id = job_id
+        op2.job_name = job_name
 
 
-        # --------------------------------------------------  Advanced section (+ add-ons)
-        advanced_box = layout.box()
-        if self._section_header(advanced_box, props,
-                                "show_advanced", "Advanced"):
-
-            col = advanced_box.column(align=True)
-            self._toggle_row(
-                col,
-                (props, "auto_determine_blender_version"), (props, "blender_version"),
-                toggle_text=f"Use Current Blender Version [{get_blender_version_string()}]",
-                content_text="Blender Version",
-                invert=True
-            )
-            col.separator()
-
-            col = advanced_box.column(align=True)
-            col.label(text="Experimental Features:", icon="EXPERIMENTAL")
-            col.prop(props, "ignore_errors")
-            col.prop(props, "use_bserver")
-            col.prop(props, "use_async_upload")
-
-
-        # --------------------------------------------------  Download section
-        download_box = layout.box()
-        if self._section_header(download_box, props,
-                                "show_download", "Render Jobs"):
-
-            # ── Header row ────────────────────────────────────────────
-            hdr = download_box.row()                # one horizontal strip
-
-            # Left-hand group
-            left = hdr.row(align=True)
-            left.prop(
-                wm_props, "live_job_updates",
-                text="", toggle=True,
-                icon="RECORD_ON" if wm_props.live_job_updates else "RECORD_OFF"
-            )
-            left.label(text="Live Job Updates")
-
-            # Right-hand group (aligned hard-right)
-            right = hdr.row(align=True)
-            right.alignment = 'RIGHT'               # pushes this sub-row to the edge
-            right.operator("superluminal.fetch_project_jobs",
-                        text="",
-                        icon='FILE_REFRESH')
-            right.menu("SUPERLUMINAL_MT_job_columns",
-                    text="",
-                    icon='DOWNARROW_HLT')
-
-            # ── The list itself (unchanged) ───────────────────────────
-            list_col = download_box.column()
-            list_col.enabled = logged_in and jobs_ok
-
-            draw_header_row(list_col, prefs)
-            list_col.template_list(
-                "SUPERLUMINAL_UL_job_items", "",
-                prefs, "jobs",
-                prefs, "active_job_index",
-                rows=3
-            )
-
-            job_info_row = download_box.row(align=True)
-
-            projects = Storage.data.get("projects", [])              # always a list
-
-            selected_project = next(                                 # None if not found / empty
-                (p for p in projects if p.get("id") == prefs.project_id),
-                None
-            )
-
-            # Collect jobs only if we actually have a project
-            selected_project_jobs = (
-                [j for j in Storage.data.get("jobs", {}).values()
-                if j.get("project_id") == selected_project.get("id")]
-                if selected_project else []
-            )
-
-            job_id, job_name = "", ""
-            if selected_project_jobs and prefs.active_job_index < len(selected_project_jobs):
-                sel_job = selected_project_jobs[prefs.active_job_index]
-                job_id   = sel_job.get("id", "")
-                job_name = sel_job.get("name", "")
-
-            job_info_row.label(text=str(job_name))
-            browser_button = job_info_row.operator(
-                "superluminal.open_browser",
-                text="Open in Browser",
-                icon="URL"
-            )   
-
-            browser_button.job_id = job_id
-            browser_button.project_id = prefs.project_id
-
-        
-            download_box.prop(props, "download_path")
-
-            download_button_row = download_box.row()
-            download_operator = download_button_row.operator(
-                "superluminal.download_job",
-                text="Download Job Output",
-                icon="SORT_ASC"
-            )
-
-            download_operator.job_id = job_id
-            download_operator.job_name = job_name
-
-            enable_job_actions = (
-                logged_in and jobs_ok and bool(job_name) and job_id != ""
-            )
-
-            download_button_row.enabled = enable_job_actions
-            job_info_row.enabled = enable_job_actions
-
-
-            if not logged_in:
-                download_box.separator()
-                download_box.label(text="Log in first.", icon='ERROR')
-            elif not jobs_ok:
-                download_box.separator()
-                download_box.label(
-                    text="Refresh job list and select a job.", icon='INFO'
-                )
 
 # ------------------------------------------------------------------
 #  Registration
@@ -416,6 +437,12 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
 classes = (
     ToggleAddonSelectionOperator,
     SUPERLUMINAL_PT_RenderPanel,
+    SUPERLUMINAL_PT_UploadSettings,
+    SUPERLUMINAL_PT_IncludeAddons,
+    SUPERLUMINAL_PT_Submission,
+    SUPERLUMINAL_PT_RenderNode,
+    SUPERLUMINAL_PT_RenderNode_Experimental,
+    SUPERLUMINAL_PT_Jobs,
 )
 
 def register():
@@ -424,7 +451,6 @@ def register():
         register_class(cls)
 
 def unregister():
-    from bpy.utils import unregister_class
     from bpy.utils import unregister_class
     for cls in reversed(classes):
         unregister_class(cls)

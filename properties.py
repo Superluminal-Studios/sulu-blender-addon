@@ -1,11 +1,13 @@
+# properties.py
 """
 Superluminal – per-scene settings kept inside the .blend file.
 
-This version splits the settings into two separate PropertyGroups:
+This version removes fake foldout flags (show_* / upload_settings / show_addon_list).
+Use real Blender sub-panels (via bl_parent_id) to get persistent, non-dirty
+open/closed UI state.
 
-• SuperluminalSceneProperties  → all render-farm / project / output options
-• SuluWMSceneProperties        → “window-manager / live” options
-  (currently only the Live-Job-Updates toggle, but more can be added later)
+Property groups here remain focused on actual render settings that *should*
+live in the .blend (e.g., output format, frame range, included add-ons, etc.).
 """
 
 from __future__ import annotations
@@ -18,16 +20,27 @@ from .storage import Storage
 
 
 # ────────────────────────────────────────────────────────────────
-#  Enum items
+#  Enum items (dynamic for image format to reflect current scene)
 # ────────────────────────────────────────────────────────────────
-image_format_items = [
-    ("PNG",                 "PNG",                     "Save each frame as a PNG image"),
-    ("JPEG",                "JPEG",                    "Save each frame as JPEG image"),
-    ("EXR",                 "OpenEXR",                 "Save multilayer OpenEXR files."),
-    ("EXR_LOSSY",           "OpenEXR Lossy",           "Save lossy OpenEXR files."),
-    ("EXR_MULTILAYER",      "OpenEXR Multilayer",      "Save multilayer OpenEXR files."),
-    ("EXR_MULTILAYER_LOSSY","OpenEXR Multilayer Lossy","Save lossy multilayer OpenEXR files."),
-]
+def image_format_items_cb(self, context):
+    current = "Unknown"
+    try:
+        if context and context.scene:
+            current = context.scene.render.image_settings.file_format
+    except Exception:
+        pass
+
+    # (identifier, name, description)
+    return [
+        ("SCENE", f"Scene Image Format [{current}]", "Use Blender's current Output > File Format."),
+        ("PNG",   "PNG",                      "Save each frame as a PNG image."),
+        ("JPEG",  "JPEG",                     "Save each frame as JPEG image."),
+        ("EXR",   "OpenEXR",                  "Save OpenEXR files."),
+        ("EXR_LOSSY", "OpenEXR Lossy",        "Save lossy OpenEXR files."),
+        ("EXR_MULTILAYER", "OpenEXR Multilayer", "Save multilayer OpenEXR files."),
+        ("EXR_MULTILAYER_LOSSY", "OpenEXR Multilayer Lossy", "Save lossy multilayer OpenEXR files."),
+    ]
+
 
 blender_version_items = [
     ("BLENDER40", "Blender 4.0", "Use Blender 4.0 on the farm"),
@@ -67,15 +80,17 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     # ------------------------------------------------------------
     #  Project packaging
     # ------------------------------------------------------------
-    upload_project_as_zip: bpy.props.BoolProperty(
-        name="Upload Project As Zip",
-        default=True,
+    upload_type: bpy.props.EnumProperty(
+        name="Upload Type",
+        items=[
+            ("ZIP",     "Zip",     "Upload this .blend and its dependencies as a single ZIP archive."),
+            ("PROJECT", "Project", "Upload files to a project folder; subsequent uploads send only files that changed."),
+        ],
+        default="ZIP",
         description=(
-            "When enabled, this blend file together with all of its dependencies "
-            "is uploaded as a single ZIP archive. When disabled, each file is "
-            "uploaded to a project folder on the render farm, and subsequent "
-            "uploads send only files that have changed. Disabling this option can "
-            "eliminate most of the upload time."
+            "Choose how to package and upload your scene:\n"
+            "• Zip — upload this .blend and its dependencies as a single ZIP archive.\n"
+            "• Project — upload files into a project folder; subsequent uploads only send changed files."
         ),
     )
     automatic_project_path: bpy.props.BoolProperty(
@@ -84,16 +99,15 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         description=(
             "When enabled, the root of your project is automatically determined "
             "based on the paths of the individual files this blend file has as "
-            "dependencies. When disabled, you can manually specify the project "
-            "root path below. (Only used if 'Upload Project As Zip' is disabled.)"
+            "dependencies. (Only used if Upload Type is 'Project'.)"
         ),
     )
     custom_project_path: bpy.props.StringProperty(
         name="Custom Project Path",
         default="",
         description=(
-            "Specify the root of your project manually. (Only used if 'Upload "
-            "Project As Zip' is disabled and 'Automatic Project Path' is disabled.)"
+            "Specify the root of your project manually. "
+            "(Only used if Upload Type is 'Project' and Automatic Project Path is disabled.)"
         ),
         subtype="DIR_PATH",
     )
@@ -116,24 +130,17 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     )
 
     # ------------------------------------------------------------
-    #  Output format
+    #  Output format (enum includes a 'Scene Image Format' option)
+    #  NOTE: because items=callback, default MUST be an integer index.
+    #        0 -> "SCENE" entry above.
     # ------------------------------------------------------------
     image_format: bpy.props.EnumProperty(
         name="Image Format",
-        items=image_format_items,
-        default="PNG",
+        items=image_format_items_cb,
+        default=0,  # <- important for dynamic enums
         description=(
-            'Preset image formats to use when rendering if "Use Scene Image '
-            'Format" is disabled. (Uses reasonable defaults for each format, '
-            'enable "Use Scene Image Format" for more fine-grained control.)'
-        ),
-    )
-    use_scene_image_format: bpy.props.BoolProperty(
-        name="Use Scene Format",
-        default=True,
-        description=(
-            "Use the image format settings selected in Blender's render output "
-            "settings instead of the preset image formats below."
+            "Choose an image format preset or pick 'Scene Image Format' to use "
+            "the current Output > File Format from your Blender scene."
         ),
     )
 
@@ -207,7 +214,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     )
 
     # ------------------------------------------------------------
-    #  Download stuff
+    #  Download / persistence options
     # ------------------------------------------------------------
     download_path: bpy.props.StringProperty(
         name="Download Path",
@@ -235,39 +242,6 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         ),
     )
 
-    # ------------------------------------------------------------
-    #  Show sections (UI foldouts / flags)
-    # ------------------------------------------------------------
-    show_upload: bpy.props.BoolProperty(
-        name="Show Upload Section",
-        description="Expand/Collapse the upload section of the panel",
-        default=True,
-        options={'HIDDEN'},
-    )
-    show_download: bpy.props.BoolProperty(
-        name="Show Download Section",
-        description="Expand/Collapse the download section of the panel",
-        default=False,
-        options={'HIDDEN'},
-    )
-    show_advanced: bpy.props.BoolProperty(
-        name="Show Advanced Section",
-        description="Expand/Collapse the advanced section of the panel",
-        default=False,
-        options={'HIDDEN'},
-    )
-    upload_settings: bpy.props.BoolProperty(
-        name="Show Upload Settings",
-        description="Expand/Collapse the upload settings section of the panel",
-        default=False,
-        options={'HIDDEN'},
-    )
-    show_addon_list: bpy.props.BoolProperty(
-        name="Show Add-on List",
-        description="Expand/Collapse the add-on list section of the panel",
-        default=False,
-        options={'HIDDEN'},
-    )
     included_addons: bpy.props.StringProperty(
         name="Included Add-ons",
         description=(
@@ -275,7 +249,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
             "packed and uploaded with the job"
         ),
         default="",
-        options={'HIDDEN'},  # user never edits this directly
+        options={'HIDDEN'},  # user never edits this directly; UI lives in a sub-panel
     )
 
 
