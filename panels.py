@@ -432,7 +432,6 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
 classes = (
     ToggleAddonSelectionOperator,
     SUPERLUMINAL_PT_RenderPanel,
-    # Place Submission first among subpanels for older Blender versions
     SUPERLUMINAL_PT_Submission,
     SUPERLUMINAL_PT_UploadSettings,
     SUPERLUMINAL_PT_IncludeAddons,
