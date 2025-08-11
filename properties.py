@@ -1,8 +1,13 @@
+# properties.py (scene & WM properties)
 from __future__ import annotations
 import bpy
 
 from .utils.prefs import get_prefs
-from .utils.version_utils import get_blender_version_string
+from .utils.version_utils import (
+    get_blender_version_string,
+    blender_version_items,
+    enum_from_bpy_version,
+)
 from .utils.request_utils import fetch_jobs
 from .storage import Storage
 
@@ -29,15 +34,6 @@ def image_format_items_cb(self, context):
         ("EXR_MULTILAYER_LOSSY", "OpenEXR Multilayer Lossy", "Save lossy multilayer OpenEXR files."),
     ]
 
-
-blender_version_items = [
-    ("BLENDER40", "Blender 4.0", "Use Blender 4.0 on the farm"),
-    ("BLENDER41", "Blender 4.1", "Use Blender 4.1 on the farm"),
-    ("BLENDER42", "Blender 4.2", "Use Blender 4.2 on the farm"),
-    ("BLENDER43", "Blender 4.3", "Use Blender 4.3 on the farm"),
-    ("BLENDER44", "Blender 4.4", "Use Blender 4.4 on the farm"),
-    ("BLENDER45", "Blender 4.5", "Use Blender 4.5 on the farm"),
-]
 
 render_type_items = [
     ("IMAGE",     "Image",     "Render only a single frame"),
@@ -167,12 +163,12 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     )
 
     # ------------------------------------------------------------
-    #  Farm Blender version
+    #  Farm Blender version (single source of truth via utils.version_utils)
     # ------------------------------------------------------------
     blender_version: bpy.props.EnumProperty(
         name="Blender Version",
         items=blender_version_items,
-        default="BLENDER44",
+        default=enum_from_bpy_version(),  # dynamic default that matches the running Blender
         description=(
             "Specify which Blender build the render farm should run. "
             "Make sure your scene is compatible with the chosen version."
@@ -183,8 +179,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         default=True,
         description=(
             "Determine the Blender version to use on the farm based on the one "
-            f"you're currently using. Right now you're using "
-            f"Blender {get_blender_version_string()}."
+            f"you're currently using. Right now you're using Blender {get_blender_version_string()}."
         ),
     )
 

@@ -1,4 +1,4 @@
-# submit_job_operator.py
+# operators/submit_job_operator.py
 from __future__ import annotations
 
 import bpy
@@ -9,14 +9,18 @@ import tempfile
 import uuid
 from pathlib import Path
 from bpy.props import EnumProperty, IntProperty, BoolProperty
+
 from ...utils.check_file_outputs import gather_render_outputs
 from ...utils.worker_utils import launch_in_terminal
 from .addon_packer import bundle_addons
 from ...constants import POCKETBASE_URL, FARM_IP
 import os
-from ...utils.version_utils import enum_from_bpy_version
+from ...utils.version_utils import (
+    resolved_worker_blender_value,
+)
 from ...storage import Storage
 from ...utils.prefs import get_prefs, get_addon_dir
+
 
 def addon_version(addon_name: str):
     addon_utils.modules(refresh=False)
@@ -24,6 +28,7 @@ def addon_version(addon_name: str):
         name = mod.bl_info.get("name", "")
         if name == addon_name:
             return tuple(mod.bl_info.get("version"))
+
 
 class SUPERLIMINAL_OT_SubmitJob(bpy.types.Operator):
     """Submit the current .blend file and all of its dependencies to Superluminal"""
@@ -106,11 +111,13 @@ class SUPERLIMINAL_OT_SubmitJob(bpy.types.Operator):
             return {"CANCELLED"}
         layers = outputs[0].get("layers", [])
 
-        # Blender version
-        if props.auto_determine_blender_version:
-            blender_version = enum_from_bpy_version()
-        else:
-            blender_version = props.blender_version
+        # ---------------------------------------------
+        # Blender version (single source of truth)
+        # ---------------------------------------------
+        blender_version_payload = resolved_worker_blender_value(
+            props.auto_determine_blender_version,
+            props.blender_version
+        )
 
         # ---------------------------------------------
         # Frame computation (mode-aware)
@@ -166,7 +173,7 @@ class SUPERLIMINAL_OT_SubmitJob(bpy.types.Operator):
             "end_frame": end_frame,
             "frame_stepping_size": frame_stepping_size,
             "render_engine": scene.render.engine.upper(),
-            "blender_version": blender_version.lower(),
+            "blender_version": blender_version_payload,  # <- single source of truth, always correct
             "ignore_errors": props.ignore_errors,
             "pocketbase_url": POCKETBASE_URL,
             "user_token": token,
