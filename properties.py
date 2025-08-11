@@ -254,11 +254,28 @@ class SuluWMSceneProperties(bpy.types.PropertyGroup):
 
 
 # ────────────────────────────────────────────────────────────────
+#  3. WindowManager-scoped (runtime-only) auth props
+#      — not saved in .blend or user preferences
+# ────────────────────────────────────────────────────────────────
+class SuluWMProperties(bpy.types.PropertyGroup):
+    username: bpy.props.StringProperty(
+        name="Email",
+        description="Your Superluminal account email/username"
+    )
+    password: bpy.props.StringProperty(
+        name="Password",
+        subtype="PASSWORD",
+        description="Your Superluminal password (not persisted)"
+    )
+
+
+# ────────────────────────────────────────────────────────────────
 #  Registration helpers
 # ────────────────────────────────────────────────────────────────
 _classes = (
     SuperluminalSceneProperties,
     SuluWMSceneProperties,
+    SuluWMProperties,
 )
 
 
@@ -272,11 +289,20 @@ def register() -> None:  # pylint: disable=missing-function-docstring
     bpy.types.Scene.sulu_wm_settings = bpy.props.PointerProperty(
         type=SuluWMSceneProperties
     )
+    # Runtime-only credentials holder (non-persistent)
+    bpy.types.WindowManager.sulu_wm = bpy.props.PointerProperty(
+        type=SuluWMProperties
+    )
 
 
 def unregister() -> None:  # pylint: disable=missing-function-docstring
-    del bpy.types.Scene.sulu_wm_settings
-    del bpy.types.Scene.superluminal_settings
+    # Remove pointers first
+    if hasattr(bpy.types.WindowManager, "sulu_wm"):
+        del bpy.types.WindowManager.sulu_wm
+    if hasattr(bpy.types.Scene, "sulu_wm_settings"):
+        del bpy.types.Scene.sulu_wm_settings
+    if hasattr(bpy.types.Scene, "superluminal_settings"):
+        del bpy.types.Scene.superluminal_settings
 
     for cls in reversed(_classes):
         bpy.utils.unregister_class(cls)

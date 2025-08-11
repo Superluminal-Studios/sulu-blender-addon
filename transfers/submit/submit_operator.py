@@ -25,8 +25,7 @@ def addon_version(addon_name: str):
         if name == addon_name:
             return tuple(mod.bl_info.get("version"))
 
-
-class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
+class SUPERLIMINAL_OT_SubmitJob(bpy.types.Operator):
     """Submit the current .blend file and all of its dependencies to Superluminal"""
 
     bl_idname = "superluminal.submit_job"
@@ -88,8 +87,24 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             self.report({"ERROR"}, "Please save your .blend file first.")
             return {"CANCELLED"}
 
-        outputs = gather_render_outputs(scene)["outputs"]
-        layers = outputs[0]["layers"]
+        # Ensure we have a logged-in session with a project
+        token = Storage.data.get("user_token")
+        if not token:
+            self.report({"ERROR"}, "You are not logged in.")
+            return {"CANCELLED"}
+
+        # Resolve project from Storage + prefs
+        project = next((p for p in Storage.data.get("projects", []) if p.get("id") == getattr(prefs, "project_id", None)), None)
+        if not project:
+            self.report({"ERROR"}, "No project selected or projects not loaded. Please log in and select a project.")
+            return {"CANCELLED"}
+
+        # Gather outputs safely
+        outputs = gather_render_outputs(scene).get("outputs", [])
+        if not outputs:
+            self.report({"ERROR"}, "No render outputs detected for this scene.")
+            return {"CANCELLED"}
+        layers = outputs[0].get("layers", [])
 
         # Blender version
         if props.auto_determine_blender_version:
@@ -154,11 +169,11 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "blender_version": blender_version.lower(),
             "ignore_errors": props.ignore_errors,
             "pocketbase_url": POCKETBASE_URL,
-            "user_token": Storage.data["user_token"],
-            "project": [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0],
+            "user_token": token,
+            "project": project,
             "use_bserver": props.use_bserver,
             "use_async_upload": props.use_async_upload,
-            "farm_url": f"{FARM_IP}/farm/{Storage.data['org_id']}/api/",
+            "farm_url": f"{FARM_IP}/farm/{Storage.data.get('org_id','')}/api/",
         }
 
         bpy.ops.wm.save_as_mainfile(filepath=handoff["temp_blend_path"], compress=True, copy=True, relative_remap=False)
@@ -173,13 +188,13 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             launch_in_terminal([sys.executable, "-u", str(worker), str(tmp_json)])
         except Exception as e:
             self.report({"ERROR"}, f"Failed to launch submission: {e}")
+            return {"CANCELLED"}
 
         self.report({"INFO"}, "Submission started in external window.")
         return {"FINISHED"}
 
 
-
-classes = (SUPERLUMINAL_OT_SubmitJob,)
+classes = (SUPERLIMINAL_OT_SubmitJob,)
 
 
 def register() -> None:

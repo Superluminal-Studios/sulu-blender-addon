@@ -167,22 +167,26 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
 
 
 def draw_login(layout):
-    prefs = bpy.context.preferences.addons[__package__].preferences
-    
-    if Storage.data["user_token"]:
+    # Non-persistent credentials live on the WindowManager
+    wm = bpy.context.window_manager
+    creds = getattr(wm, "sulu_wm", None)
+
+    if Storage.data.get("user_token"):
         layout.operator("superluminal.logout", text="Log out")
     else:
-        layout.prop(prefs, "username")
-        layout.prop(prefs, "password")
+        if creds is None:
+            col = layout.column()
+            col.label(text="Internal error: auth props not registered.", icon='ERROR')
+            return
+        layout.prop(creds, "username", text="Email")
+        layout.prop(creds, "password", text="Password")
         layout.operator("superluminal.login", text="Log in")
 
 # ╭──────────────────  Add-on preferences  ───────────────────╮
 class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
-    # ▸ credentials / project picker
-    username: bpy.props.StringProperty(name="Username")
-    password: bpy.props.StringProperty(name="Password", subtype="PASSWORD")
+    # ▸ project picker (remains persisted)
     project_id: bpy.props.EnumProperty(name="Project", items=get_project_items)
 
     # ▸ job table
@@ -211,7 +215,7 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
 classes = (
     SuperluminalJobItem,
     SUPERLUMINAL_MT_job_columns,
-    SUPERLUMINAL_UL_job_items,
+    SUPERLIMINAL_UL_job_items := SUPERLUMINAL_UL_job_items,  # keep stable name in bpy
     SuperluminalAddonPreferences,
 )
 

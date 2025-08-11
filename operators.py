@@ -1,67 +1,127 @@
 from __future__ import annotations
 
-import json
 import bpy
+from operator import setitem
+import webbrowser
 
 from .constants import POCKETBASE_URL
 from .pocketbase_auth import NotAuthenticated
 from .storage import Storage
 from .utils.request_utils import fetch_projects, get_render_queue_key, fetch_jobs
 from .utils.logging import report_exception
-from operator import setitem
-import webbrowser
+
+
+# ────────────────────────────────────────────────────────────────
+#  Helpers to scrub in-memory credentials (WindowManager props)
+# ────────────────────────────────────────────────────────────────
+def _flush_wm_credentials(wm: bpy.types.WindowManager) -> None:
+    try:
+        creds = wm.sulu_wm
+        creds.username = ""
+        creds.password = ""
+    except Exception:
+        pass
+
+def _flush_wm_password(wm: bpy.types.WindowManager) -> None:
+    try:
+        wm.sulu_wm.password = ""
+    except Exception:
+        pass
+
+
 # -----------------------------------------------------------------------------
 #  Authentication
 # -----------------------------------------------------------------------------
-class SUPERLUMINAL_OT_Login(bpy.types.Operator):
+class SUPERLIMINAL_OT_Login(bpy.types.Operator):
     """Sign in to Superluminal"""
-
     bl_idname = "superluminal.login"
     bl_label = "Log in to Superluminal"
 
     def execute(self, context):
         prefs = context.preferences.addons[__package__].preferences
+        wm = context.window_manager
+        creds = getattr(wm, "sulu_wm", None)
+
+        if creds is None:
+            self.report({"ERROR"}, "Internal error: auth props not registered.")
+            return {"CANCELLED"}
+
         url   = f"{POCKETBASE_URL}/api/collections/users/auth-with-password"
-        data  = {"identity": prefs.username, "password": prefs.password}
+        data  = {"identity": creds.username.strip(), "password": creds.password}
 
         # --- 0) authenticate -------------------------------------------------
         try:
             r = Storage.session.post(url, json=data, timeout=Storage.timeout)
+            if r.status_code in (401, 403):
+                _flush_wm_credentials(wm)  # scrub both email+password on wrong creds
+                self.report({"ERROR"}, "Invalid email or password.")
+                return {"CANCELLED"}
+
             r.raise_for_status()
-            if not (token := r.json().get("token")):
+            payload = r.json()
+            token = payload.get("token")
+            if not token:
+                _flush_wm_password(wm)
                 self.report({"WARNING"}, "Login succeeded but no token returned.")
                 return {"CANCELLED"}
+
             Storage.data["user_token"] = token
+
         except Exception as exc:
+            _flush_wm_password(wm)
             return report_exception(self, exc, "Login failed")
 
-        # --- 1) projects -----------------------------------------------------
+        # --- 1) establish coherent session state ----------------------------
+        # Always overwrite these so we don't carry stale values.
+        Storage.data["projects"] = []
+        Storage.data["org_id"] = ""
+        Storage.data["user_key"] = ""
+        Storage.data["jobs"] = {}
+
+        projects = []
         try:
             projects = fetch_projects()
         except Exception as exc:
             self.report({"WARNING"}, f"Logged in but could not fetch projects: {exc}")
+        finally:
+            Storage.data["projects"] = projects or []
 
         if projects:
-            Storage.data["projects"] = projects
-            project = projects[0]
-            prefs.project_id = project["id"]
-            org_id = project["organization_id"]
-
             try:
-                user_key = get_render_queue_key(org_id)
+                project = projects[0]
+                prefs.project_id = project["id"]
+                org_id = project["organization_id"]
 
-                Storage.data["org_id"] = org_id
-                Storage.data["user_key"] = user_key
+                # get queue key + jobs
+                try:
+                    user_key = get_render_queue_key(org_id)
+                    Storage.data["org_id"] = org_id
+                    Storage.data["user_key"] = user_key
 
-                jobs = fetch_jobs(org_id, user_key, prefs.project_id)
-                Storage.data["jobs"] = jobs
+                    jobs = fetch_jobs(org_id, user_key, prefs.project_id) or {}
+                    Storage.data["jobs"] = jobs
 
-                if jobs:
-                    context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
+                    # Best-effort: set default job id if prop exists
+                    try:
+                        if jobs and hasattr(context.scene, "superluminal_settings"):
+                            # only set if property exists; ignore otherwise
+                            if hasattr(context.scene.superluminal_settings, "job_id"):
+                                context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
+                        # else ignore silently
+                    except Exception:
+                        pass
+
+                except Exception as exc:
+                    report_exception(self, exc, "Projects loaded, but could not fetch jobs")
+
             except Exception as exc:
-                report_exception(self, exc, "Projects loaded, but could not fetch jobs")
+                report_exception(self, exc, "Failed to initialize default project")
 
+        # Persist coherent state
         Storage.save()
+
+        # Scrub credentials from memory after successful login
+        _flush_wm_credentials(wm)
 
         # --- refresh UI ------------------------------------------------------
         for area in context.screen.areas:
@@ -72,14 +132,14 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
+class SUPERLIMINAL_OT_Logout(bpy.types.Operator):
     """Log out of Superluminal"""
-
     bl_idname = "superluminal.logout"
     bl_label = "Log out of Superluminal"
 
     def execute(self, context):
         Storage.clear()
+        _flush_wm_credentials(context.window_manager)
         self.report({"INFO"}, "Logged out.")
         return {"FINISHED"}
 
@@ -87,9 +147,8 @@ class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
 # -----------------------------------------------------------------------------
 #  Project list utilities
 # -----------------------------------------------------------------------------
-class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
+class SUPERLIMINAL_OT_FetchProjects(bpy.types.Operator):
     """Fetch the project list from Superluminal."""
-
     bl_idname = "superluminal.fetch_projects"
     bl_label = "Fetch Project List"
 
@@ -108,14 +167,14 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
             )
 
         Storage.data["projects"] = projects
+        Storage.save()
 
         self.report({"INFO"}, "Projects fetched.")
         return {"FINISHED"}
 
 
-class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
+class SUPERLIMINAL_OT_FetchProjectJobs(bpy.types.Operator):
     """Fetch the job list for the selected project from Superluminal."""
-
     bl_idname = "superluminal.fetch_project_jobs"
     bl_label = "Fetch Project Jobs"
 
@@ -133,14 +192,22 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
             return {"CANCELLED"}
 
         try:
-            jobs = fetch_jobs(org_id, user_key, project_id)
+            jobs = fetch_jobs(org_id, user_key, project_id) or {}
         except NotAuthenticated as exc:
             return report_exception(self, exc, str(exc))
         except Exception as exc:
             return report_exception(self, exc, "Error fetching jobs")
 
-        if jobs:
-            context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
+        Storage.data["jobs"] = jobs
+        Storage.save()
+
+        # Best-effort set active job id if present
+        try:
+            if jobs and hasattr(context.scene, "superluminal_settings"):
+                if hasattr(context.scene.superluminal_settings, "job_id"):
+                    context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
+        except Exception:
+            pass
 
         for area in context.screen.areas:
             if area.type == "PROPERTIES":
@@ -148,9 +215,9 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
 
         return {"FINISHED"}
 
-class SUPERLUMINAL_OT_OpenBrowser(bpy.types.Operator):
-    """Open the job in the browser."""
 
+class SUPERLIMINAL_OT_OpenBrowser(bpy.types.Operator):
+    """Open the job in the browser."""
     bl_idname = "superluminal.open_browser"
     bl_label = "Open Job in Browser"
     job_id: bpy.props.StringProperty(name="Job ID")
@@ -167,26 +234,36 @@ class SUPERLUMINAL_OT_OpenBrowser(bpy.types.Operator):
 #  Registration helpers
 # -----------------------------------------------------------------------------
 classes = (
-    SUPERLUMINAL_OT_Login,
-    SUPERLUMINAL_OT_Logout,
-    SUPERLUMINAL_OT_FetchProjects,
-    SUPERLUMINAL_OT_FetchProjectJobs,
-    SUPERLUMINAL_OT_OpenBrowser,
+    SUPERLIMINAL_OT_Login,
+    SUPERLIMINAL_OT_Logout,
+    SUPERLIMINAL_OT_FetchProjects,
+    SUPERLIMINAL_OT_FetchProjectJobs,
+    SUPERLIMINAL_OT_OpenBrowser,
 )
 
-
 def _submit_poll(cls, context):
-    return bool(Storage.data["user_token"]) and any(item[0] not in {"", "NONE"} for item in Storage.data["projects"])
-
+    try:
+        has_token   = bool(Storage.data.get("user_token"))
+        has_project = any(bool(p.get("id")) for p in Storage.data.get("projects", []))
+        return has_token and has_project
+    except Exception:
+        return False
 
 def _download_poll(cls, context):
-    return bool(Storage.data["user_token"]) and any(item[0] not in {"", "NONE"} for item in Storage.data["jobs"])
+    try:
+        has_token = bool(Storage.data.get("user_token"))
+        # if jobs is a dict, truthy means at least one job
+        has_jobs  = bool(Storage.data.get("jobs"))
+        return has_token and has_jobs
+    except Exception:
+        return False
 
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
+    # Attach safer poll functions if those operators exist
     if (sub_cls := bpy.types.Operator.bl_rna_get_subclass_py("superluminal.submit_job")):
         sub_cls.poll = classmethod(_submit_poll)
 

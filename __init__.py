@@ -11,19 +11,22 @@ bl_info = {
 
 import bpy
 import atexit
+
 # -------------------------------------------------------------------
 #  Internal Imports
 # -------------------------------------------------------------------
 from . import icons
 icons.load_icons()
+
 from . import constants
-from . import preferences
-from . import properties
+from . import properties            # <-- must register BEFORE preferences (WM props)
+from . import preferences           # prefs UI reads WM props
 from .transfers.submit import submit_operator
 from .transfers.download import download_operator
 from . import panels
 from . import operators
 from .storage import Storage
+
 def get_prefs():
     addon_name = __name__
     prefs_container = bpy.context.preferences.addons.get(addon_name)
@@ -34,8 +37,10 @@ def get_prefs():
 # -------------------------------------------------------------------
 def register():
     atexit.register(Storage.save)
-    preferences.register()
+
+    # Ensure WM props are registered before any UI that touches them
     properties.register()
+    preferences.register()
     submit_operator.register()
     download_operator.register()
     panels.register()
@@ -44,10 +49,10 @@ def register():
 def unregister():
     operators.unregister()
     panels.unregister()
-    submit_operator.unregister()
     download_operator.unregister()
-    properties.unregister()
+    submit_operator.unregister()
     preferences.unregister()
+    properties.unregister()
     icons.unload_icons()
 
 
