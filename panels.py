@@ -120,6 +120,101 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
 # ------------------------------------------------------------------
 #  Sub-panels (native look & feel)
 # ------------------------------------------------------------------
+class SUPERLUMINAL_PT_Submission(bpy.types.Panel):
+    bl_idname      = "SUPERLUMINAL_PT_Submission"
+    bl_label       = "Job Submission"
+    bl_parent_id   = "SUPERLUMINAL_PT_RenderPanel"
+    bl_space_type  = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context     = "render"
+    bl_order       = 0  # Top-most among siblings
+    # Note: open by default (no DEFAULT_CLOSED)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        scene  = context.scene
+        props  = scene.superluminal_settings
+        prefs  = context.preferences.addons[__package__].preferences
+
+        logged_in   = bool(Storage.data.get("user_token"))
+        projects_ok = len(Storage.data.get("projects", [])) > 0
+
+        # Job name toggle + field
+        col = layout.column()
+        col.prop(props, "use_file_name", text="Use File Name as Job Name")
+        sub = col.column()
+        sub.active = not props.use_file_name
+        sub.prop(props, "job_name", text="Job Name")
+
+        # Image format (enum with "Scene Image Format" option)
+        col = layout.column()
+        col.prop(props, "image_format", text="Image Format")
+
+        # Frame range controls (apply to Animation submissions)
+        box = layout.box()
+        col = box.column()
+        col.prop(props, "use_scene_frame_range", text="Use Scene Frame Range")
+
+        sub = col.column()
+        range_col = sub.column(align=True)
+        if props.use_scene_frame_range:
+            # Show actual Scene range in disabled fields
+            sub.enabled = False
+            range_col.prop(scene, "frame_start", text="Start")
+            range_col.prop(scene, "frame_end",   text="End")
+            sub.prop(scene, "frame_step",  text="Stepping")
+        else:
+            range_col.prop(props, "frame_start",          text="Start")
+            range_col.prop(props, "frame_end",            text="End")
+            sub.prop(props, "frame_stepping_size",  text="Stepping")
+
+        # Submit buttons — same formatting as Download button (plain row)
+        VIDEO_FORMATS = {"FFMPEG", "AVI_JPEG", "AVI_RAW"}
+        effective_format = (
+            scene.render.image_settings.file_format
+            if props.image_format == "SCENE" else props.image_format
+        )
+        using_video_format = effective_format in VIDEO_FORMATS
+
+        row = layout.row(align=True)
+        row.enabled = (logged_in and projects_ok and not using_video_format)
+
+        op_still = row.operator("superluminal.submit_job", text="Submit Still", icon="RENDER_STILL")
+        op_still.mode = 'STILL'
+
+        op_anim = row.operator("superluminal.submit_job", text="Submit Animation", icon="RENDER_ANIMATION")
+        op_anim.mode = 'ANIMATION'
+
+        if not logged_in:
+            return
+
+        # Other info/warnings (plain rows)
+        if using_video_format:
+            if props.image_format == "SCENE":
+                layout.label(
+                    text=f"Video formats are not supported for rendering. Scene output is set to {scene.render.image_settings.file_format}.",
+                    icon="ERROR"
+                )
+            else:
+                layout.label(
+                    text=f"Video formats are not supported for rendering ({effective_format}).",
+                    icon="ERROR"
+                )
+
+        # Fixed-height unsaved-changes row (plain row)
+        warn_row = layout.row()
+        if bpy.data.is_dirty:
+            warn_row.label(
+                text="You have unsaved changes. Some changes may not be included in the render job.",
+                icon="ERROR"
+            )
+        else:
+            warn_row.label(text="")  # placeholder keeps panel height stable
+
+
 class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
     bl_idname      = "SUPERLUMINAL_PT_UploadSettings"
     bl_label       = "Upload Settings"
@@ -128,6 +223,7 @@ class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
     bl_region_type = "WINDOW"
     bl_context     = "render"
     bl_options     = {'DEFAULT_CLOSED'}
+    bl_order       = 10
 
     def draw(self, context):
         layout = self.layout
@@ -185,112 +281,18 @@ class SUPERLUMINAL_PT_IncludeAddons(bpy.types.Panel):
                 _addon_row(layout, mod_name, pretty)
 
 
-class SUPERLUMINAL_PT_Submission(bpy.types.Panel):
-    bl_idname      = "SUPERLUMINAL_PT_Submission"
-    bl_label       = "Job Submission"
-    bl_parent_id   = "SUPERLUMINAL_PT_RenderPanel"
-    bl_space_type  = "PROPERTIES"
-    bl_region_type = "WINDOW"
-    bl_context     = "render"
-    bl_options     = {'DEFAULT_CLOSED'}
-
-    def draw(self, context):
-        layout = self.layout
-        layout.use_property_split = True
-        layout.use_property_decorate = False
-
-        scene  = context.scene
-        props  = scene.superluminal_settings
-        prefs  = context.preferences.addons[__package__].preferences
-
-        logged_in   = bool(Storage.data.get("user_token"))
-        projects_ok = len(Storage.data.get("projects", [])) > 0
-
-        # Job name toggle + field
-        col = layout.column()
-        col.prop(props, "use_file_name", text="Use File Name as Job Name")
-        sub = col.column()
-        sub.active = not props.use_file_name
-        sub.prop(props, "job_name", text="Job Name")
-
-        # Image format (enum with "Scene Image Format" option)
-        col = layout.column()
-        col.prop(props, "image_format", text="Image Format")
-
-        # Frame range controls (apply to Animation submissions)
-        box = layout.box()
-        col = box.column()
-        col.prop(props, "use_scene_frame_range", text="Use Scene Frame Range")
-
-        sub = col.column()
-        range_col = sub.column(align=True)
-        if props.use_scene_frame_range:
-            # Show actual Scene range in disabled fields
-            sub.enabled = False
-            range_col.prop(scene, "frame_start", text="Start")
-            range_col.prop(scene, "frame_end",   text="End")
-            sub.prop(scene, "frame_step",  text="Stepping")
-        else:
-            range_col.prop(props, "frame_start",          text="Start")
-            range_col.prop(props, "frame_end",            text="End")
-            sub.prop(props, "frame_stepping_size",  text="Stepping")
-
-        # Submit buttons — same formatting as Download button (plain row)
-        VIDEO_FORMATS = {"FFMPEG", "AVI_JPEG", "AVI_RAW"}
-        effective_format = (
-            scene.render.image_settings.file_format
-            if props.image_format == "SCENE" else props.image_format
-        )
-        using_video_format = effective_format in VIDEO_FORMATS
-
-        row = layout.row(align=True)
-        row.enabled = (logged_in and projects_ok and not using_video_format)
-
-        op_still = row.operator("superluminal.submit_job", text="Submit Still…", icon="RENDER_STILL")
-        op_still.mode = 'STILL'
-
-        op_anim = row.operator("superluminal.submit_job", text="Submit Animation", icon="RENDER_ANIMATION")
-        op_anim.mode = 'ANIMATION'
-
-        if not logged_in:
-            return
-
-        # Other info/warnings (plain rows)
-        if using_video_format:
-            if props.image_format == "SCENE":
-                layout.label(
-                    text=f"Video formats are not supported for rendering. Scene output is set to {scene.render.image_settings.file_format}.",
-                    icon="ERROR"
-                )
-            else:
-                layout.label(
-                    text=f"Video formats are not supported for rendering ({effective_format}).",
-                    icon="ERROR"
-                )
-
-        # Fixed-height unsaved-changes row (plain row)
-        warn_row = layout.row()
-        if bpy.data.is_dirty:
-            warn_row.label(
-                text="You have unsaved changes. Some changes may not be included in the render job.",
-                icon="ERROR"
-            )
-        else:
-            warn_row.label(text="")  # placeholder keeps panel height stable
-
-
-
 # ─────────────────────────────────────────────────────────────
-#  "Render Node" settings (renamed from Advanced)
+#  "Render Node Settings" (renamed from Render Node)
 # ─────────────────────────────────────────────────────────────
 class SUPERLUMINAL_PT_RenderNode(bpy.types.Panel):
     bl_idname      = "SUPERLUMINAL_PT_RenderNode"
-    bl_label       = "Render Node"
+    bl_label       = "Render Node Settings"
     bl_parent_id   = "SUPERLUMINAL_PT_RenderPanel"
     bl_space_type  = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context     = "render"
-    bl_options     = {'DEFAULT_CLOSED'}
+    bl_options     = {'DEFAULT_CLOSED'}  # parent stays closed by default
+    bl_order       = 20
 
     def draw(self, context):
         layout = self.layout
@@ -319,7 +321,8 @@ class SUPERLUMINAL_PT_RenderNode_Experimental(bpy.types.Panel):
     bl_space_type  = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context     = "render"
-    bl_options     = {'DEFAULT_CLOSED'}
+    bl_order       = 0
+    # Note: OPEN by default (no DEFAULT_CLOSED)
 
     def draw(self, context):
         layout = self.layout
@@ -342,6 +345,7 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
     bl_region_type = "WINDOW"
     bl_context     = "render"
     bl_options     = {'DEFAULT_CLOSED'}
+    bl_order       = 30
 
     def draw(self, context):
         layout = self.layout
@@ -428,9 +432,10 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
 classes = (
     ToggleAddonSelectionOperator,
     SUPERLUMINAL_PT_RenderPanel,
+    # Place Submission first among subpanels for older Blender versions
+    SUPERLUMINAL_PT_Submission,
     SUPERLUMINAL_PT_UploadSettings,
     SUPERLUMINAL_PT_IncludeAddons,
-    SUPERLUMINAL_PT_Submission,
     SUPERLUMINAL_PT_RenderNode,
     SUPERLUMINAL_PT_RenderNode_Experimental,
     SUPERLUMINAL_PT_Jobs,
