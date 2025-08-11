@@ -1,15 +1,3 @@
-# properties.py
-"""
-Superluminal – per-scene settings kept inside the .blend file.
-
-This version removes fake foldout flags (show_* / upload_settings / show_addon_list).
-Use real Blender sub-panels (via bl_parent_id) to get persistent, non-dirty
-open/closed UI state.
-
-Property groups here remain focused on actual render settings that *should*
-live in the .blend (e.g., output format, frame range, included add-ons, etc.).
-"""
-
 from __future__ import annotations
 import bpy
 

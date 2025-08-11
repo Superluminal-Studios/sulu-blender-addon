@@ -1,15 +1,3 @@
-# panels.py
-"""
-panels.py – Superluminal Render UI (native-style)
-
-• Real nested sub-panels (bl_parent_id) so open/closed state persists.
-• Per-panel layout.use_property_split / use_property_decorate like Blender’s own panels.
-• "Auto Refresh" (value-column aligned), Refresh + Columns in same row with separator.
-• "Submit Render Job" button now formatted exactly like the Download button.
-• Unsaved-changes warning uses a fixed row to avoid layout jumps.
-• "Advanced" renamed to "Render Node".
-"""
-
 from __future__ import annotations
 
 # ─── Blender / stdlib ─────────────────────────────────────────
@@ -229,25 +217,25 @@ class SUPERLUMINAL_PT_Submission(bpy.types.Panel):
         col = layout.column()
         col.prop(props, "image_format", text="Image Format")
 
-        # Render type
-        col = layout.column()
-        col.prop(props, "render_type", text="Render Type")
-
-        # Frame range override
-        col = layout.column()
-        frame_toggle_label = "Use Current Frame" if props.render_type == "IMAGE" else "Use Scene Frame Range"
-        col.prop(props, "use_scene_frame_range", text=frame_toggle_label)
+        # Frame range controls (apply to Animation submissions)
+        box = layout.box()
+        col = box.column()
+        col.prop(props, "use_scene_frame_range", text="Use Scene Frame Range")
 
         sub = col.column()
-        sub.active = not props.use_scene_frame_range
-        if props.render_type == "IMAGE":
-            sub.prop(props, "frame_start", text="Frame")
+        range_col = sub.column(align=True)
+        if props.use_scene_frame_range:
+            # Show actual Scene range in disabled fields
+            sub.enabled = False
+            range_col.prop(scene, "frame_start", text="Start")
+            range_col.prop(scene, "frame_end",   text="End")
+            sub.prop(scene, "frame_step",  text="Stepping")
         else:
-            sub.prop(props, "frame_start", text="Start")
-            sub.prop(props, "frame_end",   text="End")
-            sub.prop(props, "frame_stepping_size", text="Stepping")
+            range_col.prop(props, "frame_start",          text="Start")
+            range_col.prop(props, "frame_end",            text="End")
+            sub.prop(props, "frame_stepping_size",  text="Stepping")
 
-        # Submit button — same formatting as Download button (plain row)
+        # Submit buttons — same formatting as Download button (plain row)
         VIDEO_FORMATS = {"FFMPEG", "AVI_JPEG", "AVI_RAW"}
         effective_format = (
             scene.render.image_settings.file_format
@@ -255,11 +243,14 @@ class SUPERLUMINAL_PT_Submission(bpy.types.Panel):
         )
         using_video_format = effective_format in VIDEO_FORMATS
 
-        row = layout.row()
+        row = layout.row(align=True)
         row.enabled = (logged_in and projects_ok and not using_video_format)
 
-        submit_job_text = "Submit Render Job" if logged_in else "Log in to submit a job"
-        row.operator("superluminal.submit_job", text=submit_job_text, icon="RENDER_STILL")
+        op_still = row.operator("superluminal.submit_job", text="Submit Still…", icon="RENDER_STILL")
+        op_still.mode = 'STILL'
+
+        op_anim = row.operator("superluminal.submit_job", text="Submit Animation", icon="RENDER_ANIMATION")
+        op_anim.mode = 'ANIMATION'
 
         if not logged_in:
             return

@@ -8,6 +8,7 @@ import sys
 import tempfile
 import uuid
 from pathlib import Path
+from bpy.props import EnumProperty, IntProperty, BoolProperty
 from ...utils.check_file_outputs import gather_render_outputs
 from ...utils.worker_utils import launch_in_terminal
 from .addon_packer import bundle_addons
@@ -29,13 +30,60 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
     """Submit the current .blend file and all of its dependencies to Superluminal"""
 
     bl_idname = "superluminal.submit_job"
-    bl_label = "Submit Job to Superluminal (external)"
+    bl_label = "Submit Job to Superluminal"
+
+    # New: submission mode and still-frame popup controls
+    mode: EnumProperty(
+        name="Submission Mode",
+        items=[
+            ("STILL", "Still", "Render a single frame"),
+            ("ANIMATION", "Animation", "Render a frame range"),
+        ],
+        default="ANIMATION",
+    )
+    use_current_scene_frame: BoolProperty(
+        name="Use Current Scene Frame",
+        description="If enabled, render the scene's current frame",
+        default=True,
+    )
+    frame: IntProperty(
+        name="Frame",
+        description="Frame to render for a still submission",
+        default=0,  # will be set from scene on invoke
+        soft_min=-999999, soft_max=999999
+    )
+
+    def invoke(self, context, event):
+        # For still submissions, show a small dialog to pick the frame.
+        if self.mode == "STILL":
+            self.frame = context.scene.frame_current
+            self.use_current_scene_frame = True
+            return context.window_manager.invoke_props_dialog(self)
+        # For animations, run immediately.
+        return self.execute(context)
+
+    def draw(self, context):
+        # Only used for STILL popup
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        layout.prop(self, "use_current_scene_frame", text="Use Current Scene Frame")
+
+        sub = layout.column()
+        if self.use_current_scene_frame:
+            # Show the actual Scene frame in a disabled field
+            sub.enabled = False
+            sub.prop(context.scene, "frame_current", text="Frame")
+        else:
+            sub.prop(self, "frame", text="Frame")
 
     def execute(self, context):
         scene = context.scene
         props = scene.superluminal_settings
         prefs = get_prefs()
         addon_dir = get_addon_dir()
+
         if not bpy.data.filepath:
             self.report({"ERROR"}, "Please save your .blend file first.")
             return {"CANCELLED"}
@@ -43,29 +91,27 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         outputs = gather_render_outputs(scene)["outputs"]
         layers = outputs[0]["layers"]
 
+        # Blender version
         if props.auto_determine_blender_version:
             blender_version = enum_from_bpy_version()
         else:
             blender_version = props.blender_version
 
         # ---------------------------------------------
-        # Frame range logic (handles IMAGE vs. ANIMATION)
+        # Frame computation (mode-aware)
         # ---------------------------------------------
-        start_frame = (
-            scene.frame_start if props.use_scene_frame_range else props.frame_start
-        )
-        end_frame = (
-            scene.frame_end if props.use_scene_frame_range else props.frame_end
-        )
-
-        # If we are rendering a single image, ensure end_frame equals start_frame
-        if props.render_type == "IMAGE":
-            if props.use_scene_frame_range:
-                start_frame = scene.frame_current
-                end_frame = scene.frame_current
+        if self.mode == "STILL":
+            if self.use_current_scene_frame or self.frame == 0:
+                start_frame = end_frame = scene.frame_current
             else:
-                start_frame = props.frame_start
-                end_frame = props.frame_start
+                start_frame = end_frame = int(self.frame)
+            frame_stepping_size = 1
+        else:  # ANIMATION
+            start_frame = scene.frame_start if props.use_scene_frame_range else props.frame_start
+            end_frame   = scene.frame_end   if props.use_scene_frame_range else props.frame_end
+            frame_stepping_size = (
+                scene.frame_step if props.use_scene_frame_range else props.frame_stepping_size
+            )
 
         # ---------------------------------------------
         # Image format selection (enum includes SCENE option)
@@ -86,7 +132,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "blend_path": bpy.data.filepath,
             "temp_blend_path": str(Path(tempfile.gettempdir()) / bpy.path.basename(bpy.context.blend_data.filepath)),
 
-            # new enum controls this:
+            # project upload controls
             "use_project_upload": (props.upload_type == 'PROJECT'),
             "automatic_project_path": bool(props.automatic_project_path),
             "custom_project_path": os.path.abspath(bpy.path.abspath(props.custom_project_path)).replace("\\", "/"),
@@ -103,9 +149,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
 
             "start_frame": start_frame,
             "end_frame": end_frame,
-            "frame_stepping_size": (
-                scene.frame_step if props.use_scene_frame_range else props.frame_stepping_size
-            ),
+            "frame_stepping_size": frame_stepping_size,
             "render_engine": scene.render.engine.upper(),
             "blender_version": blender_version.lower(),
             "ignore_errors": props.ignore_errors,
