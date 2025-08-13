@@ -13,6 +13,8 @@ from .preferences import refresh_jobs_collection, draw_header_row
 from .icons import preview_collections
 from .preferences import draw_login
 
+# NEW: project scan for UI warnings about cross-drive assets
+from .utils.project_scan import quick_cross_drive_hint, human_shorten
 
 # ╭──────────────────  Global runtime list  ───────────────────╮
 addons_to_send: list[str] = []          # filled from scene property
@@ -106,6 +108,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
 
         if not logged_in:
             box = layout.box()
+            box.alert = True  # make warning red
             draw_login(box)
             return
 
@@ -188,18 +191,20 @@ class SUPERLUMINAL_PT_Submission(bpy.types.Panel):
         op_anim = row.operator("superluminal.submit_job", text="Submit Animation", icon="RENDER_ANIMATION")
         op_anim.mode = 'ANIMATION'
 
+        # Other info/warnings (plain rows)
         if not logged_in:
             return
 
-        # Other info/warnings (plain rows)
         if using_video_format:
+            r = layout.row()
+            r.alert = True  # make warning red
             if props.image_format == "SCENE":
-                layout.label(
+                r.label(
                     text=f"Video formats are not supported for rendering. Scene output is set to {scene.render.image_settings.file_format}.",
                     icon="ERROR"
                 )
             else:
-                layout.label(
+                r.label(
                     text=f"Video formats are not supported for rendering ({effective_format}).",
                     icon="ERROR"
                 )
@@ -207,6 +212,7 @@ class SUPERLUMINAL_PT_Submission(bpy.types.Panel):
         # Fixed-height unsaved-changes row (plain row)
         warn_row = layout.row()
         if bpy.data.is_dirty:
+            warn_row.alert = True  # make warning red
             warn_row.label(
                 text="You have unsaved changes. Some changes may not be included in the render job.",
                 icon="ERROR"
@@ -234,6 +240,26 @@ class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
 
         # Upload type selector (always visible)
         layout.prop(props, "upload_type", text="Upload Type")
+
+        # Cross-drive dependency warning (only relevant to Project uploads)
+        if props.upload_type == 'PROJECT':
+            has_cross, summary = quick_cross_drive_hint()
+            if not summary.blend_saved:
+                info_row = layout.row()
+                info_row.alert = True  # treat as warning for visibility
+                info_row.label(text="Save your .blend to enable accurate project root detection.", icon="ERROR")
+            if has_cross:
+                box = layout.box()
+                box.alert = True  # make warning red
+                box.label(
+                    text="Some dependencies are on a different drive and will be EXCLUDED from Project uploads.",
+                    icon="ERROR"
+                )
+                # show a few examples
+                for p in summary.examples_other_roots(3):
+                    box.label(text=human_shorten(p))
+                # small hint about how to include them
+                box.label(text="Move assets onto the same drive, or switch Upload Type to Zip.", icon="ERROR")
 
         # Only show project-path options when 'Project' is selected
         if props.upload_type == 'PROJECT':
@@ -380,8 +406,10 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
         if not logged_in or not jobs_ok:
             box = col.box()
             if not logged_in:
+                box.alert = True  # make warning red
                 box.label(text="Log in to see your jobs.", icon='ERROR')
             elif not jobs_ok:
+                # Not really a warning, keep informational
                 box.label(text="No jobs found in selected project.", icon='INFO')
             return
 

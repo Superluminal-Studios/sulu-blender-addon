@@ -8,9 +8,91 @@ import subprocess
 from urllib3.util import Retry
 from requests.adapters import HTTPAdapter
 from requests import Session
-from ..tqdm import tqdm
 import sys
 import json
+import re
+from typing import List
+
+# Try to use the add-on's bundled tqdm; fall back to a visible text progress if missing.
+try:
+    from ..tqdm import tqdm as _tqdm
+except Exception:
+    _tqdm = None
+
+
+def _log_or_print(logger, msg: str) -> None:
+    if logger:
+        try:
+            logger(str(msg))
+            return
+        except Exception:
+            pass
+    # Fallback
+    print(str(msg))
+
+
+class _TextBar:
+    """
+    Minimal inline progress bar for when tqdm isn't available.
+    Prints to stderr to avoid mixing with regular logs.
+    """
+    def __init__(self, total: int = 0, desc: str = "Transferred", **kwargs) -> None:
+        self.total = int(total) if total else 0
+        self.n = 0
+        self.desc = desc
+        self._last_len = 0
+
+    def _fmt_bytes(self, n: int) -> str:
+        # Human-readable bytes (MiB)
+        return f"{n / (1024**2):.1f} MiB"
+
+    def _render(self) -> None:
+        if self.total > 0:
+            pct = (self.n / max(self.total, 1)) * 100.0
+            s = f"{self.desc}: {self._fmt_bytes(self.n)} / {self._fmt_bytes(self.total)} ({pct:5.1f}%)"
+        else:
+            s = f"{self.desc}: {self._fmt_bytes(self.n)}"
+        pad = max(0, self._last_len - len(s))
+        sys.stderr.write("\r" + s + " " * pad)
+        sys.stderr.flush()
+        self._last_len = len(s)
+
+    def update(self, n: int) -> None:
+        if n <= 0:
+            return
+        self.n += int(n)
+        self._render()
+
+    def refresh(self) -> None:
+        self._render()
+
+    @property
+    def total(self) -> int:
+        return self._total
+
+    @total.setter
+    def total(self, v: int) -> None:
+        self._total = int(v) if v else 0
+        self._render()
+
+    def close(self) -> None:
+        sys.stderr.write("\n")
+        sys.stderr.flush()
+
+
+def _progress_bar(total: int = 0, **kwargs):
+    """
+    Return a tqdm bar if available, otherwise a visible inline text bar.
+    """
+    if _tqdm is not None:
+        try:
+            # Keep tqdm output on stderr to match prior behavior
+            return _tqdm(total=max(int(total or 0), 0), **kwargs)
+        except Exception:
+            pass
+    # Fallback: visible text bar
+    return _TextBar(total=total, desc=kwargs.get("desc", "Transferred"))
+
 
 _UNIT = {
     "B": 1,
@@ -57,13 +139,14 @@ SUPPORTED_PLATFORMS = {
 
     ("solaris", "amd64"):  "solaris-amd64",
 }
+
 # -------------------------------------------------------------------
 #  Rclone Download Helpers
 # -------------------------------------------------------------------
 
 def get_addon_directory() -> Path:
-    """Return the directory where this __file__ (the add-on) resides."""
-    return Path(__file__).parent
+    """Return the directory where this module resides."""
+    return Path(__file__).resolve().parent
 
 def rclone_install_directory() -> Path:
     """
@@ -93,7 +176,6 @@ def normalize_arch(arch_name: str) -> str:
         return "386"
     if arch_name in ("aarch64", "arm64"):
         return "arm64"
-    
     return arch_name
 
 def get_platform_suffix() -> str:
@@ -106,7 +188,6 @@ def get_platform_suffix() -> str:
 
     key = (sys_name, arch_name)
     if key not in SUPPORTED_PLATFORMS:
-
         raise OSError(
             f"Unsupported OS/Arch combination: {sys_name}/{arch_name}. "
             "Extend SUPPORTED_PLATFORMS for additional coverage."
@@ -131,71 +212,121 @@ def download_with_bar(url: str, dest: Path, logger=None) -> None:
     s = Session()
     retries = Retry(
         total=3,
-        backoff_factor=0.1,
-        status_forcelist=[502, 503, 504],
+        backoff_factor=0.4,
+        status_forcelist=[429, 502, 503, 504],
         allowed_methods={'POST', 'GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE', 'TRACE', 'CONNECT'},
     )
     s.mount('https://', HTTPAdapter(max_retries=retries))
-    if logger:
-        logger("⬇️  Downloading rclone")
+    _log_or_print(logger, "⬇️  Downloading rclone…")
     resp = s.get(url, stream=True, timeout=600)
     resp.raise_for_status()
+
     total = int(resp.headers.get("Content-Length", 0))
     done = 0
-    bar = 40
+    bar_cols = 40
+
     with dest.open("wb") as fp:
-        for chunk in resp.iter_content(8192):
+        for chunk in resp.iter_content(1024 * 64):
+            if not chunk:
+                continue
             fp.write(chunk)
             done += len(chunk)
             if total:
-                filled = int(bar * done / total)
-                print(f"\r    |{' '*filled}{'-'*(bar-filled)}| {done*100/total:5.1f}% ",
-                      end="", flush=True)
+                filled = int(bar_cols * done / total)
+                bar = "█" * filled + " " * (bar_cols - filled)
+                percent = (done * 100) / total
+                # Always show inline progress for this binary download
+                sys.stdout.write(f"\r    |{bar}| {percent:5.1f}% ")
+                sys.stdout.flush()
     if total:
-        print()
+        print("")  # newline after progress
 
 def ensure_rclone(logger=None) -> Path:
-    logger("🔍  Checking for Rclone")
+    _log_or_print(logger, "🔍  Checking for rclone…")
     suf = get_platform_suffix()
     bin_name = "rclone.exe" if suf.startswith("windows") else "rclone"
     rclone_bin = get_rclone_platform_dir(suf) / bin_name
+
     if rclone_bin.exists():
-        logger("✅  Rclone found")
+        _log_or_print(logger, "✅  rclone ready")
         return rclone_bin
+
+    # Prepare dirs
+    rclone_bin.parent.mkdir(parents=True, exist_ok=True)
+
     tmp_zip = Path(tempfile.gettempdir()) / f"rclone_{uuid.uuid4()}.zip"
     url = get_rclone_url()
-    download_with_bar(url, tmp_zip)
-    logger("📦  Extracting rclone…")
+    download_with_bar(url, tmp_zip, logger=logger)
+
+    _log_or_print(logger, "📦  Extracting rclone…")
     with zipfile.ZipFile(tmp_zip) as zf:
+        # Many zips nest the binary under a top-level folder; flatten it.
+        target_written = False
         for m in zf.infolist():
-            if m.filename.lower().endswith(("rclone.exe", "rclone")):
+            if m.filename.lower().endswith(("rclone.exe", "rclone")) and not m.is_dir():
                 m.filename = os.path.basename(m.filename)
                 zf.extract(m, rclone_bin.parent)
                 (rclone_bin.parent / m.filename).rename(rclone_bin)
+                target_written = True
                 break
-    if not suf.startswith("windows"):
-        rclone_bin.chmod(rclone_bin.stat().st_mode | 0o111)
     tmp_zip.unlink(missing_ok=True)
-    logger("✅  Rclone installed")
+
+    if not target_written or not rclone_bin.exists():
+        raise RuntimeError("Failed to extract rclone binary.")
+
+    if not suf.startswith("windows"):
+        try:
+            rclone_bin.chmod(rclone_bin.stat().st_mode | 0o111)
+        except Exception:
+            # Best-effort; if chmod fails, we let subprocess raise a clearer error later.
+            pass
+
+    _log_or_print(logger, "✅  rclone installed")
     return rclone_bin
 
 def _bytes_from_stats(obj):
+    """
+    Extract (current_bytes, total_bytes) from rclone --use-json-log stats objects.
+    Returns None if no stats are present yet.
+    """
     s = obj.get("stats")
     if not s:
-        return None                     # ← nothing useful here
-    cur, tot = s.get("bytes"), s.get("totalBytes")
-    if cur is None:                     # still discovering size
         return None
-    return cur, tot                     # always a tuple
+    cur = s.get("bytes")
+    tot = s.get("totalBytes") or 0
+    if cur is None:
+        return None
+    return int(cur), int(tot)
 
 # ────────────────────────── main runner ──────────────────────────
 
 def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
-    extra = extra or []
-    dst = dst.replace("\\", "/")
-    if logger:
-        logger(f"{verb.capitalize():9} {src} → {dst}")
-    cmd = [base[0], verb, src, dst, *extra, "--stats=0.1s", "--use-json-log", "--stats-log-level", "NOTICE", *base[1:]]
+    """
+    Execute rclone safely with a friendly progress display.
+    - base: list like [rclone_bin, *global_flags]
+    - verb: 'copy', 'move', 'moveto', ...
+    - src / dst: paths/remotes
+    - extra: list of additional rclone flags (e.g. ['--files-from', '/tmp/list.txt'])
+    - logger: optional callable(str) for logs
+    Raises RuntimeError on failure.
+    """
+    extra = list(extra or [])
+    # Ensure POSIX-style slashes for remote keys
+    src = str(src).replace("\\", "/")
+    dst = str(dst).replace("\\", "/")
+
+    if not isinstance(base, (list, tuple)) or not base:
+        raise RuntimeError("Invalid rclone base command.")
+
+    # IMPORTANT: keep the original ordering your workers expect:
+    # command + args + stats flags + *base[1:] (global flags/creds).
+    cmd = [base[0], verb, src, dst, *extra,
+           "--stats=0.1s", "--use-json-log", "--stats-log-level", "NOTICE",
+           *base[1:]]
+
+    _log_or_print(logger, f"{verb.capitalize():9} {src} → {dst}")
+
+    # Stream JSON logs for a smooth progress bar
     with subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -204,15 +335,20 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
         bufsize=1,
         encoding="utf-8",
     ) as proc:
-        bar, last, have_real_total = None, 0, False
+        bar = None
+        last = 0
+        have_real_total = False
 
         for raw in proc.stdout:
-            for frag in raw.rstrip("\n").split("\r"):
+            # rclone mixes \r updates; split them out
+            fragments = raw.rstrip("\n").split("\r")
+            for frag in fragments:
                 line = frag.strip()
                 if not line:
                     continue
 
-                # JSON lines are hidden from console
+                # Prefer JSON; hide non-JSON unless no logger (to avoid double logs)
+                obj = None
                 try:
                     obj = json.loads(line)
                 except json.JSONDecodeError:
@@ -220,43 +356,56 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
 
                 if obj is not None:
                     out = _bytes_from_stats(obj)
-                    if out is None:         # ← skip JSON that lacks stats
+                    if out is None:
+                        # Could inspect 'msg'/'level' for warnings/errors if desired.
                         continue
 
                     cur, tot = out
 
-                    # create bar the first time we get a byte count
                     if bar is None:
-                        bar = tqdm(
-                            total=max(cur, 1),      # dummy total to satisfy tqdm
+                        # Build a visible progress bar (tqdm or text fallback)
+                        bar = _progress_bar(
+                            total=max(cur, 1),      # dummy until we know the real total
                             unit="B", unit_scale=True, unit_divisor=1024,
                             desc="Transferred", file=sys.stderr,
                         )
 
-                    # patch in real total when it appears
-                    if not have_real_total and tot and tot > bar.total:
-                        bar.total = tot
-                        bar.refresh()
+                    # Patch in real total when it appears
+                    if not have_real_total and tot and tot > getattr(bar, "total", 0):
+                        try:
+                            bar.total = tot
+                            bar.refresh()
+                        except Exception:
+                            # _TextBar also supports setting total
+                            bar.total = tot
+                            bar.refresh()
                         have_real_total = True
-                    elif cur > bar.total:
-                        bar.total = cur
-                        bar.refresh()
+                    elif cur > getattr(bar, "total", 0):
+                        try:
+                            bar.total = cur
+                            bar.refresh()
+                        except Exception:
+                            bar.total = cur
+                            bar.refresh()
 
-                    bar.update(cur - last)
-                    last = cur
+                    # Advance delta
+                    delta = cur - last
+                    if delta > 0:
+                        bar.update(delta)
+                        last = cur
                     continue
 
-                # non-JSON output still visible
-                #(logger or tqdm.write)(line)
+                # Non-JSON lines: only print if we don't have a logger
+                if logger is None:
+                    print(line)
 
         code = proc.wait()
         if bar:
-            bar.close()
+            try:
+                bar.close()
+            except Exception:
+                pass
+
         if code:
-            if logger:
-                # Log the failure – avoid passing multiple arguments to logger which expects a single string
-                logger(f"❌  Rclone failed with code {code}")
-            else:
-                # Fallback to printing if no logger was provided
-                print(f"❌  Rclone failed with code {code}")
-            raise subprocess.CalledProcessError(code, cmd)
+            _log_or_print(logger, f"❌  rclone exited with code {code}")
+            raise RuntimeError(f"rclone failed with exit code {code}")

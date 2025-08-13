@@ -20,6 +20,7 @@ from ...utils.version_utils import (
 )
 from ...storage import Storage
 from ...utils.prefs import get_prefs, get_addon_dir
+from ...utils.project_scan import quick_cross_drive_hint  # UPDATED: new import
 
 
 def addon_version(addon_name: str):
@@ -30,7 +31,7 @@ def addon_version(addon_name: str):
             return tuple(mod.bl_info.get("version"))
 
 
-class SUPERLIMINAL_OT_SubmitJob(bpy.types.Operator):
+class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
     """Submit the current .blend file and all of its dependencies to Superluminal"""
 
     bl_idname = "superluminal.submit_job"
@@ -110,6 +111,18 @@ class SUPERLIMINAL_OT_SubmitJob(bpy.types.Operator):
             self.report({"ERROR"}, "No render outputs detected for this scene.")
             return {"CANCELLED"}
         layers = outputs[0].get("layers", [])
+
+        # Non-blocking heads-up if Project upload will ignore off-drive deps
+        if props.upload_type == 'PROJECT':
+            try:
+                has_cross, summary = quick_cross_drive_hint()
+                if has_cross:
+                    self.report(
+                        {"WARNING"},
+                        f"{summary.cross_drive_count()} dependencies are on a different drive and will be ignored in Project uploads. Consider switching to Zip."
+                    )
+            except Exception:
+                pass
 
         # ---------------------------------------------
         # Blender version (single source of truth)
@@ -201,7 +214,7 @@ class SUPERLIMINAL_OT_SubmitJob(bpy.types.Operator):
         return {"FINISHED"}
 
 
-classes = (SUPERLIMINAL_OT_SubmitJob,)
+classes = (SUPERLUMINAL_OT_SubmitJob,)
 
 
 def register() -> None:
