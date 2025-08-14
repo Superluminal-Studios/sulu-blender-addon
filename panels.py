@@ -255,11 +255,12 @@ class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
                     text="Some dependencies are on a different drive and will be EXCLUDED from Project uploads.",
                     icon="ERROR"
                 )
+                box.label(text="Move assets onto the same drive, or switch Upload Type to Zip.")
                 # show a few examples
                 for p in summary.examples_other_roots(3):
-                    box.label(text=human_shorten(p))
-                # small hint about how to include them
-                box.label(text="Move assets onto the same drive, or switch Upload Type to Zip.", icon="ERROR")
+                    box.label(text=human_shorten(p), icon="LIBRARY_DATA_BROKEN")
+                if summary.cross_drive_count() > 3:
+                    box.label(text=f"…and {summary.cross_drive_count() - 3} more")
 
         # Only show project-path options when 'Project' is selected
         if props.upload_type == 'PROJECT':
