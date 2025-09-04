@@ -362,6 +362,10 @@ def main() -> None:
         _log("📦  Creating a single zip with all dependencies…")
         abs_blend_norm = _norm_abs_for_detection(blend_path)
         pack_blend(abs_blend_norm, str(zip_file), method="ZIP")
+        
+        if not zip_file.exists():
+            warn(f"Zip file does not exist", emoji="x", close_window=True)
+            
         required_storage = zip_file.stat().st_size
         rel_manifest = []
         common_path = ""
