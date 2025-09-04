@@ -15,7 +15,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-# ╭────────────────────  constants  ───────────────────────────╮
+# constants
 # Windows process creation flags
 DETACHED_PROCESS          = 0x00000008  # detached (no console)
 CREATE_NEW_CONSOLE        = 0x00000010  # force a new console window
@@ -33,7 +33,17 @@ COMMON_RCLONE_FLAGS: list[str] = [
 ]
 
 
-# ╭───────────────────  user-facing logging  ───────────────────╮
+def clear_console():
+    """
+    Clears the console screen based on the operating system.
+    """
+    if os.name == 'nt':  # For Windows
+        os.system('cls')
+    else:  # For macOS and Linux
+        os.system('clear')
+       
+        
+# user-facing logging
 def logger(msg: str) -> None:
     """
     Simple user-facing logger; prints a single message and flushes immediately.
@@ -47,7 +57,7 @@ def _log(msg: str) -> None:
     print(str(msg), flush=True)
 
 
-# ╭────────────────────  small UX helpers  ─────────────────────╮
+# small UX helpers
 def shorten_path(path: str) -> str:
     """
     Return a version of `path` no longer than 64 characters,
@@ -84,7 +94,7 @@ def open_folder(path: str) -> None:
         logger(f"⚠️  Couldn’t open folder automatically: {e}")
 
 
-# ╭────────────────────  terminal launching  ───────────────────╮
+# terminal launching
 def launch_in_terminal(cmd: List[str]) -> None:
     """
     Run *cmd* (a list of strings) in a brand-new terminal / console window.
@@ -130,8 +140,9 @@ def launch_in_terminal(cmd: List[str]) -> None:
 
             # ANSI prelude: clear scrollback (3J), move cursor home (H), clear screen (2J), then clear for good measure.
             # NOTE: do NOT escape backslashes globally; we need '\e' to survive to printf.
-            prelude = "printf '\\e[3J\\e[H\\e[2J'; clear; "
-            script  = prelude + worker
+            #prelude = "printf '\\e[3J\\e[H\\e[2J'; clear; "
+            #script  = prelude + worker
+            script = worker
 
             # Escape only the double quotes for AppleScript string
             script_osas = script.replace('"', '\\"')
@@ -191,7 +202,7 @@ def launch_in_terminal(cmd: List[str]) -> None:
     subprocess.call(cmd)
 
 
-# ╭────────────────────  robust HTTP sessions  ───────────────────╮
+# robust HTTP sessions
 def requests_retry_session(
     *,
     retries: int = 5,
@@ -229,7 +240,7 @@ def requests_retry_session(
     return session
 
 
-# ╭────────────────────  save/flush detection  ───────────────────╮
+# save/flush detection
 def is_blend_saved(path: str | Path) -> None:
     """
     Block until a “*.blend” file is finished saving.
@@ -271,13 +282,13 @@ def is_blend_saved(path: str | Path) -> None:
         time.sleep(0.25)
 
 
-# ╭────────────────────  tiny compatibility helpers  ─────────────╮
+# tiny compatibility helpers
 def _short(p: str) -> str:
     """Return just the basename unless the string already looks like an S3 path."""
     return p if str(p).startswith(":s3:") else Path(str(p)).name
 
 
-# ╭────────────────────  rclone base command  ────────────────────╮
+#rclone base command
 def _build_base(
     rclone_bin: Path,
     endpoint: str,

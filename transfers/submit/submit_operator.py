@@ -124,17 +124,13 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             except Exception:
                 pass
 
-        # ---------------------------------------------
-        # Blender version (single source of truth)
-        # ---------------------------------------------
+        #blender version (single source of truth)
         blender_version_payload = resolved_worker_blender_value(
             props.auto_determine_blender_version,
             props.blender_version
         )
 
-        # ---------------------------------------------
-        # Frame computation (mode-aware)
-        # ---------------------------------------------
+        #frame computation (mode-aware)
         if self.mode == "STILL":
             if self.use_current_scene_frame or self.frame == 0:
                 start_frame = end_frame = scene.frame_current
@@ -148,9 +144,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
                 scene.frame_step if props.use_scene_frame_range else props.frame_stepping_size
             )
 
-        # ---------------------------------------------
-        # Image format selection (enum includes SCENE option)
-        # ---------------------------------------------
+        #image format selection (enum includes SCENE option)
         use_scene_image_format = (props.image_format == 'SCENE')
         image_format_val = (
             scene.render.image_settings.file_format

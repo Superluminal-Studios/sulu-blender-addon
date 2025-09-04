@@ -37,7 +37,7 @@ import re
 import bpy
 
 
-# -------- Path normalization & drive detection --------------------------------
+#path normalization & drive detection
 
 def _norm(p: str) -> str:
     # Normalize separators & remove trailing slashes (keep root)

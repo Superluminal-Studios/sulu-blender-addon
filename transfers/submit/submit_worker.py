@@ -47,6 +47,7 @@ pkg.__path__ = [str(addon_dir)]
 sys.modules[pkg_name] = pkg
 
 shorten_path = importlib.import_module(f"{pkg_name}.utils.worker_utils").shorten_path
+clear_console = importlib.import_module(f"{pkg_name}.utils.worker_utils").clear_console
 bat_utils = importlib.import_module(f"{pkg_name}.utils.bat_utils")
 pack_blend = bat_utils.pack_blend
 rclone = importlib.import_module(f"{pkg_name}.transfers.rclone")
@@ -63,7 +64,7 @@ CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
 
 proj = data["project"]
 
-
+clear_console()
 def warn(message: str, emoji: str = "x", close_window: bool = True, new_line: bool = False) -> None:
     emojis = {
         "x": "❌",  # error / stop

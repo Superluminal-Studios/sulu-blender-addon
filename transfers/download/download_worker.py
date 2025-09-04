@@ -20,18 +20,14 @@ import types
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import traceback
-
-# ───────────────────  third-party  ─────────────────────
 import requests
 
-
-# ───────────────────  guarded imports / handoff  ─────────────────────
 try:
     t_start = time.perf_counter()
     handoff_path = Path(sys.argv[1]).resolve(strict=True)
     data: Dict[str, object] = json.loads(handoff_path.read_text("utf-8"))
 
-    # ────────────────  import add-on internals  ─────────────────
+    #import add-on internals
     addon_dir = Path(data["addon_dir"]).resolve()
     pkg_name = addon_dir.name.replace("-", "_")
     sys.path.insert(0, str(addon_dir.parent))
@@ -39,13 +35,15 @@ try:
     pkg.__path__ = [str(addon_dir)]
     sys.modules[pkg_name] = pkg
 
-    # ───────────────────  import helpers  ─────────────────────
+    #import helpers
     rclone = importlib.import_module(f"{pkg_name}.transfers.rclone")
     run_rclone = rclone.run_rclone
     ensure_rclone = rclone.ensure_rclone
     worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
-
-    # ───────────────────  internal utils  ─────────────────────
+    clear_console = importlib.import_module(f"{pkg_name}.utils.worker_utils").clear_console
+    clear_console()
+    
+    #internal utils
     _log = worker_utils.logger
     _build_base = worker_utils._build_base
     requests_retry_session = worker_utils.requests_retry_session
@@ -73,7 +71,7 @@ sarfis_url: Optional[str]
 sarfis_token: Optional[str]
 
 
-# ───────────────────  helpers  ─────────────────────
+#helpers
 def _safe_dir_name(name: str, fallback: str) -> str:
     """Make a filesystem-safe folder name (cross-platform)."""
     n = re.sub(r"[\\/:*?\"<>|]+", "_", str(name)).strip()
@@ -246,7 +244,6 @@ def auto_downloader(poll_seconds: int = 5, min_delta_frames: int = 1, min_percen
         time.sleep(max(1, int(poll_seconds)))
 
 
-# ───────────────────  main  ───────────────────────────────
 def main() -> None:
     global session, job_id, job_name, download_path
     global rclone_bin, s3info, bucket, base_cmd
@@ -258,14 +255,14 @@ def main() -> None:
     job_name = str(data.get("job_name", "") or f"job_{job_id}").strip() or f"job_{job_id}"
     download_path = str(data.get("download_path", "") or "").strip() or os.getcwd()
 
-    # Determine mode
+    #determine mode
     sarfis_url = data.get("sarfis_url")
     sarfis_token = data.get("sarfis_token")
     requested_mode = str(data.get("download_type", "") or "").lower()
     if requested_mode in {"single", "auto"}:
         download_type = requested_mode
     else:
-        # Default: auto if we have a status endpoint; otherwise single
+        #default: auto if we have a status endpoint; otherwise single
         download_type = "auto" if sarfis_url and sarfis_token else "single"
 
     # rclone
@@ -276,7 +273,7 @@ def main() -> None:
         input("\nPress ENTER to close this window…")
         sys.exit(1)
 
-    # ─────── obtain R2 credentials ───────────────────────────
+    #obtain R2 credentials
     _log("🔑  Fetching storage credentials…")
     try:
         s3_resp = session.get(
@@ -330,7 +327,6 @@ def main() -> None:
         input("\nPress ENTER to close this window...")
 
 
-# ───────────────────  entry  ─────────────────────
 if __name__ == "__main__":
     try:
         main()
