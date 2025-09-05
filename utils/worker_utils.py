@@ -17,18 +17,20 @@ from urllib3.util import Retry
 
 # constants
 # Windows process creation flags
-DETACHED_PROCESS          = 0x00000008  # detached (no console)
-CREATE_NEW_CONSOLE        = 0x00000010  # force a new console window
-CREATE_NEW_PROCESS_GROUP  = 0x00000200  # allow Ctrl+C to target child
+DETACHED_PROCESS = 0x00000008  # detached (no console)
+CREATE_NEW_CONSOLE = 0x00000010  # force a new console window
+CREATE_NEW_PROCESS_GROUP = 0x00000200  # allow Ctrl+C to target child
 
-CLOUDFLARE_ACCOUNT_ID  = "f09fa628d989ddd93cbe3bf7f7935591"
-CLOUDFLARE_R2_DOMAIN   = f"{CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+CLOUDFLARE_ACCOUNT_ID = "f09fa628d989ddd93cbe3bf7f7935591"
+CLOUDFLARE_R2_DOMAIN = f"{CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
 
 # Common flags we want on *every* rclone call that uses R2
 COMMON_RCLONE_FLAGS: list[str] = [
-    "--s3-provider", "Cloudflare",
-    "--s3-env-auth",           # allow env creds if present
-    "--s3-region", "auto",
+    "--s3-provider",
+    "Cloudflare",
+    "--s3-env-auth",  # allow env creds if present
+    "--s3-region",
+    "auto",
     "--s3-no-check-bucket",
 ]
 
@@ -37,12 +39,12 @@ def clear_console():
     """
     Clears the console screen based on the operating system.
     """
-    if os.name == 'nt':  # For Windows
-        os.system('cls')
+    if os.name == "nt":  # For Windows
+        os.system("cls")
     else:  # For macOS and Linux
-        os.system('clear')
-       
-        
+        os.system("clear")
+
+
 # user-facing logging
 def logger(msg: str) -> None:
     """
@@ -94,100 +96,88 @@ def open_folder(path: str) -> None:
         logger(f"⚠️  Couldn’t open folder automatically: {e}")
 
 
-# terminal launching
-def launch_in_terminal(cmd: List[str]) -> None:
-    """
-    Run *cmd* (a list of strings) in a brand-new terminal / console window.
-    If that isn’t possible, execute the command synchronously as a last resort.
+def _win_quote(arg: str) -> str:
+    """Minimal cmd.exe-safe quoting with double quotes."""
+    if not arg:
+        return '""'
+    if any(ch in arg for ch in " \t&()[]{}^=;!+,`~|<>"):
+        return '"' + arg.replace('"', '""') + '"'
+    return arg
 
-    Parameters
-    ----------
-    cmd : list[str]
-        The command to execute, identical to what you would pass to Popen(cmd).
-    """
+
+def launch_in_terminal(cmd: List[str]) -> None:
     system = platform.system()
 
-    # 0) WSL hint: if we’re in WSL, treat as Linux
+    # WSL hint: treat as Linux
     if "microsoft" in platform.release().lower():
         system = "Linux"
 
-    # 1) Windows — prefer `start` to guarantee a visible console window.
     if system == "Windows":
+        # 1) Best: create a brand-new console directly (no shell)
         try:
-            quoted = " ".join(shlex.quote(c) for c in cmd)
-            # start "" <command> opens a new console window
-            subprocess.Popen(f'start "" {quoted}', shell=True)
-            return
-        except Exception:
-            pass
-        try:
-            # Fallback: create a new console programmatically
             subprocess.Popen(
-                cmd,
-                creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP
+                cmd, creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP
             )
             return
         except Exception:
-            # Final fallback: run in current console (blocking)
-            subprocess.call(cmd)
-            return
+            pass
 
-    # 2) macOS — open Terminal.app, clear scrollback+screen, then run the worker
-    if system == "Darwin":
+        # 2) Fallback: use cmd.exe start with correct quoting
         try:
-            # Build the worker command as it would be typed in a shell
-            worker = shlex.join(cmd)
-
-            # ANSI prelude: clear scrollback (3J), move cursor home (H), clear screen (2J), then clear for good measure.
-            # NOTE: do NOT escape backslashes globally; we need '\e' to survive to printf.
-            #prelude = "printf '\\e[3J\\e[H\\e[2J'; clear; "
-            #script  = prelude + worker
-            script = worker
-
-            # Escape only the double quotes for AppleScript string
-            script_osas = script.replace('"', '\\"')
-
-            # Activate Terminal, then run our script in a fresh window/tab
-            subprocess.Popen([
-                "osascript",
-                "-e", 'tell application "Terminal" to activate',
-                "-e", f'tell application "Terminal" to do script "{script_osas}"',
-            ])
+            quoted = " ".join(_win_quote(c) for c in cmd)
+            subprocess.Popen(f'cmd.exe /c start "" {quoted}', shell=True)
             return
         except Exception:
-            # Final fallback: synchronous call in the current console
+            pass
+
+        # 3) Last resort: run in current console (blocking)
+        subprocess.call(cmd)
+        return
+
+    # macOS
+    if system == "Darwin":
+        try:
+            worker = " ".join(shlex.quote(c) for c in cmd)  # POSIX shell here is fine
+            script_osas = worker.replace('"', '\\"')
+            subprocess.Popen(
+                [
+                    "osascript",
+                    "-e",
+                    'tell application "Terminal" to activate',
+                    "-e",
+                    f'tell application "Terminal" to do script "{script_osas}"',
+                ]
+            )
+            return
+        except Exception:
             subprocess.call(cmd)
             return
 
     # 3) Linux / BSD — try common emulators (in a reasonable order)
     if system in ("Linux", "FreeBSD"):
-        quoted    = shlex.join(cmd)
+        quoted = shlex.join(cmd)
         bash_wrap = ["bash", "-lc", quoted]  # preserves PATH, allows shell features
 
         for term, prefix in (
             # Mainstream defaults (GNOME / KDE / Xfce)
-            ("gnome-terminal",      ["gnome-terminal", "--"]),
-            ("konsole",             ["konsole", "-e"]),
-            ("xfce4-terminal",      ["xfce4-terminal", "--command"]),
-
+            ("gnome-terminal", ["gnome-terminal", "--"]),
+            ("konsole", ["konsole", "-e"]),
+            ("xfce4-terminal", ["xfce4-terminal", "--command"]),
             # Modern / GPU-accelerated / tiling
-            ("kitty",               ["kitty", "--hold"]),
-            ("alacritty",           ["alacritty", "-e"]),
-            ("wezterm",             ["wezterm", "start", "--"]),
-            ("tilix",               ["tilix", "-e"]),
-            ("terminator",          ["terminator", "-x"]),
-
+            ("kitty", ["kitty", "--hold"]),
+            ("alacritty", ["alacritty", "-e"]),
+            ("wezterm", ["wezterm", "start", "--"]),
+            ("tilix", ["tilix", "-e"]),
+            ("terminator", ["terminator", "-x"]),
             # Other DE-specific or traditional
-            ("mate-terminal",       ["mate-terminal", "-e"]),
-            ("lxterminal",          ["lxterminal", "-e"]),
-            ("qterminal",           ["qterminal", "-e"]),
-            ("deepin-terminal",     ["deepin-terminal", "-e"]),
-
+            ("mate-terminal", ["mate-terminal", "-e"]),
+            ("lxterminal", ["lxterminal", "-e"]),
+            ("qterminal", ["qterminal", "-e"]),
+            ("deepin-terminal", ["deepin-terminal", "-e"]),
             # Lightweight / legacy
-            ("urxvt",               ["urxvt", "-hold", "-e"]),
-            ("xterm",               ["xterm", "-e"]),
-            ("st",                  ["st", "-e"]),
-
+            ("urxvt", ["urxvt", "-hold", "-e"]),
+            ("xterm", ["xterm", "-e"]),
+            ("st", ["st", "-e"]),
             # Debian/Ubuntu alternatives wrapper
             ("x-terminal-emulator", ["x-terminal-emulator", "-e"]),
         ):
@@ -209,7 +199,13 @@ def requests_retry_session(
     backoff_factor: float = 0.5,
     status_forcelist: tuple[int, ...] = (429, 500, 502, 503, 504, 522, 524),
     allowed_methods: tuple[str, ...] = (
-        "HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE",
+        "HEAD",
+        "GET",
+        "OPTIONS",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
     ),
     session: requests.Session | None = None,
 ) -> requests.Session:
@@ -276,7 +272,9 @@ def is_blend_saved(path: str | Path) -> None:
             # Still saving; print a one-time friendly note
             if not warned:
                 _log("⏳  Waiting for Blender to finish saving the .blend…")
-                _log("    If this takes a while, background sync apps (Dropbox/Drive) may be scanning the file.")
+                _log(
+                    "    If this takes a while, background sync apps (Dropbox/Drive) may be scanning the file."
+                )
                 warned = True
 
         time.sleep(0.25)
@@ -288,7 +286,7 @@ def _short(p: str) -> str:
     return p if str(p).startswith(":s3:") else Path(str(p)).name
 
 
-#rclone base command
+# rclone base command
 def _build_base(
     rclone_bin: Path,
     endpoint: str,
@@ -312,9 +310,12 @@ def _build_base(
 
     base: list[str] = [
         str(rclone_bin),
-        "--s3-endpoint", endpoint,
-        "--s3-access-key-id", access_key,
-        "--s3-secret-access-key", secret_key,
+        "--s3-endpoint",
+        endpoint,
+        "--s3-access-key-id",
+        access_key,
+        "--s3-secret-access-key",
+        secret_key,
     ]
 
     # Only include session token if provided; some providers omit it.

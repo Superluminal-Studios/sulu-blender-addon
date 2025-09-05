@@ -15,12 +15,12 @@ blender_version_items: List[Tuple[str, str, str]] = [
     ("BLENDER43", "Blender 4.3", "Use Blender 4.3 on the farm"),
     ("BLENDER44", "Blender 4.4", "Use Blender 4.4 on the farm"),
     ("BLENDER45", "Blender 4.5", "Use Blender 4.5 on the farm"),
+    ("BLENDER50", "Blender 5.0", "Use Blender 5.0 on the farm"),
 ]
 
 # Build a lookup:  40 → "BLENDER40", 41 → "BLENDER41", …
 _enum_by_number: Dict[int, str] = {
-    int(code.replace("BLENDER", "")): code
-    for code, *_ in blender_version_items
+    int(code.replace("BLENDER", "")): code for code, *_ in blender_version_items
 }
 _enum_numbers_sorted = sorted(_enum_by_number)  # e.g. [40, 41, 42, 43, 44, 45]
 
@@ -78,4 +78,6 @@ def resolved_worker_blender_value(auto_determine: bool, selected_enum: str) -> s
     """
     Convenience: resolve the right enum and return the worker/API payload string.
     """
-    return to_worker_blender_value(resolve_selected_blender_enum(auto_determine, selected_enum))
+    return to_worker_blender_value(
+        resolve_selected_blender_enum(auto_determine, selected_enum)
+    )

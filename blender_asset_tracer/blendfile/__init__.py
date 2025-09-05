@@ -122,6 +122,7 @@ class BlendFile:
         self.filepath = path
         self.raw_filepath = path
         self._is_modified = False
+        self.file_subversion = 0
         self.fileobj = self._open_file(path, mode)
 
         self.blocks = []  # type: BFBList
@@ -133,7 +134,9 @@ class BlendFile:
         self.block_from_addr = {}  # type: typing.Dict[int, BlendFileBlock]
 
         self.header = header.BlendFileHeader(self.fileobj, self.raw_filepath)
-        self.block_header_struct = self.header.create_block_header_struct()
+        self.block_header_struct, self.block_header_fields = (
+            self.header.create_block_header_struct()
+        )
         self._load_blocks()
 
     def _open_file(self, path: pathlib.Path, mode: str) -> typing.IO[bytes]:
@@ -167,6 +170,8 @@ class BlendFile:
 
             if block.code == b"DNA1":
                 self.decode_structs(block)
+            elif block.code == b"GLOB":
+                self.decode_glob(block)
             else:
                 self.fileobj.seek(block.size, os.SEEK_CUR)
 
@@ -354,6 +359,25 @@ class BlendFile:
                 dna_struct.append_field(field)
                 dna_offset += dna_size
 
+    def decode_glob(self, block: "BlendFileBlock") -> None:
+        """Partially decode the GLOB block to get the file sub-version."""
+        # Before this, the subversion didn't exist in 'FileGlobal'.
+        if self.header.version <= 242:
+            self.file_subversion = 0
+            return
+
+        # GLOB can appear in the file before DNA1, and so we cannot use DNA to
+        # parse the fields.
+
+        # The subversion is always the `short` at offset 4.
+        # block_data = io.BytesIO(block.raw_data())
+        endian = self.header.endian
+        self.fileobj.seek(4, os.SEEK_CUR)  # Skip the next 4 bytes.
+        self.file_subversion = endian.read_short(self.fileobj)
+
+        # Skip to the next block.
+        self.fileobj.seek(block.file_offset + block.size, os.SEEK_SET)
+
     def abspath(self, relpath: bpathlib.BlendPath) -> bpathlib.BlendPath:
         """Construct an absolute path from a blendfile-relative path."""
 
@@ -423,6 +447,12 @@ class BlendFileBlock:
     old_structure = struct.Struct(b"4sI")
     """old blend files ENDB block structure"""
 
+    # Explicitly annotate to avoid `Any` from `.unpack()`.
+    size: int
+    addr_old: int
+    sdna_index: int
+    count: int
+
     def __init__(self, bfile: BlendFile) -> None:
         self.bfile = bfile
 
@@ -453,23 +483,13 @@ class BlendFileBlock:
             self.code = b"ENDB"
             return
 
-        # header size can be 8, 20, or 24 bytes long
-        # 8: old blend files ENDB block (exception)
-        # 20: normal headers 32 bit platform
-        # 24: normal headers 64 bit platform
-        if len(data) <= 15:
-            self.log.debug("interpreting block as old-style ENB block")
-            blockheader = self.old_structure.unpack(data)
-            self.code = self.endian.read_data0(blockheader[0])
-            return
-
-        blockheader = header_struct.unpack(data)
-        self.code = self.endian.read_data0(blockheader[0])
+        blockheader = bfile.block_header_fields(*header_struct.unpack(data))
+        self.code = self.endian.read_data0(blockheader.code)
         if self.code != b"ENDB":
-            self.size = blockheader[1]
-            self.addr_old = blockheader[2]
-            self.sdna_index = blockheader[3]
-            self.count = blockheader[4]
+            self.size = blockheader.len
+            self.addr_old = blockheader.old
+            self.sdna_index = blockheader.SDNAnr
+            self.count = blockheader.nr
             self.file_offset = bfile.fileobj.tell()
 
     def __repr__(self) -> str:

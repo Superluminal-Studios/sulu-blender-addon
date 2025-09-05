@@ -27,13 +27,14 @@ import pathlib
 import queue
 import typing
 from typing import Optional
+from .. import trace
 
 from ..trace import progress
 
 log = logging.getLogger(__name__)
 
 
-class Callback(progress.Callback):
+class Callback(trace.progress.Callback):
     """BAT Pack progress reporting."""
 
     def pack_start(self) -> None:

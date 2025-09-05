@@ -24,7 +24,6 @@ import pathlib
 import sys
 import typing
 
-# import blender_asset_tracer.pack.transfer
 from ..pack import transfer
 from .. import pack, bpathlib
 
@@ -69,8 +68,7 @@ def add_parser(subparsers):
         "--exclude",
         nargs="*",
         default="",
-        help="Space-separated list of glob patterns (like '*.abc *.vbo') to "
-        "exclude.",
+        help="Space-separated list of glob patterns (like '*.abc *.vbo') to exclude.",
     )
     parser.add_argument(
         "-c",

@@ -23,6 +23,7 @@ Note that this supports the Shaman API of Flamenco Manager 2.x. Support for
 Flamenco 3.x will be implemented in a new Flamenco Blender add-on, and not in
 BAT itself.
 """
+
 import logging
 import os
 import pathlib
@@ -31,8 +32,8 @@ import urllib.parse
 
 import requests
 
-import blender_asset_tracer.pack as bat_pack
-import blender_asset_tracer.pack.transfer as bat_transfer
+from .. import pack as bat_pack
+from .. import transfer as bat_transfer
 
 from .transfer import ShamanTransferrer
 from .client import ShamanClient
@@ -50,7 +51,7 @@ class ShamanPacker(bat_pack.Packer):
         target: str,
         endpoint: str,
         checkout_id: str,
-        **kwargs
+        **kwargs,
     ) -> None:
         """Constructor
 

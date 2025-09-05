@@ -2,6 +2,7 @@ from pathlib import Path
 from ..blender_asset_tracer.pack import Packer
 from ..blender_asset_tracer.pack import zipped
 
+
 def create_packer(bpath, ppath, target):
     packer = Packer(
         bpath,
@@ -24,7 +25,9 @@ def pack_blend(infile, target, method="ZIP", project_path=None):
         return file_map
 
     elif method == "ZIP":
-        with zipped.ZipPacker(Path(infile), Path(infile).parent, Path(target)) as packer:
+        with zipped.ZipPacker(
+            Path(infile), Path(infile).parent, Path(target)
+        ) as packer:
             packer.strategise()
             packer.execute()
         return None

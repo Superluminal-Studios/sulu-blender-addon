@@ -126,7 +126,6 @@ class Packer:
 
         self._shorten = functools.partial(shorten_path, self.project)
 
-
         # Filled by strategise()
         self._actions = collections.defaultdict(AssetAction)  # type: typing.DefaultDict[pathlib.Path, AssetAction]
         self.missing_files = set()  # type: typing.Set[pathlib.Path]
@@ -473,9 +472,9 @@ class Packer:
             # It is *not* used for any disk I/O, since the file may not even
             # exist on the local filesystem.
             bfile_pp = action.new_path
-            assert (
-                bfile_pp is not None
-            ), f"Action {action.path_action.name} on {bfile_path} has no final path set, unable to process"
+            assert bfile_pp is not None, (
+                f"Action {action.path_action.name} on {bfile_path} has no final path set, unable to process"
+            )
 
             # Use tempfile to create a unique name in our temporary directoy.
             # The file should be deleted when self.close() is called, and not

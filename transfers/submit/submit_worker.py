@@ -65,7 +65,11 @@ CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
 proj = data["project"]
 
 clear_console()
-def warn(message: str, emoji: str = "x", close_window: bool = True, new_line: bool = False) -> None:
+
+
+def warn(
+    message: str, emoji: str = "x", close_window: bool = True, new_line: bool = False
+) -> None:
     emojis = {
         "x": "❌",  # error / stop
         "w": "⚠️",  # warning
@@ -81,10 +85,12 @@ def warn(message: str, emoji: str = "x", close_window: bool = True, new_line: bo
 
 # ─── Path helpers (OS-agnostic drive detection + S3 key cleaning) ────────────
 
-_WIN_DRIVE = re.compile(r'^[A-Za-z]:[\\/]+')
+_WIN_DRIVE = re.compile(r"^[A-Za-z]:[\\/]+")
+
 
 def _is_win_drive_path(p: str) -> bool:
     return bool(_WIN_DRIVE.match(str(p)))
+
 
 def _norm_abs_for_detection(path: str) -> str:
     """Normalize a path for comparison but keep Windows-looking/UNC paths intact on POSIX."""
@@ -92,6 +98,7 @@ def _norm_abs_for_detection(path: str) -> str:
     if _is_win_drive_path(p) or p.startswith("//") or p.startswith("\\\\"):
         return p
     return os.path.normpath(os.path.abspath(p)).replace("\\", "/")
+
 
 def _drive(path: str) -> str:
     """Return a drive token like 'C:' or 'UNC' (or '' on POSIX normal paths)."""
@@ -104,9 +111,11 @@ def _drive(path: str) -> str:
         return os.path.splitdrive(p)[0].upper()
     return ""
 
+
 def _relpath_safe(child: str, base: str) -> str:
     """Safe relpath (POSIX separators). Caller must ensure same 'drive'."""
     return os.path.relpath(child, start=base).replace("\\", "/")
+
 
 def _s3key_clean(key: str) -> str:
     """
@@ -116,16 +125,19 @@ def _s3key_clean(key: str) -> str:
     - normalize '.' and '..'
     """
     k = str(key).replace("\\", "/")
-    k = re.sub(r"/+", "/", k)       # collapse duplicate slashes
-    k = k.lstrip("/")               # forbid leading slash
+    k = re.sub(r"/+", "/", k)  # collapse duplicate slashes
+    k = k.lstrip("/")  # forbid leading slash
     k = os.path.normpath(k).replace("\\", "/")
     if k == ".":
-        return ""                   # do not allow '.' as a key
+        return ""  # do not allow '.' as a key
     return k
+
 
 def _samepath(a: str, b: str) -> bool:
     """Case-insensitive, normalized equality check suitable for Windows/POSIX."""
-    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(
+        os.path.normpath(b)
+    )
 
 
 # ─── main ────────────────────────────────────────────────────────
@@ -141,7 +153,7 @@ def main() -> None:
         if github_response.status_code == 200:
             latest_version = github_response.json().get("tag_name")
             if latest_version:
-                latest_version = tuple(int(i) for i in latest_version.split('.'))
+                latest_version = tuple(int(i) for i in latest_version.split("."))
                 if latest_version > tuple(data["addon_version"]):
                     answer = input(
                         "A new version of the Superluminal Render Farm addon is available, would you like to update? (y/n)"
@@ -162,7 +174,9 @@ def main() -> None:
     except SystemExit:
         sys.exit(0)
     except Exception:
-        _log("ℹ️  Skipped add-on update check (network not available or rate-limited). Continuing...")
+        _log(
+            "ℹ️  Skipped add-on update check (network not available or rate-limited). Continuing..."
+        )
 
     headers = {"Authorization": data["user_token"]}
 
@@ -170,7 +184,9 @@ def main() -> None:
     try:
         rclone_bin = ensure_rclone(logger=_log)
     except Exception as e:
-        warn(f"Couldn't prepare the uploader (rclone): {e}", emoji="x", close_window=True)
+        warn(
+            f"Couldn't prepare the uploader (rclone): {e}", emoji="x", close_window=True
+        )
 
     # Verify farm availability (nice error if org misconfigured)
     try:
@@ -180,7 +196,11 @@ def main() -> None:
             timeout=30,
         )
         if farm_status.status_code != 200:
-            warn(f"Farm status check failed: {farm_status.json()}", emoji="x", close_window=False)
+            warn(
+                f"Farm status check failed: {farm_status.json()}",
+                emoji="x",
+                close_window=False,
+            )
             warn(
                 "Please verify that you are logged in and a project is selected. "
                 "If the issue persists, try logging out and back in.",
@@ -198,7 +218,9 @@ def main() -> None:
 
     # Local paths / settings
     blend_path: str = data["blend_path"]
-    project_path = blend_path.replace("\\", "/").split("/")[0] + "/"  # drive root (Windows) or '/' (POSIX)
+    project_path = (
+        blend_path.replace("\\", "/").split("/")[0] + "/"
+    )  # drive root (Windows) or '/' (POSIX)
     use_project: bool = bool(data["use_project_upload"])
     automatic_project_path: bool = bool(data["automatic_project_path"])
     custom_project_path: str = data["custom_project_path"]
@@ -232,13 +254,19 @@ def main() -> None:
         abs_files_all: List[str] = []
         for f in fmap.keys():
             raw = str(f).replace("\\", "/")
-            if _is_win_drive_path(raw) or raw.startswith("//") or raw.startswith("\\\\"):
+            if (
+                _is_win_drive_path(raw)
+                or raw.startswith("//")
+                or raw.startswith("\\\\")
+            ):
                 f_abs = raw  # leave Windows/UNC intact on Linux/macOS
             elif os.path.isabs(raw):
                 f_abs = _norm_abs_for_detection(raw)
             else:
                 # Resolve relative paths against the .blend's directory
-                f_abs = _norm_abs_for_detection(os.path.join(os.path.dirname(abs_blend), raw))
+                f_abs = _norm_abs_for_detection(
+                    os.path.join(os.path.dirname(abs_blend), raw)
+                )
             abs_files_all.append(f_abs)
 
         # Ensure the main blend is included in the set
@@ -254,18 +282,24 @@ def main() -> None:
         missing_count = 0
         for idx, p in enumerate(on_drive):
             if os.path.isfile(p):
-                _log(f"✅  [{idx+1}/{len(on_drive)}] {shorten_path(p)}")
+                _log(f"✅  [{idx + 1}/{len(on_drive)}] {shorten_path(p)}")
                 try:
                     required_storage += os.path.getsize(p)
                 except Exception:
                     pass
             else:
                 missing_count += 1
-                _log(f"⚠️  [{idx+1}/{len(on_drive)}] {shorten_path(p)} — not found on disk (will be skipped)")
+                _log(
+                    f"⚠️  [{idx + 1}/{len(on_drive)}] {shorten_path(p)} — not found on disk (will be skipped)"
+                )
 
         if off_drive:
-            _log("\n💡 Heads up: some items are on a different drive and will be excluded from Project uploads.")
-            _log("   To include them, either move them onto the same drive as the .blend or switch Upload Type to Zip.")
+            _log(
+                "\n💡 Heads up: some items are on a different drive and will be excluded from Project uploads."
+            )
+            _log(
+                "   To include them, either move them onto the same drive as the .blend or switch Upload Type to Zip."
+            )
             sample = off_drive[:5]
             for p in sample:
                 _log(f"   • {shorten_path(p)}")
@@ -293,7 +327,9 @@ def main() -> None:
         # Ensure project root is a directory (not the .blend file)
         if os.path.isfile(common_path) or _samepath(common_path, abs_blend):
             common_path = os.path.dirname(abs_blend)
-            _log(f"ℹ️  Using the .blend's folder as the Project Path: {shorten_path(common_path)}")
+            _log(
+                f"ℹ️  Using the .blend's folder as the Project Path: {shorten_path(common_path)}"
+            )
 
         # Respect custom base if provided: filter to files under it and same drive.
         if not automatic_project_path:
@@ -301,22 +337,27 @@ def main() -> None:
                 warn(
                     "Custom Project Path is empty. Either enable Automatic Project Path or set a valid folder.",
                     emoji="w",
-                    close_window=True
+                    close_window=True,
                 )
             custom_base = _norm_abs_for_detection(custom_project_path)
             if os.path.isfile(custom_base):
                 custom_base = os.path.dirname(custom_base)
-                _log(f"ℹ️  The chosen Project Path points to a file. Using its folder: {shorten_path(custom_base)}")
+                _log(
+                    f"ℹ️  The chosen Project Path points to a file. Using its folder: {shorten_path(custom_base)}"
+                )
             base_drive = _drive(custom_base)
             under_custom = [
-                p for p in on_drive
-                if _drive(p) == base_drive and (p + "/").startswith(custom_base.rstrip("/") + "/")
+                p
+                for p in on_drive
+                if _drive(p) == base_drive
+                and (p + "/").startswith(custom_base.rstrip("/") + "/")
             ]
             if not under_custom:
                 warn(
                     f"No dependencies are located under the chosen Project Path:\n   {custom_base}\n"
                     "Tip: pick a higher-level folder or enable Automatic Project Path.",
-                    emoji="w", close_window=True
+                    emoji="w",
+                    close_window=True,
                 )
             on_drive = under_custom
             common_path = custom_base
@@ -332,7 +373,9 @@ def main() -> None:
                 if rel:
                     rel_manifest.append(rel)
                 else:
-                    _log(f"ℹ️  Skipped one entry that resolves to the project root only: {shorten_path(p)}")
+                    _log(
+                        f"ℹ️  Skipped one entry that resolves to the project root only: {shorten_path(p)}"
+                    )
             except Exception:
                 _log(
                     f"⚠️  Couldn't compute a relative path under the project root for: {shorten_path(p)}. "
@@ -362,15 +405,15 @@ def main() -> None:
         _log("📦  Creating a single zip with all dependencies…")
         abs_blend_norm = _norm_abs_for_detection(blend_path)
         pack_blend(abs_blend_norm, str(zip_file), method="ZIP")
-        
+
         if not zip_file.exists():
             warn(f"Zip file does not exist", emoji="x", close_window=True)
-            
+
         required_storage = zip_file.stat().st_size
         rel_manifest = []
         common_path = ""
         main_blend_s3 = ""
-        _log(f"ℹ️  Zip size estimate: {required_storage/1_048_576:.1f} MiB")
+        _log(f"ℹ️  Zip size estimate: {required_storage / 1_048_576:.1f} MiB")
 
     # R2 credentials
     _log("\n🔑  Fetching temporary storage credentials...")
@@ -378,16 +421,24 @@ def main() -> None:
         s3_response = session.get(
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
             headers=headers,
-            params={"filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')"},
+            params={
+                "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')"
+            },
             timeout=30,
         )
         s3_response.raise_for_status()
         if s3_response.status_code != 200:
-            warn("Could not obtain storage credentials from the server.", emoji="x", close_window=True)
+            warn(
+                "Could not obtain storage credentials from the server.",
+                emoji="x",
+                close_window=True,
+            )
         s3info = s3_response.json()["items"][0]
         bucket = s3info["bucket_name"]
     except (IndexError, requests.RequestException) as exc:
-        warn(f"Could not obtain storage credentials: {exc}", emoji="x", close_window=True)
+        warn(
+            f"Could not obtain storage credentials: {exc}", emoji="x", close_window=True
+        )
 
     # rclone uploads
     base_cmd = _build_base(
@@ -449,11 +500,7 @@ def main() -> None:
             )
 
     except RuntimeError as exc:
-        warn(
-            f"Upload failed: {exc}",
-            emoji="x",
-            close_window=True
-        )
+        warn(f"Upload failed: {exc}", emoji="x", close_window=True)
 
     finally:
         # Clean up local temp artifacts if possible
@@ -465,7 +512,7 @@ def main() -> None:
             pass
 
     # register job
-    _log("\n🗄️  Registering job with Superluminal...")
+    _log("\n🗄️  Submitting job to Superluminal...")
 
     # derive use_scene_image_format if older operators didn't pass it
     use_scene_image_format = bool(data.get("use_scene_image_format")) or (
@@ -479,7 +526,9 @@ def main() -> None:
             "project_id": data["project"]["id"],
             "packed_addons": data["packed_addons"],
             "organization_id": org_id,
-            "main_file": Path(blend_path).name if not use_project else _s3key_clean(main_blend_s3),
+            "main_file": Path(blend_path).name
+            if not use_project
+            else _s3key_clean(main_blend_s3),
             "project_path": project_name,
             "name": data["job_name"],
             "status": "queued",
@@ -500,7 +549,9 @@ def main() -> None:
             "use_async_upload": data["use_async_upload"],
             "defer_status": data["use_async_upload"],
             "farm_url": data["farm_url"],
-            "tasks": list(range(data["start_frame"], data["end_frame"] + 1, frame_step_val)),
+            "tasks": list(
+                range(data["start_frame"], data["end_frame"] + 1, frame_step_val)
+            ),
         }
     }
 
@@ -513,11 +564,7 @@ def main() -> None:
         )
         post_resp.raise_for_status()
     except requests.RequestException as exc:
-        warn(
-            f"Job registration failed: {exc}",
-            emoji="x",
-            close_window=True
-        )
+        warn(f"Job registration failed: {exc}", emoji="x", close_window=True)
 
     elapsed = time.perf_counter() - t_start
     _log(f"✅  Job submitted successfully. Total time: {elapsed:.1f}s")
@@ -545,11 +592,12 @@ if __name__ == "__main__":
         main()
     except Exception as exc:
         import traceback
+
         traceback.print_exc()
         warn(
             "Submission encountered an unexpected error. "
             f"Details:\n{exc}\n"
             "Tip: try switching to Zip upload or choose a higher level Project Path, then submit again.",
             emoji="x",
-            close_window=True
+            close_window=True,
         )
