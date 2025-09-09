@@ -39,7 +39,7 @@ def get_job_items(self, context):
 def draw_header_row(layout, prefs):
     """
     Draw a header row with the same enabled columns and labels that
-    SUPERLUMINAL_UL_job_items uses internally.
+    SUPERLIMINAL_UL_job_items uses internally.
     """
     row = layout.row(align=True)
     row.scale_y = 0.6  # Optional: make it shorter like a true header
@@ -95,7 +95,7 @@ class SuperluminalJobItem(bpy.types.PropertyGroup):
     type:             bpy.props.StringProperty()
 
 # ╭──────────────────  Column-toggle menu  ────────────────────╮
-class SUPERLUMINAL_MT_job_columns(bpy.types.Menu):
+class SUPERLIMINAL_MT_job_columns(bpy.types.Menu):
     bl_label = "Columns"
     cols = (  # order MUST match COLUMN_ORDER
         ("show_col_name",            "Name"),
@@ -118,7 +118,7 @@ class SUPERLUMINAL_MT_job_columns(bpy.types.Menu):
             layout.prop(prefs, attr, text=label)
 
 # ╭──────────────────  UIList  ────────────────────────────────╮
-class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
+class SUPERLIMINAL_UL_job_items(bpy.types.UIList):
     """List of render jobs with user-selectable columns."""
     order = COLUMN_ORDER  # single source-of-truth for column order
 
@@ -132,7 +132,7 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
                 if getattr(prefs, f"show_col_{key}"):
                     text = "Prog." if key == "progress" else key.replace("_", " ").title()
                     layout.label(text=text)
-            layout.menu("SUPERLUMINAL_MT_job_columns", icon='DOWNARROW_HLT', text="")
+            layout.menu("SUPERLIMINAL_MT_job_columns", icon='DOWNARROW_HLT', text="")
             return
 
         # ---- Data rows ------------------------------------------------------
@@ -167,20 +167,43 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
 
 
 def draw_login(layout):
-    # Non-persistent credentials live on the WindowManager
-    wm = bpy.context.window_manager
-    creds = getattr(wm, "sulu_wm", None)
-
+    # Already authenticated?
     if Storage.data.get("user_token"):
         layout.operator("superluminal.logout", text="Log out")
-    else:
-        if creds is None:
-            col = layout.column()
-            col.label(text="Internal error: auth props not registered.", icon='ERROR')
-            return
-        layout.prop(creds, "username", text="Email")
-        layout.prop(creds, "password", text="Password")
-        layout.operator("superluminal.login", text="Log in")
+        return
+
+    # 1) Sign in with browser (primary action)
+    layout.operator(
+        "superluminal.login_browser",
+        text="Connect to Superluminal",
+        icon_value=preview_collections["main"].get("SULU").icon_id,
+    )
+
+    # 2) Collapsible password login (closed by default)
+    prefs = bpy.context.preferences.addons[__package__].preferences
+    layout.separator()
+
+    header = layout.row(align=True)
+    icon = 'TRIA_DOWN' if getattr(prefs, "show_password_login", False) else 'TRIA_RIGHT'
+    header.prop(prefs, "show_password_login", text="", icon=icon, emboss=False)
+    header.label(text="Sign in with password")
+
+    if not getattr(prefs, "show_password_login", False):
+        return  # collapsed → nothing else to draw
+
+    # Expanded → draw boxed credentials
+    wm = bpy.context.window_manager
+    creds = getattr(wm, "sulu_wm", None)
+    if creds is None:
+        col = layout.column()
+        col.label(text="Internal error: auth props not registered.", icon='ERROR')
+        return
+
+    box = layout.box()
+    box.prop(creds, "username", text="Email")
+    box.prop(creds, "password", text="Password")
+    box.operator("superluminal.login", text="Log in")
+
 
 # ╭──────────────────  Add-on preferences  ───────────────────╮
 class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
@@ -206,6 +229,14 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     show_col_blender_version: bpy.props.BoolProperty(default=False)
     show_col_type:            bpy.props.BoolProperty(default=False)
 
+    # ▸ UI toggles
+    show_password_login: bpy.props.BoolProperty(
+        name="Show password sign-in",
+        description="Reveal email/password login fields",
+        default=False,                 # closed by default
+        options={'SKIP_SAVE'},         # don't persist across sessions
+    )
+
     # ▸ UI
     def draw(self, context):
         layout = self.layout
@@ -214,8 +245,8 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
 # ╭──────────────────  Register helpers  ─────────────────────╮
 classes = (
     SuperluminalJobItem,
-    SUPERLUMINAL_MT_job_columns,
-    SUPERLIMINAL_UL_job_items := SUPERLUMINAL_UL_job_items,  # keep stable name in bpy
+    SUPERLIMINAL_MT_job_columns,
+    SUPERLIMINAL_UL_job_items := SUPERLIMINAL_UL_job_items,  # keep stable name in bpy
     SuperluminalAddonPreferences,
 )
 

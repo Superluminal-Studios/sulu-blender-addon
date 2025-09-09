@@ -3,6 +3,8 @@ from __future__ import annotations
 import bpy
 from operator import setitem
 import webbrowser
+import time
+import platform
 
 from .constants import POCKETBASE_URL
 from .pocketbase_auth import NotAuthenticated
@@ -30,7 +32,7 @@ def _flush_wm_password(wm: bpy.types.WindowManager) -> None:
 
 
 # -----------------------------------------------------------------------------
-#  Authentication
+#  Authentication (password)
 # -----------------------------------------------------------------------------
 class SUPERLIMINAL_OT_Login(bpy.types.Operator):
     """Sign in to Superluminal"""
@@ -145,6 +147,161 @@ class SUPERLIMINAL_OT_Logout(bpy.types.Operator):
 
 
 # -----------------------------------------------------------------------------
+#  Authentication (browser device-link)
+# -----------------------------------------------------------------------------
+class SUPERLIMINAL_OT_LoginBrowser(bpy.types.Operator):
+    """Sign in via your default browser"""
+    bl_idname = "superluminal.login_browser"
+    bl_label = "Sign in with Browser"
+
+    _timer = None
+    _txn = ""
+    _deadline = 0.0
+    _interval = 2.0
+
+    def execute(self, context):
+        # 1) start pairing
+        url = f"{POCKETBASE_URL}/api/cli/start"
+        payload = {
+            "device_hint": f"Blender {bpy.app.version_string} / {platform.system()}",
+            "scope": "default",
+        }
+        try:
+            r = Storage.session.post(url, json=payload, timeout=Storage.timeout)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as exc:
+            return report_exception(self, exc, "Could not start browser sign‑in")
+
+        self._txn = data.get("txn", "")
+        if not self._txn:
+            self.report({"ERROR"}, "Backend did not return a transaction id.")
+            return {"CANCELLED"}
+
+        self._interval = float(data.get("interval", 2.0))
+        self._deadline = time.time() + float(data.get("expires_in", 480.0))
+        verification_url = data.get("verification_uri_complete") or data.get("verification_uri")
+
+        # 2) open browser
+        try:
+            if verification_url:
+                webbrowser.open(verification_url)
+        except Exception:
+            # allow copy-paste fallback if browser open fails for some envs
+            if verification_url:
+                self.report({"INFO"}, f"Open this URL to approve: {verification_url}")
+
+        # 3) begin polling in a modal timer
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(self._interval, window=context.window)
+        wm.modal_handler_add(self)
+        self.report({"INFO"}, "Waiting for approval in browser…")
+        return {"RUNNING_MODAL"}
+
+    def modal(self, context, event):
+        if event.type != "TIMER":
+            return {"RUNNING_MODAL"}
+
+        # timeout?
+        if time.time() >= self._deadline:
+            self.report({"ERROR"}, "Sign‑in link expired. Please try again.")
+            return self._finish(context, cancel=True)
+
+        # poll token endpoint
+        try:
+            r = Storage.session.post(
+                f"{POCKETBASE_URL}/api/cli/token",
+                json={"txn": self._txn},
+                timeout=Storage.timeout,
+            )
+            # 428 = authorization_pending → keep polling
+            if r.status_code == 428:
+                return {"RUNNING_MODAL"}
+            # 400/404 = expired/invalid
+            if r.status_code in (400, 404):
+                try:
+                    msg = r.json().get("message", "Denied or expired.")
+                except Exception:
+                    msg = "Denied or expired."
+                self.report({"ERROR"}, msg)
+                return self._finish(context, cancel=True)
+
+            r.raise_for_status()
+            auth = r.json()
+            token = auth.get("token")
+            if not token:
+                self.report({"ERROR"}, "Approved but no token returned.")
+                return self._finish(context, cancel=True)
+
+            # success → set token and preload, mirroring password flow
+            Storage.data["user_token"] = token
+            Storage.data["projects"] = []
+            Storage.data["org_id"] = ""
+            Storage.data["user_key"] = ""
+            Storage.data["jobs"] = {}
+
+            prefs = context.preferences.addons[__package__].preferences
+
+            projects = []
+            try:
+                projects = fetch_projects()
+            except Exception as exc:
+                self.report({"WARNING"}, f"Logged in but could not fetch projects: {exc}")
+            finally:
+                Storage.data["projects"] = projects or []
+
+            if projects:
+                try:
+                    project = projects[0]
+                    prefs.project_id = project["id"]
+                    org_id = project["organization_id"]
+
+                    try:
+                        user_key = get_render_queue_key(org_id)
+                        Storage.data["org_id"] = org_id
+                        Storage.data["user_key"] = user_key
+
+                        jobs = fetch_jobs(org_id, user_key, prefs.project_id) or {}
+                        Storage.data["jobs"] = jobs
+
+                        # Best-effort: set default job id if prop exists
+                        try:
+                            if jobs and hasattr(context.scene, "superluminal_settings"):
+                                if hasattr(context.scene.superluminal_settings, "job_id"):
+                                    context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
+                        except Exception:
+                            pass
+
+                    except Exception as exc:
+                        report_exception(self, exc, "Projects loaded, but could not fetch jobs")
+
+                except Exception as exc:
+                    report_exception(self, exc, "Failed to initialize default project")
+
+            Storage.save()
+
+            # scrub any in-memory creds and refresh UI
+            _flush_wm_credentials(context.window_manager)
+            for area in context.screen.areas:
+                if area.type == "PROPERTIES":
+                    area.tag_redraw()
+
+            self.report({"INFO"}, "Logged in via browser.")
+            return self._finish(context, cancel=False)
+
+        except Exception as exc:
+            # be resilient to transient network issues
+            print("Polling error:", exc)
+            return {"RUNNING_MODAL"}
+
+    def _finish(self, context, cancel):
+        wm = context.window_manager
+        if self._timer:
+            wm.event_timer_remove(self._timer)
+        return {"CANCELLED" if cancel else "FINISHED"}
+
+
+# -----------------------------------------------------------------------------
 #  Project list utilities
 # -----------------------------------------------------------------------------
 class SUPERLIMINAL_OT_FetchProjects(bpy.types.Operator):
@@ -236,6 +393,7 @@ class SUPERLIMINAL_OT_OpenBrowser(bpy.types.Operator):
 classes = (
     SUPERLIMINAL_OT_Login,
     SUPERLIMINAL_OT_Logout,
+    SUPERLIMINAL_OT_LoginBrowser,      # ← NEW
     SUPERLIMINAL_OT_FetchProjects,
     SUPERLIMINAL_OT_FetchProjectJobs,
     SUPERLIMINAL_OT_OpenBrowser,
