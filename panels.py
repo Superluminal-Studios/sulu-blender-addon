@@ -100,6 +100,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         layout.use_property_decorate = False
 
         prefs = context.preferences.addons[__package__].preferences
+        props  = scene.superluminal_settings
 
         refresh_jobs_collection(prefs)
 
@@ -108,7 +109,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
 
         if not logged_in:
             box = layout.box()
-            box.alert = True  # make warning red
             draw_login(box)
             return
 
@@ -118,43 +118,16 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         row.prop(prefs, "project_id", text="Project")
         row.operator("superluminal.fetch_projects", text="", icon="FILE_REFRESH")
 
-
-
-# ------------------------------------------------------------------
-#  Sub-panels (native look & feel)
-# ------------------------------------------------------------------
-class SUPERLUMINAL_PT_Submission(bpy.types.Panel):
-    bl_idname      = "SUPERLUMINAL_PT_Submission"
-    bl_label       = "Job Submission"
-    bl_parent_id   = "SUPERLUMINAL_PT_RenderPanel"
-    bl_space_type  = "PROPERTIES"
-    bl_region_type = "WINDOW"
-    bl_context     = "render"
-    bl_order       = 0  # Top-most among siblings
-    # Note: open by default (no DEFAULT_CLOSED)
-
-    def draw(self, context):
-        layout = self.layout
-        layout.use_property_split = True
-        layout.use_property_decorate = False
-
-        scene  = context.scene
-        props  = scene.superluminal_settings
-        prefs  = context.preferences.addons[__package__].preferences
-
         logged_in   = bool(Storage.data.get("user_token"))
         projects_ok = len(Storage.data.get("projects", [])) > 0
 
         # Job name toggle + field
-        col = layout.column()
-        col.prop(props, "use_file_name", text="Use File Name as Job Name")
+        box = layout.box()
+        col = box.column()
+        col.prop(props, "use_file_name", text="Use File Name")
         sub = col.column()
         sub.active = not props.use_file_name
         sub.prop(props, "job_name", text="Job Name")
-
-        # Image format (enum with "Scene Image Format" option)
-        col = layout.column()
-        col.prop(props, "image_format", text="Image Format")
 
         # Frame range controls (apply to Animation submissions)
         box = layout.box()
@@ -173,6 +146,9 @@ class SUPERLUMINAL_PT_Submission(bpy.types.Panel):
             range_col.prop(props, "frame_start",          text="Start")
             range_col.prop(props, "frame_end",            text="End")
             sub.prop(props, "frame_stepping_size",  text="Stepping")
+
+        row = layout.row(align=True)
+        row.prop(props, "image_format", text="Image Format")
 
         # Submit buttons — same formatting as Download button (plain row)
         VIDEO_FORMATS = {"FFMPEG", "AVI_JPEG", "AVI_RAW"}
@@ -221,6 +197,11 @@ class SUPERLUMINAL_PT_Submission(bpy.types.Panel):
             warn_row.label(text="")  # placeholder keeps panel height stable
 
 
+
+
+# ------------------------------------------------------------------
+#  Sub-panels (native look & feel)
+# ------------------------------------------------------------------
 class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
     bl_idname      = "SUPERLUMINAL_PT_UploadSettings"
     bl_label       = "Upload Settings"
@@ -398,7 +379,7 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
         tools.operator("superluminal.fetch_project_jobs", text="", icon='FILE_REFRESH')
         tools.separator()  # small gap
         tools.menu("SUPERLUMINAL_MT_job_columns", text="", icon='DOWNARROW_HLT')
-
+        
         # Job list
         col = layout.column()
         col.enabled = logged_in and jobs_ok
@@ -461,7 +442,6 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
 classes = (
     ToggleAddonSelectionOperator,
     SUPERLUMINAL_PT_RenderPanel,
-    SUPERLUMINAL_PT_Submission,
     SUPERLUMINAL_PT_UploadSettings,
     SUPERLUMINAL_PT_IncludeAddons,
     SUPERLUMINAL_PT_RenderNode,
