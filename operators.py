@@ -5,6 +5,7 @@ from operator import setitem
 import webbrowser
 import time
 import platform
+import threading
 
 from .constants import POCKETBASE_URL
 from .pocketbase_auth import NotAuthenticated
@@ -29,6 +30,246 @@ def _flush_wm_password(wm: bpy.types.WindowManager) -> None:
         wm.sulu_wm.password = ""
     except Exception:
         pass
+
+
+# ────────────────────────────────────────────────────────────────
+#  Non-blocking browser-login worker (thread + timer pump)
+# ────────────────────────────────────────────────────────────────
+class _BrowserLoginState:
+    """Shared state between the polling thread and the timer pump."""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.active = False
+        self.stop = threading.Event()
+
+        # inputs
+        self.txn: str = ""
+        self.deadline: float = 0.0
+        self.interval: float = 2.0
+
+        # outputs / milestones
+        self.error: str | None = None
+        self.token: str | None = None
+        self.bootstrap_done: bool = False
+        self.bootstrap_error: str | None = None
+
+        # data fetched in background (applied on main thread)
+        self.projects: list | None = None
+        self.org_id: str = ""
+        self.user_key: str = ""
+        self.jobs: dict | None = None
+        self.selected_project_id: str = ""
+
+        self.thread: threading.Thread | None = None
+
+    def reset(self):
+        with self.lock:
+            self.active = False
+            self.stop.clear()
+            self.txn = ""
+            self.deadline = 0.0
+            self.interval = 2.0
+            self.error = None
+            self.token = None
+            self.bootstrap_done = False
+            self.bootstrap_error = None
+            self.projects = None
+            self.org_id = ""
+            self.user_key = ""
+            self.jobs = None
+            self.selected_project_id = ""
+            self.thread = None
+
+
+_LOGIN_STATE = _BrowserLoginState()
+_PUMP_REGISTERED = False
+
+
+def _redraw_properties_ui() -> None:
+    wm = bpy.context.window_manager
+    for win in getattr(wm, "windows", []):
+        scr = getattr(win, "screen", None)
+        if not scr:
+            continue
+        for area in scr.areas:
+            if area.type == "PROPERTIES":
+                area.tag_redraw()
+
+
+def _apply_bootstrap_to_blender(state: _BrowserLoginState):
+    """Apply fetched data to Blender data on the main thread (UI-safe)."""
+    prefs = bpy.context.preferences.addons[__package__].preferences
+
+    # install token + fetched data into Storage
+    if state.token:
+        Storage.data["user_token"] = state.token
+    Storage.data["projects"] = state.projects or []
+    Storage.data["org_id"] = state.org_id or ""
+    Storage.data["user_key"] = state.user_key or ""
+    Storage.data["jobs"] = state.jobs or {}
+
+    # choose default project
+    if Storage.data["projects"]:
+        try:
+            project_id = state.selected_project_id or Storage.data["projects"][0]["id"]
+            prefs.project_id = project_id
+        except Exception:
+            pass
+
+    Storage.save()
+    _flush_wm_credentials(bpy.context.window_manager)
+    _redraw_properties_ui()
+
+
+def _browser_login_thread(state: _BrowserLoginState):
+    """
+    Background thread:
+    1) Poll /api/cli/token until approved/denied/expired.
+    2) On approval, set token into Storage (for downstream API calls),
+       then fetch projects → org key → jobs in background.
+    NOTE: No Blender UI/RNA access here!
+    """
+    try:
+        token_url = f"{POCKETBASE_URL}/api/cli/token"
+        while not state.stop.is_set():
+            # check deadline
+            if time.time() >= state.deadline:
+                with state.lock:
+                    state.error = "Sign-in link expired. Please try again."
+                return
+
+            try:
+                r = Storage.session.post(
+                    token_url, json={"txn": state.txn}, timeout=Storage.timeout
+                )
+                if r.status_code == 428:
+                    # authorization_pending
+                    time.sleep(max(0.2, min(5.0, state.interval)))
+                    continue
+                if r.status_code in (400, 404):
+                    try:
+                        msg = r.json().get("message", "Denied or expired.")
+                    except Exception:
+                        msg = "Denied or expired."
+                    with state.lock:
+                        state.error = msg
+                    return
+
+                r.raise_for_status()
+                payload = r.json()
+                token = payload.get("token")
+                if not token:
+                    with state.lock:
+                        state.error = "Approved but no token returned."
+                    return
+
+                # put token into Storage so API helpers can work
+                with state.lock:
+                    state.token = token
+                Storage.data["user_token"] = token
+
+                # background bootstrap (network only)
+                try:
+                    projects = fetch_projects() or []
+                    org_id = ""
+                    user_key = ""
+                    jobs = {}
+
+                    if projects:
+                        # pick first (same as password flow)
+                        project = projects[0]
+                        org_id = project.get("organization_id", "")
+                        if org_id:
+                            user_key = get_render_queue_key(org_id)
+                            if user_key:
+                                jobs = fetch_jobs(org_id, user_key, project.get("id", "")) or {}
+
+                    with state.lock:
+                        state.projects = projects
+                        state.org_id = org_id
+                        state.user_key = user_key
+                        state.jobs = jobs
+                        state.selected_project_id = projects[0]["id"] if projects else ""
+                        state.bootstrap_done = True
+                    return
+
+                except Exception as exc:
+                    with state.lock:
+                        state.bootstrap_error = f"Logged in but could not fetch data: {exc}"
+                        state.bootstrap_done = True
+                    return
+
+            except Exception:
+                # transient network error; short backoff
+                time.sleep(max(0.2, min(2.0, state.interval)))
+                continue
+    finally:
+        # thread exits; timer pump will observe flags and clean up state
+        pass
+
+
+def _browser_login_pump():
+    """Timer pump that reads state and updates Blender UI. Runs very fast + tiny."""
+    global _PUMP_REGISTERED
+    st = _LOGIN_STATE
+
+    with st.lock:
+        active = st.active
+        error = st.error
+        token = st.token
+        bootstrap_done = st.bootstrap_done
+        bootstrap_error = st.bootstrap_error
+
+    if not active:
+        _PUMP_REGISTERED = False
+        return None  # stop timer
+
+    # surface errors to the user and stop
+    if error:
+        _LOGIN_STATE.stop.set()
+        _LOGIN_STATE.active = False
+        try:
+            bpy.ops.wm.call_panel('INVOKE_DEFAULT')  # no-op; ensures status bar refresh
+        except Exception:
+            pass
+        bpy.ops.wm.report(type={'ERROR'}, message=error) if hasattr(bpy.ops.wm, "report") else None
+        return None
+
+    # once bootstrap is done, apply on main thread
+    if bootstrap_done:
+        if token:
+            _apply_bootstrap_to_blender(st)
+            if bootstrap_error:
+                # Informative warning but still considered a successful login.
+                try:
+                    bpy.ops.wm.report(type={'WARNING'}, message=bootstrap_error)
+                except Exception:
+                    pass
+            else:
+                try:
+                    bpy.ops.wm.report(type={'INFO'}, message="Logged in via browser.")
+                except Exception:
+                    pass
+        else:
+            # shouldn't happen: bootstrap_done but no token
+            try:
+                bpy.ops.wm.report(type={'ERROR'}, message="Login failed.")
+            except Exception:
+                pass
+
+        _LOGIN_STATE.stop.set()
+        _LOGIN_STATE.active = False
+        return None
+
+    # keep pumping
+    return 0.2
+
+
+def _ensure_pump_registered():
+    global _PUMP_REGISTERED
+    if not _PUMP_REGISTERED:
+        _PUMP_REGISTERED = True
+        bpy.app.timers.register(_browser_login_pump, first_interval=0.2, persistent=False)
 
 
 # -----------------------------------------------------------------------------
@@ -126,9 +367,7 @@ class SUPERLIMINAL_OT_Login(bpy.types.Operator):
         _flush_wm_credentials(wm)
 
         # --- refresh UI ------------------------------------------------------
-        for area in context.screen.areas:
-            if area.type == "PROPERTIES":
-                area.tag_redraw()
+        _redraw_properties_ui()
 
         self.report({"INFO"}, "Logged in and data preloaded.")
         return {"FINISHED"}
@@ -147,19 +386,19 @@ class SUPERLIMINAL_OT_Logout(bpy.types.Operator):
 
 
 # -----------------------------------------------------------------------------
-#  Authentication (browser device-link)
+#  Authentication (browser device-link) — NON-BLOCKING
 # -----------------------------------------------------------------------------
 class SUPERLIMINAL_OT_LoginBrowser(bpy.types.Operator):
-    """Sign in via your default browser"""
+    """Sign in via your default browser (non-blocking)"""
     bl_idname = "superluminal.login_browser"
     bl_label = "Sign in with Browser"
 
-    _timer = None
-    _txn = ""
-    _deadline = 0.0
-    _interval = 2.0
-
     def execute(self, context):
+        # If a previous login is running, cancel it
+        if _LOGIN_STATE.active:
+            _LOGIN_STATE.stop.set()
+            # let the previous timer tick once more and exit
+
         # 1) start pairing
         url = f"{POCKETBASE_URL}/api/cli/start"
         payload = {
@@ -171,134 +410,40 @@ class SUPERLIMINAL_OT_LoginBrowser(bpy.types.Operator):
             r.raise_for_status()
             data = r.json()
         except Exception as exc:
-            return report_exception(self, exc, "Could not start browser sign‑in")
+            return report_exception(self, exc, "Could not start browser sign-in")
 
-        self._txn = data.get("txn", "")
-        if not self._txn:
+        txn = data.get("txn", "")
+        if not txn:
             self.report({"ERROR"}, "Backend did not return a transaction id.")
             return {"CANCELLED"}
 
-        self._interval = float(data.get("interval", 2.0))
-        self._deadline = time.time() + float(data.get("expires_in", 480.0))
+        interval = float(data.get("interval", 2.0))
+        deadline = time.time() + float(data.get("expires_in", 480.0))
         verification_url = data.get("verification_uri_complete") or data.get("verification_uri")
 
-        # 2) open browser
+        # 2) open browser (non-blocking)
         try:
             if verification_url:
                 webbrowser.open(verification_url)
         except Exception:
-            # allow copy-paste fallback if browser open fails for some envs
             if verification_url:
                 self.report({"INFO"}, f"Open this URL to approve: {verification_url}")
 
-        # 3) begin polling in a modal timer
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(self._interval, window=context.window)
-        wm.modal_handler_add(self)
-        self.report({"INFO"}, "Waiting for approval in browser…")
-        return {"RUNNING_MODAL"}
+        # 3) kick off background polling thread
+        _LOGIN_STATE.reset()
+        _LOGIN_STATE.active = True
+        _LOGIN_STATE.txn = txn
+        _LOGIN_STATE.interval = interval
+        _LOGIN_STATE.deadline = deadline
 
-    def modal(self, context, event):
-        if event.type != "TIMER":
-            return {"RUNNING_MODAL"}
+        t = threading.Thread(target=_browser_login_thread, args=(_LOGIN_STATE,), daemon=True)
+        _LOGIN_STATE.thread = t
+        t.start()
 
-        # timeout?
-        if time.time() >= self._deadline:
-            self.report({"ERROR"}, "Sign‑in link expired. Please try again.")
-            return self._finish(context, cancel=True)
-
-        # poll token endpoint
-        try:
-            r = Storage.session.post(
-                f"{POCKETBASE_URL}/api/cli/token",
-                json={"txn": self._txn},
-                timeout=Storage.timeout,
-            )
-            # 428 = authorization_pending → keep polling
-            if r.status_code == 428:
-                return {"RUNNING_MODAL"}
-            # 400/404 = expired/invalid
-            if r.status_code in (400, 404):
-                try:
-                    msg = r.json().get("message", "Denied or expired.")
-                except Exception:
-                    msg = "Denied or expired."
-                self.report({"ERROR"}, msg)
-                return self._finish(context, cancel=True)
-
-            r.raise_for_status()
-            auth = r.json()
-            token = auth.get("token")
-            if not token:
-                self.report({"ERROR"}, "Approved but no token returned.")
-                return self._finish(context, cancel=True)
-
-            # success → set token and preload, mirroring password flow
-            Storage.data["user_token"] = token
-            Storage.data["projects"] = []
-            Storage.data["org_id"] = ""
-            Storage.data["user_key"] = ""
-            Storage.data["jobs"] = {}
-
-            prefs = context.preferences.addons[__package__].preferences
-
-            projects = []
-            try:
-                projects = fetch_projects()
-            except Exception as exc:
-                self.report({"WARNING"}, f"Logged in but could not fetch projects: {exc}")
-            finally:
-                Storage.data["projects"] = projects or []
-
-            if projects:
-                try:
-                    project = projects[0]
-                    prefs.project_id = project["id"]
-                    org_id = project["organization_id"]
-
-                    try:
-                        user_key = get_render_queue_key(org_id)
-                        Storage.data["org_id"] = org_id
-                        Storage.data["user_key"] = user_key
-
-                        jobs = fetch_jobs(org_id, user_key, prefs.project_id) or {}
-                        Storage.data["jobs"] = jobs
-
-                        # Best-effort: set default job id if prop exists
-                        try:
-                            if jobs and hasattr(context.scene, "superluminal_settings"):
-                                if hasattr(context.scene.superluminal_settings, "job_id"):
-                                    context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
-                        except Exception:
-                            pass
-
-                    except Exception as exc:
-                        report_exception(self, exc, "Projects loaded, but could not fetch jobs")
-
-                except Exception as exc:
-                    report_exception(self, exc, "Failed to initialize default project")
-
-            Storage.save()
-
-            # scrub any in-memory creds and refresh UI
-            _flush_wm_credentials(context.window_manager)
-            for area in context.screen.areas:
-                if area.type == "PROPERTIES":
-                    area.tag_redraw()
-
-            self.report({"INFO"}, "Logged in via browser.")
-            return self._finish(context, cancel=False)
-
-        except Exception as exc:
-            # be resilient to transient network issues
-            print("Polling error:", exc)
-            return {"RUNNING_MODAL"}
-
-    def _finish(self, context, cancel):
-        wm = context.window_manager
-        if self._timer:
-            wm.event_timer_remove(self._timer)
-        return {"CANCELLED" if cancel else "FINISHED"}
+        # 4) ensure timer pump is running and finish immediately
+        _ensure_pump_registered()
+        self.report({"INFO"}, "Browser opened. Approve to connect; you can keep working.")
+        return {"FINISHED"}
 
 
 # -----------------------------------------------------------------------------
@@ -366,10 +511,7 @@ class SUPERLIMINAL_OT_FetchProjectJobs(bpy.types.Operator):
         except Exception:
             pass
 
-        for area in context.screen.areas:
-            if area.type == "PROPERTIES":
-                area.tag_redraw()
-
+        _redraw_properties_ui()
         return {"FINISHED"}
 
 
@@ -393,7 +535,7 @@ class SUPERLIMINAL_OT_OpenBrowser(bpy.types.Operator):
 classes = (
     SUPERLIMINAL_OT_Login,
     SUPERLIMINAL_OT_Logout,
-    SUPERLIMINAL_OT_LoginBrowser,      # ← NEW
+    SUPERLIMINAL_OT_LoginBrowser,      # ← NON-BLOCKING browser sign-in
     SUPERLIMINAL_OT_FetchProjects,
     SUPERLIMINAL_OT_FetchProjectJobs,
     SUPERLIMINAL_OT_OpenBrowser,
