@@ -207,7 +207,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     )
     use_bserver: bpy.props.BoolProperty(
         name="Persistence Engine",
-        default=False,
+        default=True,
         description=(
             "The Persistence Engine keeps Blender running between frames. "
             "This ensures memory is kept around, which can significantly speed "
@@ -216,7 +216,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     )
     use_async_upload: bpy.props.BoolProperty(
         name="Async Frame Upload",
-        default=False,
+        default=True,
         description=(
             "Upload frames asynchronously to the farm. Frames are uploaded while "
             "the next frame is already rendering. This makes the cost needed to "

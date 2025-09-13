@@ -2,11 +2,11 @@
 # FARM_IP = "http://178.156.186.106/"
 
 
-# POCKETBASE_URL = "https://api.superlumin.al"
-# FARM_IP = "http://178.156.167.251/"
+POCKETBASE_URL = "https://api.superlumin.al"
+FARM_IP = "http://178.156.167.251/"
 
-POCKETBASE_URL = "http://localhost"
-FARM_IP = "http://localhost"
+# POCKETBASE_URL = "http://localhost"
+# FARM_IP = "http://localhost"
 
 
 DEFAULT_ADDONS = {
