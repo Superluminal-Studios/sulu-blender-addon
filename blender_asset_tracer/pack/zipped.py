@@ -58,7 +58,7 @@ class ZipTransferrer(transfer.FileTransferer):
 
         zippath = self.zippath.absolute()
 
-        with zipfile.ZipFile(str(zippath), "w") as outzip:
+        with zipfile.ZipFile(str(zippath), "w", strict_timestamps=False) as outzip:
             for src, dst, act in self.iter_queue():
                 assert src.is_absolute(), "expecting only absolute paths, not %r" % src
 

@@ -42,7 +42,7 @@ def bundle_addons(zip_path, addons_to_send=None):
         print(f"Adding {addon_root_path} to {addon_zip_file}")
 
         with zipfile.ZipFile(
-            addon_zip_file, "w", zipfile.ZIP_DEFLATED, compresslevel=1
+            addon_zip_file, "w", zipfile.ZIP_DEFLATED, compresslevel=1, strict_timestamps=False
         ) as zipf:
             for root, _, files in os.walk(addon_root_path):
                 rel_root = Path(root).relative_to(addon_root_path)
