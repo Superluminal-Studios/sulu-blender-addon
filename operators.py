@@ -275,7 +275,7 @@ def _ensure_pump_registered():
 # -----------------------------------------------------------------------------
 #  Authentication (password)
 # -----------------------------------------------------------------------------
-class SUPERLIMINAL_OT_Login(bpy.types.Operator):
+class SUPERLUMINAL_OT_Login(bpy.types.Operator):
     """Sign in to Superluminal"""
     bl_idname = "superluminal.login"
     bl_label = "Log in to Superluminal"
@@ -373,7 +373,7 @@ class SUPERLIMINAL_OT_Login(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class SUPERLIMINAL_OT_Logout(bpy.types.Operator):
+class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
     """Log out of Superluminal"""
     bl_idname = "superluminal.logout"
     bl_label = "Log out of Superluminal"
@@ -388,7 +388,7 @@ class SUPERLIMINAL_OT_Logout(bpy.types.Operator):
 # -----------------------------------------------------------------------------
 #  Authentication (browser device-link) — NON-BLOCKING
 # -----------------------------------------------------------------------------
-class SUPERLIMINAL_OT_LoginBrowser(bpy.types.Operator):
+class SUPERLUMINAL_OT_LoginBrowser(bpy.types.Operator):
     """Sign in via your default browser (non-blocking)"""
     bl_idname = "superluminal.login_browser"
     bl_label = "Sign in with Browser"
@@ -449,7 +449,7 @@ class SUPERLIMINAL_OT_LoginBrowser(bpy.types.Operator):
 # -----------------------------------------------------------------------------
 #  Project list utilities
 # -----------------------------------------------------------------------------
-class SUPERLIMINAL_OT_FetchProjects(bpy.types.Operator):
+class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
     """Fetch the project list from Superluminal."""
     bl_idname = "superluminal.fetch_projects"
     bl_label = "Fetch Project List"
@@ -475,7 +475,7 @@ class SUPERLIMINAL_OT_FetchProjects(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class SUPERLIMINAL_OT_FetchProjectJobs(bpy.types.Operator):
+class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
     """Fetch the job list for the selected project from Superluminal."""
     bl_idname = "superluminal.fetch_project_jobs"
     bl_label = "Fetch Project Jobs"
@@ -515,7 +515,7 @@ class SUPERLIMINAL_OT_FetchProjectJobs(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class SUPERLIMINAL_OT_OpenBrowser(bpy.types.Operator):
+class SUPERLUMINAL_OT_OpenBrowser(bpy.types.Operator):
     """Open the job in the browser."""
     bl_idname = "superluminal.open_browser"
     bl_label = "Open Job in Browser"
@@ -533,12 +533,12 @@ class SUPERLIMINAL_OT_OpenBrowser(bpy.types.Operator):
 #  Registration helpers
 # -----------------------------------------------------------------------------
 classes = (
-    SUPERLIMINAL_OT_Login,
-    SUPERLIMINAL_OT_Logout,
-    SUPERLIMINAL_OT_LoginBrowser,      # ← NON-BLOCKING browser sign-in
-    SUPERLIMINAL_OT_FetchProjects,
-    SUPERLIMINAL_OT_FetchProjectJobs,
-    SUPERLIMINAL_OT_OpenBrowser,
+    SUPERLUMINAL_OT_Login,
+    SUPERLUMINAL_OT_Logout,
+    SUPERLUMINAL_OT_LoginBrowser,      # ← NON-BLOCKING browser sign-in
+    SUPERLUMINAL_OT_FetchProjects,
+    SUPERLUMINAL_OT_FetchProjectJobs,
+    SUPERLUMINAL_OT_OpenBrowser,
 )
 
 def _submit_poll(cls, context):

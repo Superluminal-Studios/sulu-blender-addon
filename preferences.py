@@ -39,7 +39,7 @@ def get_job_items(self, context):
 def draw_header_row(layout, prefs):
     """
     Draw a header row with the same enabled columns and labels that
-    SUPERLIMINAL_UL_job_items uses internally.
+    SUPERLUMINAL_UL_job_items uses internally.
     """
     row = layout.row(align=True)
     row.scale_y = 0.6  # Optional: make it shorter like a true header
@@ -95,7 +95,7 @@ class SuperluminalJobItem(bpy.types.PropertyGroup):
     type:             bpy.props.StringProperty()
 
 # ╭──────────────────  Column-toggle menu  ────────────────────╮
-class SUPERLIMINAL_MT_job_columns(bpy.types.Menu):
+class SUPERLUMINAL_MT_job_columns(bpy.types.Menu):
     bl_label = "Columns"
     cols = (  # order MUST match COLUMN_ORDER
         ("show_col_name",            "Name"),
@@ -118,7 +118,7 @@ class SUPERLIMINAL_MT_job_columns(bpy.types.Menu):
             layout.prop(prefs, attr, text=label)
 
 # ╭──────────────────  UIList  ────────────────────────────────╮
-class SUPERLIMINAL_UL_job_items(bpy.types.UIList):
+class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
     """List of render jobs with user-selectable columns."""
     order = COLUMN_ORDER  # single source-of-truth for column order
 
@@ -132,7 +132,7 @@ class SUPERLIMINAL_UL_job_items(bpy.types.UIList):
                 if getattr(prefs, f"show_col_{key}"):
                     text = "Prog." if key == "progress" else key.replace("_", " ").title()
                     layout.label(text=text)
-            layout.menu("SUPERLIMINAL_MT_job_columns", icon='DOWNARROW_HLT', text="")
+            layout.menu("SUPERLUMINAL_MT_job_columns", icon='DOWNARROW_HLT', text="")
             return
 
         # ---- Data rows ------------------------------------------------------
@@ -245,8 +245,8 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
 # ╭──────────────────  Register helpers  ─────────────────────╮
 classes = (
     SuperluminalJobItem,
-    SUPERLIMINAL_MT_job_columns,
-    SUPERLIMINAL_UL_job_items := SUPERLIMINAL_UL_job_items,  # keep stable name in bpy
+    SUPERLUMINAL_MT_job_columns,
+    SUPERLUMINAL_UL_job_items := SUPERLUMINAL_UL_job_items,  # keep stable name in bpy
     SuperluminalAddonPreferences,
 )
 
