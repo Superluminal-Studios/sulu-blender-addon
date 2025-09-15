@@ -1,33 +1,51 @@
+# operators/download_job_operator.py
 from __future__ import annotations
-
 
 import bpy
 import json
 import sys
 import tempfile
 from pathlib import Path
+
 from ...utils.worker_utils import launch_in_terminal
 from ...constants import POCKETBASE_URL
 from ...utils.prefs import get_prefs, get_addon_dir
 from ...storage import Storage
+
+
+# ---- helpers to guarantee isolated Blender Python for the worker ----
+
+def _blender_python_args() -> list[str]:
+    """
+    Blender's recommended Python flags (if available).
+    """
+    try:
+        args = getattr(bpy.app, "python_args", ())
+        return list(args) if args else []
+    except Exception:
+        return []
+
+
 class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
     """Download the rendered frames from the selected job."""
-    
+
     bl_idname = "superluminal.download_job"
     bl_label = "Download Job Frames"
+
     job_id: bpy.props.StringProperty(name="Job ID")
     job_name: bpy.props.StringProperty(name="Job Name")
 
-    def execute(self, context):  
-        if self.job_id == "":
+    def execute(self, context):
+        if not self.job_id:
             self.report({"ERROR"}, "No job selected")
             return {"CANCELLED"}
-        
+
         scene = context.scene
         props = scene.superluminal_settings
         prefs = get_prefs()
 
-        selected_project =  [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0]
+        # Find the currently selected project
+        selected_project = [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0]
 
         handoff = {
             "addon_dir": str(get_addon_dir()),
@@ -38,20 +56,27 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
             "pocketbase_url": POCKETBASE_URL,
             "sarfis_url": f"https://api.superlumin.al/farm/{Storage.data['org_id']}",
             "user_token": Storage.data["user_token"],
-            "sarfis_token": Storage.data["user_key"]
+            "sarfis_token": Storage.data["user_key"],
         }
-        
 
         tmp_json = Path(tempfile.gettempdir()) / f"superluminal_download_{self.job_id}.json"
         tmp_json.write_text(json.dumps(handoff), encoding="utf-8")
 
         worker = Path(__file__).with_name("download_worker.py")
-        launch_in_terminal([sys.executable, "-u", str(worker), str(tmp_json)])
-        # subprocess.run([sys.executable, "-u", str(worker), str(tmp_json)])
 
-        self.report({"INFO"}, "Submission started in external window.")
+        # Launch the worker with Blender's Python in isolated mode (-I)
+        pybin = sys.executable
+        pyargs = _blender_python_args()
+        cmd = [pybin, *pyargs, "-I", "-u", str(worker), str(tmp_json)]
+
+        try:
+            launch_in_terminal(cmd)
+        except Exception as e:
+            self.report({"ERROR"}, f"Failed to start download: {e}")
+            return {"CANCELLED"}
+
+        self.report({"INFO"}, "Download started in external window.")
         return {"FINISHED"}
-
 
 
 classes = (SUPERLUMINAL_OT_DownloadJob,)

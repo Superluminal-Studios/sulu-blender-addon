@@ -9,18 +9,28 @@ import tempfile
 import uuid
 from pathlib import Path
 from bpy.props import EnumProperty, IntProperty, BoolProperty
+import os
 
 from ...utils.check_file_outputs import gather_render_outputs
 from ...utils.worker_utils import launch_in_terminal
 from .addon_packer import bundle_addons
 from ...constants import POCKETBASE_URL, FARM_IP
-import os
-from ...utils.version_utils import (
-    resolved_worker_blender_value,
-)
+from ...utils.version_utils import resolved_worker_blender_value
 from ...storage import Storage
 from ...utils.prefs import get_prefs, get_addon_dir
-from ...utils.project_scan import quick_cross_drive_hint  # UPDATED: new import
+from ...utils.project_scan import quick_cross_drive_hint
+
+
+
+def _blender_python_args() -> list[str]:
+    """
+    Blender's recommended Python flags (if available).
+    """
+    try:
+        args = getattr(bpy.app, "python_args", ())
+        return list(args) if args else []
+    except Exception:
+        return []
 
 
 def addon_version(addon_name: str):
@@ -55,7 +65,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         name="Frame",
         description="Frame to render for a still submission",
         default=0,  # will be set from scene on invoke
-        soft_min=-999999, soft_max=999999
+        soft_min=-999999, soft_max=999999,
     )
 
     def invoke(self, context, event):
@@ -100,7 +110,11 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             return {"CANCELLED"}
 
         # Resolve project from Storage + prefs
-        project = next((p for p in Storage.data.get("projects", []) if p.get("id") == getattr(prefs, "project_id", None)), None)
+        project = next(
+            (p for p in Storage.data.get("projects", [])
+             if p.get("id") == getattr(prefs, "project_id", None)),
+            None,
+        )
         if not project:
             self.report({"ERROR"}, "No project selected or projects not loaded. Please log in and select a project.")
             return {"CANCELLED"}
@@ -124,13 +138,13 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             except Exception:
                 pass
 
-        #blender version (single source of truth)
+        # Blender version (single source of truth)
         blender_version_payload = resolved_worker_blender_value(
             props.auto_determine_blender_version,
             props.blender_version
         )
 
-        #frame computation (mode-aware)
+        # Frame computation (mode-aware)
         if self.mode == "STILL":
             if self.use_current_scene_frame or self.frame == 0:
                 start_frame = end_frame = scene.frame_current
@@ -144,7 +158,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
                 scene.frame_step if props.use_scene_frame_range else props.frame_stepping_size
             )
 
-        #image format selection (enum includes SCENE option)
+        # Image format selection (enum includes SCENE option)
         use_scene_image_format = (props.image_format == 'SCENE')
         image_format_val = (
             scene.render.image_settings.file_format
@@ -180,7 +194,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "end_frame": end_frame,
             "frame_stepping_size": frame_stepping_size,
             "render_engine": scene.render.engine.upper(),
-            "blender_version": blender_version_payload,  # <- single source of truth, always correct
+            "blender_version": blender_version_payload,  # <- single source of truth
             "ignore_errors": props.ignore_errors,
             "pocketbase_url": POCKETBASE_URL,
             "user_token": token,
@@ -190,7 +204,12 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "farm_url": f"{FARM_IP}/farm/{Storage.data.get('org_id','')}/api/",
         }
 
-        bpy.ops.wm.save_as_mainfile(filepath=handoff["temp_blend_path"], compress=True, copy=True, relative_remap=False)
+        bpy.ops.wm.save_as_mainfile(
+            filepath=handoff["temp_blend_path"],
+            compress=True,
+            copy=True,
+            relative_remap=False
+        )
 
         worker = Path(__file__).with_name("submit_worker.py")
 
@@ -198,8 +217,14 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         tmp_json = Path(tempfile.gettempdir()) / f"superluminal_{job_id}.json"
         tmp_json.write_text(json.dumps(handoff), encoding="utf-8")
 
+        # --- launch the worker with Blender's Python, in isolated mode ---
+        # -I makes Python ignore PYTHON* env vars & user-site, preventing stdlib leakage.
+        pybin  = sys.executable
+        pyargs = _blender_python_args()
+        cmd    = [pybin, *pyargs, "-I", "-u", str(worker), str(tmp_json)]
+
         try:
-            launch_in_terminal([sys.executable, "-u", str(worker), str(tmp_json)])
+            launch_in_terminal(cmd)
         except Exception as e:
             self.report({"ERROR"}, f"Failed to launch submission: {e}")
             return {"CANCELLED"}
