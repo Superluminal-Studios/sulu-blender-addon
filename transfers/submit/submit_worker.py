@@ -536,7 +536,7 @@ def main() -> None:
             "end": data["end_frame"],
             "frame_step": frame_step_val,  # reflect the actual stepping size
             "batch_size": 1,
-            "render_passes": data["render_passes"],
+            # "render_passes": data["render_passes"],
             "image_format": data["image_format"],
             "use_scene_image_format": use_scene_image_format,
             "render_engine": data["render_engine"],
