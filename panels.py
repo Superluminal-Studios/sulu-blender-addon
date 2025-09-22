@@ -113,13 +113,20 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             return
 
         # Project selector row (always visible)
-        row = layout.row(align=True)
-        row.enabled = logged_in and projects_ok
-        row.prop(prefs, "project_id", text="Project")
-        row.operator("superluminal.fetch_projects", text="", icon="FILE_REFRESH")
+        if logged_in and projects_ok:
+            row = layout.row(align=True)
+            row.prop(prefs, "project_id", text="Project")
+            
+        else:
+            row = layout.row(align=True)
+            row.operator("superluminal.open_projects_web_page", text="Create Project")
+            row.operator("superluminal.fetch_projects", text="", icon="FILE_REFRESH")
+
+
 
         logged_in   = bool(Storage.data.get("user_token"))
         projects_ok = len(Storage.data.get("projects", [])) > 0
+
 
         # Job name toggle + field
         box = layout.box()

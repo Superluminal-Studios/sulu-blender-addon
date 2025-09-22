@@ -473,6 +473,21 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
 
         self.report({"INFO"}, "Projects fetched.")
         return {"FINISHED"}
+    
+
+class SUPERLUMINAL_OT_OpenProjectsWebPage(bpy.types.Operator):
+    """Fetch the project list from Superluminal."""
+    bl_idname = "superluminal.open_projects_web_page"
+    bl_label = "Fetch Project List"
+
+    def execute(self, context):
+        try:
+            webbrowser.open(f"https://superlumin.al/p")
+        except:
+            pass
+        
+        self.report({"INFO"}, "Opened Web Browser")
+        return {"FINISHED"}
 
 
 class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
@@ -539,6 +554,8 @@ classes = (
     SUPERLUMINAL_OT_FetchProjects,
     SUPERLUMINAL_OT_FetchProjectJobs,
     SUPERLUMINAL_OT_OpenBrowser,
+    SUPERLUMINAL_OT_OpenProjectsWebPage
+    
 )
 
 def _submit_poll(cls, context):
