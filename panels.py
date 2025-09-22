@@ -16,9 +16,7 @@ from .preferences import draw_login
 # NEW: project scan for UI warnings about cross-drive assets
 from .utils.project_scan import quick_cross_drive_hint, human_shorten
 
-# ╭──────────────────  Global runtime list  ───────────────────╮
-addons_to_send: list[str] = []          # filled from scene property
-
+addons_to_send: list[str] = []
 
 def _read_addons_from_scene(scene: bpy.types.Scene) -> None:
     """Refresh the in-memory list from the scene property (read-only)."""
@@ -52,9 +50,7 @@ def _value_row(layout: UILayout, *, align: bool = False) -> UILayout:
     return sub
 
 
-# ------------------------------------------------------------------
-#  Operators
-# ------------------------------------------------------------------
+# Operators
 class ToggleAddonSelectionOperator(bpy.types.Operator):
     """Tick / untick an add-on for inclusion in the upload zip"""
     bl_idname = "superluminal.toggle_addon_selection"
@@ -75,9 +71,7 @@ class ToggleAddonSelectionOperator(bpy.types.Operator):
         return {"FINISHED"}
 
 
-# ------------------------------------------------------------------
-#  Main panel (parent)
-# ------------------------------------------------------------------
+# Main panel
 class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
     bl_idname      = "SUPERLUMINAL_PT_RenderPanel"
     bl_label       = "Superluminal Render"
@@ -112,7 +106,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             draw_login(box)
             return
 
-        # Project selector row (always visible)
         if logged_in and projects_ok:
             row = layout.row(align=True)
             row.prop(prefs, "project_id", text="Project")
@@ -205,11 +198,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             warn_row.label(text="")  # placeholder keeps panel height stable
 
 
-
-
-# ------------------------------------------------------------------
-#  Sub-panels (native look & feel)
-# ------------------------------------------------------------------
 class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
     bl_idname      = "SUPERLUMINAL_PT_UploadSettings"
     bl_label       = "Upload Settings"
@@ -297,9 +285,6 @@ class SUPERLUMINAL_PT_IncludeAddons(bpy.types.Panel):
                 _addon_row(layout, mod_name, pretty)
 
 
-# ─────────────────────────────────────────────────────────────
-#  "Render Node Settings" (renamed from Render Node)
-# ─────────────────────────────────────────────────────────────
 class SUPERLUMINAL_PT_RenderNode(bpy.types.Panel):
     bl_idname      = "SUPERLUMINAL_PT_RenderNode"
     bl_label       = "Render Node Settings"
@@ -307,7 +292,7 @@ class SUPERLUMINAL_PT_RenderNode(bpy.types.Panel):
     bl_space_type  = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context     = "render"
-    bl_options     = {'DEFAULT_CLOSED'}  # parent stays closed by default
+    bl_options     = {'DEFAULT_CLOSED'}
     bl_order       = 20
 
     def draw(self, context):
@@ -338,7 +323,6 @@ class SUPERLUMINAL_PT_RenderNode_Experimental(bpy.types.Panel):
     bl_region_type = "WINDOW"
     bl_context     = "render"
     bl_order       = 0
-    # Note: OPEN by default (no DEFAULT_CLOSED)
 
     def draw(self, context):
         layout = self.layout
