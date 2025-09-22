@@ -116,6 +116,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         if logged_in and projects_ok:
             row = layout.row(align=True)
             row.prop(prefs, "project_id", text="Project")
+            row.operator("superluminal.fetch_projects", text="", icon="FILE_REFRESH")
             
         else:
             row = layout.row(align=True)
