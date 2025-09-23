@@ -239,7 +239,7 @@ def main() -> None:
 
     # Pack assets
     if use_project:
-        _log("🔍  Scanning project files…\n")
+        _log("🔍  Scanning project files, this can take a while…\n")
         fmap = pack_blend(
             blend_path,
             target="",
@@ -280,31 +280,31 @@ def main() -> None:
         # Required storage = sum sizes of on_drive files that currently exist
         required_storage = 0
         missing_count = 0
-        for idx, p in enumerate(on_drive):
-            if os.path.isfile(p):
-                _log(f"✅  [{idx + 1}/{len(on_drive)}] {shorten_path(p)}")
-                try:
-                    required_storage += os.path.getsize(p)
-                except Exception:
-                    pass
-            else:
-                missing_count += 1
-                _log(
-                    f"⚠️  [{idx + 1}/{len(on_drive)}] {shorten_path(p)} — not found on disk (will be skipped)"
-                )
+        for idx, p in enumerate(abs_files_all):
+            if p in on_drive:
+                if os.path.isfile(p):
+                    _log(f"✅  [{idx + 1}/{len(abs_files_all)}] {shorten_path(p)}")
+                    try:
+                        required_storage += os.path.getsize(p)
+                    except Exception:
+                        pass
+                else:
+                    missing_count += 1
+                    _log(
+                        f"⚠️  [{idx + 1}/{len(abs_files_all)}] {shorten_path(p)} — not found"
+                    )
+
+            if p in off_drive:
+                _log(f"❌  [{idx + 1}/{len(abs_files_all)}] {shorten_path(p)}")
 
         if off_drive:
-            _log(
-                "\n💡 Heads up: some items are on a different drive and will be excluded from Project uploads."
-            )
-            _log(
-                "   To include them, either move them onto the same drive as the .blend or switch Upload Type to Zip."
-            )
-            sample = off_drive[:5]
-            for p in sample:
-                _log(f"   • {shorten_path(p)}")
-            if len(off_drive) > len(sample):
-                _log(f"   • ...and {len(off_drive) - len(sample)} more")
+            warn(f"{len(off_drive)} File{'s are' if len(off_drive) > 1 else ' is'} on a different drive.", emoji="x", close_window=False, new_line=True)
+            warn("This may cause issues with the job submission.", emoji="w", close_window=False)
+            warn("If you need to maintain the current project path you can use the zip upload instead.", emoji="i", close_window=False, new_line=True)
+            warn("Would you like to submit job?", emoji="w", close_window=False)
+            answer = input("y/n: ")
+            if answer.lower() != "y":
+                sys.exit(1)
             # Optional: persist a list for diagnostics
             try:
                 offlist = Path(tempfile.gettempdir()) / f"{job_id}_off_drive.txt"
@@ -402,7 +402,7 @@ def main() -> None:
         )
 
     else:
-        _log("📦  Creating a single zip with all dependencies…")
+        _log("📦  Creating a single zip with all dependencies, this can take a while…")
         abs_blend_norm = _norm_abs_for_detection(blend_path)
         pack_blend(abs_blend_norm, str(zip_file), method="ZIP")
 
