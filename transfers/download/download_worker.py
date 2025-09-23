@@ -192,20 +192,16 @@ def auto_downloader(dest_dir, poll_seconds: int = 5, min_delta_frames: int = 1, 
 
     while True:
         status, finished, total = _fetch_job_details()
-
-        # Friendly status line
         if total > 0:
             pct = (finished / max(total, 1)) * 100.0
             _log(f"\nℹ️  Status: {status or 'unknown'} | {finished}/{total} frames ({pct:.1f}%)")
         else:
             _log(f"\nℹ️  Status: {status or 'unknown'} | finished frames: {finished}")
 
-        # Show first-notice only once
         if not first_notice_shown and status in {"running", "queued", "unknown"}:
             _log("⏳  Waiting for frames to appear on storage...")
             first_notice_shown = True
 
-        # Trigger conditions
         enough_progress = (total > 0 and finished >= max(int(total * min_percent), min_delta_frames))
         new_frames = (finished > last_finished)
         refresh_due = (time.monotonic() - last_refresh) >= periodic_refresh_every
@@ -222,13 +218,11 @@ def auto_downloader(dest_dir, poll_seconds: int = 5, min_delta_frames: int = 1, 
             if ok:
                 last_finished = finished
 
-        # Exit conditions
         if status in {"finished", "paused", "error"}:
             _log("\n🔄  Finalizing download (one last pass)...")
             try:
                 _rclone_copy_output(dest_dir)
             except Exception:
-                # already logged
                 pass
             if status == "finished":
                 _log("✅  All frames downloaded.")
@@ -290,6 +284,7 @@ def main() -> None:
             raise IndexError("No storage records returned for this project.")
         s3info = items[0]
         bucket = s3info["bucket_name"]
+        
     except (IndexError, requests.RequestException, KeyError) as exc:
         _log(f"❌  Failed to obtain bucket credentials: {exc}")
         input("\nPress ENTER to close this window…")
