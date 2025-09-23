@@ -41,6 +41,7 @@ try:
     ensure_rclone = rclone.ensure_rclone
     worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
     clear_console = importlib.import_module(f"{pkg_name}.utils.worker_utils").clear_console
+    open_folder = importlib.import_module(f"{pkg_name}.utils.worker_utils").open_folder
     clear_console()
     
     #internal utils
@@ -159,9 +160,7 @@ def _print_first_run_hint():
     _log("   • Keep this window open to auto download frames as they finish.")
     _log("   • You can close this window anytime. rerun the download later to resume.")
 
-def single_downloader():
-    safe_job_dir = _safe_dir_name(job_name, f"job_{job_id}")
-    dest_dir = os.path.join(download_path, safe_job_dir)
+def single_downloader(dest_dir):
     _ensure_dir(dest_dir)
 
     _log("🚀  Downloading render output…")
@@ -174,15 +173,13 @@ def single_downloader():
         _log("ℹ️  No outputs found yet. Try again later or use Auto mode to wait for frames.")
 
 
-def auto_downloader(poll_seconds: int = 5, min_delta_frames: int = 1, min_percent: float = 0.10):
+def auto_downloader(dest_dir, poll_seconds: int = 5, min_delta_frames: int = 1, min_percent: float = 0.10):
     """
     Periodically checks job progress and pulls new frames when:
       - finished increased by at least `min_delta_frames`, or
       - overall finished >= min_percent of total (first meaningful batch), or
       - a periodic refresh timer fires (in case the job API lags behind).
     """
-    safe_job_dir = _safe_dir_name(job_name, f"job_{job_id}")
-    dest_dir = os.path.join(download_path, safe_job_dir)
     _ensure_dir(dest_dir)
 
     last_finished = 0
@@ -254,6 +251,8 @@ def main() -> None:
     job_id = str(data.get("job_id", "") or "").strip()
     job_name = str(data.get("job_name", "") or f"job_{job_id}").strip() or f"job_{job_id}"
     download_path = str(data.get("download_path", "") or "").strip() or os.getcwd()
+    safe_job_dir = _safe_dir_name(job_name, f"job_{job_id}")
+    dest_dir = os.path.abspath(os.path.join(download_path, safe_job_dir))
 
     #determine mode
     sarfis_url = data.get("sarfis_url")
@@ -305,19 +304,22 @@ def main() -> None:
     # ─────── run selected mode ─────────────────────────────────
     try:
         if download_type == "single":
-            single_downloader()
-            input("\nPress ENTER to close this window…")
+            single_downloader(dest_dir)
         else:
             if not sarfis_url or not sarfis_token:
                 _log("ℹ️  Auto mode requested but no job status endpoint was provided. Falling back to single download.")
-                single_downloader()
-                input("\nPress ENTER to close this window...")
+                single_downloader(dest_dir)
+                
             else:
                 _log(f"ℹ️  Mode: Auto (polling every 5s). Destination: {download_path}")
-                auto_downloader(poll_seconds=5)
+                auto_downloader(dest_dir, poll_seconds=5)
                 elapsed = time.perf_counter() - t_start
                 _log(f"🎉  Download session finished. Elapsed: {elapsed:.1f}s")
-                input("\nPress ENTER to close this window...")
+            
+        print("open folder", dest_dir)
+        open_folder(dest_dir)
+        input("\nPress ENTER to close this window...")
+
     except KeyboardInterrupt:
         _log("\n⏹️  Download interrupted by user. You can rerun this later to resume.")
         input("\nPress ENTER to close this window...")
