@@ -339,7 +339,7 @@ class SUPERLUMINAL_PT_RenderNode_Experimental(bpy.types.Panel):
 
 class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
     bl_idname      = "SUPERLUMINAL_PT_Jobs"
-    bl_label       = "Render Jobs"
+    bl_label       = "Manage & Download"
     bl_parent_id   = "SUPERLUMINAL_PT_RenderPanel"
     bl_space_type  = "PROPERTIES"
     bl_region_type = "WINDOW"
