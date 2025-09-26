@@ -1,11 +1,8 @@
-# ─── preferences.py ───────────────────────────────────────────
 import bpy
 from .storage            import Storage
-from .utils.date_utils   import format_submitted   # ← your helper
+from .utils.date_utils   import format_submitted
 from .icons              import preview_collections
 
-
-# ─────────────────────────  Constants  ─────────────────────────
 COLUMN_ORDER = [
     "name",
     "status",
@@ -20,6 +17,7 @@ COLUMN_ORDER = [
     "type",
 ]
 
+
 STATUS_ICONS = {
     "queued":   preview_collections["main"].get("QUEUED").icon_id,
     "running":  preview_collections["main"].get("RUNNING").icon_id,
@@ -28,21 +26,21 @@ STATUS_ICONS = {
     "paused":   preview_collections["main"].get("PAUSED").icon_id,
 }
 
-# ╭──────────────────  Helpers  ───────────────────────────────╮
 def get_project_items(self, context):
     return [(p["id"], p["name"], p["name"]) for p in Storage.data["projects"]]
+
 
 def get_job_items(self, context):
     return [(jid, j["name"], j["name"]) for jid, j in Storage.data["jobs"].items()]
 
-# ── stand-alone column-header drawer ──────────────────────────
+
 def draw_header_row(layout, prefs):
     """
     Draw a header row with the same enabled columns and labels that
     SUPERLUMINAL_UL_job_items uses internally.
     """
     row = layout.row(align=True)
-    row.scale_y = 0.6  # Optional: make it shorter like a true header
+    row.scale_y = 0.6
 
     for key in COLUMN_ORDER:
         if getattr(prefs, f"show_col_{key}"):
@@ -50,7 +48,7 @@ def draw_header_row(layout, prefs):
             label = "Prog." if key == "progress" else key.replace("_", " ").title()
             box.label(text=label)
 
-# ── Sync jobs from Storage → prefs.jobs ───────────────────────
+
 def refresh_jobs_collection(prefs):
     """Sync prefs.jobs ←→ Storage.data['jobs'] and format fields."""
     prefs.jobs.clear()
@@ -79,7 +77,7 @@ def refresh_jobs_collection(prefs):
         it.type             = "Zip" if job.get("zip", True) else "Project"
         it.icon             = STATUS_ICONS.get(job.get("status", ""), "FILE_FOLDER")
 
-# ╭──────────────────  Data container  ────────────────────────╮
+
 class SuperluminalJobItem(bpy.types.PropertyGroup):
     id:               bpy.props.StringProperty()
     name:             bpy.props.StringProperty()
@@ -94,7 +92,7 @@ class SuperluminalJobItem(bpy.types.PropertyGroup):
     blender_version:  bpy.props.StringProperty()
     type:             bpy.props.StringProperty()
 
-# ╭──────────────────  Column-toggle menu  ────────────────────╮
+
 class SUPERLUMINAL_MT_job_columns(bpy.types.Menu):
     bl_label = "Columns"
     cols = (  # order MUST match COLUMN_ORDER
@@ -117,17 +115,16 @@ class SUPERLUMINAL_MT_job_columns(bpy.types.Menu):
         for attr, label in self.cols:
             layout.prop(prefs, attr, text=label)
 
-# ╭──────────────────  UIList  ────────────────────────────────╮
+
 class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
     """List of render jobs with user-selectable columns."""
     order = COLUMN_ORDER  # single source-of-truth for column order
 
-    def draw_item(self, context, layout, data, item, icon,
-                  active_data, active_propname, index):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         prefs = context.preferences.addons[__package__].preferences
 
         # ---- Header row -----------------------------------------------------
-        if index == -1:  # built-in header (still here for template_list)
+        if index == -1: 
             for key in self.order:
                 if getattr(prefs, f"show_col_{key}"):
                     text = "Prog." if key == "progress" else key.replace("_", " ").title()
@@ -142,6 +139,7 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
         for key in self.order:
             if not getattr(prefs, f"show_col_{key}"):
                 continue
+
             if key == "name":
                 cols.label(text=item.name, icon_value=STATUS_ICONS.get(item.status, "FILE_FOLDER"))
             elif key == "status":
@@ -164,6 +162,8 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
                 cols.label(text=item.blender_version)
             elif key == "type":
                 cols.label(text=item.type)
+
+
 
 
 def draw_login(layout):
@@ -189,7 +189,7 @@ def draw_login(layout):
     header.label(text="Sign in with password")
 
     if not getattr(prefs, "show_password_login", False):
-        return  # collapsed → nothing else to draw
+        return 
 
     # Expanded → draw boxed credentials
     wm = bpy.context.window_manager
@@ -205,18 +205,18 @@ def draw_login(layout):
     box.operator("superluminal.login", text="Log in")
 
 
-# ╭──────────────────  Add-on preferences  ───────────────────╮
+
 class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
-    # ▸ project picker (remains persisted)
+
     project_id: bpy.props.EnumProperty(name="Project", items=get_project_items)
 
-    # ▸ job table
+
     jobs:             bpy.props.CollectionProperty(type=SuperluminalJobItem)
     active_job_index: bpy.props.IntProperty()
 
-    # ▸ column visibility toggles (all default-on)
+
     show_col_name:            bpy.props.BoolProperty(default=True)
     show_col_status:          bpy.props.BoolProperty(default=False)
     show_col_submission_time: bpy.props.BoolProperty(default=True)
@@ -229,7 +229,7 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     show_col_blender_version: bpy.props.BoolProperty(default=False)
     show_col_type:            bpy.props.BoolProperty(default=False)
 
-    # ▸ UI toggles
+
     show_password_login: bpy.props.BoolProperty(
         name="Show password sign-in",
         description="Reveal email/password login fields",
@@ -237,12 +237,12 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
         options={'SKIP_SAVE'},         # don't persist across sessions
     )
 
-    # ▸ UI
+
     def draw(self, context):
         layout = self.layout
         draw_login(layout)
 
-# ╭──────────────────  Register helpers  ─────────────────────╮
+
 classes = (
     SuperluminalJobItem,
     SUPERLUMINAL_MT_job_columns,
