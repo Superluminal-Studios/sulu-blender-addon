@@ -294,6 +294,7 @@ class SUPERLUMINAL_PT_RenderNode(bpy.types.Panel):
     bl_context     = "render"
     bl_options     = {'DEFAULT_CLOSED'}
     bl_order       = 20
+    blender_version = get_blender_version_string()
 
     def draw(self, context):
         layout = self.layout
@@ -307,11 +308,16 @@ class SUPERLUMINAL_PT_RenderNode(bpy.types.Panel):
         col.prop(
             props,
             "auto_determine_blender_version",
-            text=f"Use Current Blender Version [{get_blender_version_string()}]",
+            text=f"Use Current Blender Version [{self.blender_version}]",
         )
         sub = col.column()
         sub.active = not props.auto_determine_blender_version
         sub.prop(props, "blender_version", text="Blender Version")
+
+        col = col.column()
+        col.prop(props, "device_type", text="Device Type")
+
+        
 
 
 class SUPERLUMINAL_PT_RenderNode_Experimental(bpy.types.Panel):
@@ -335,6 +341,7 @@ class SUPERLUMINAL_PT_RenderNode_Experimental(bpy.types.Panel):
         col.prop(props, "ignore_errors", text="Finish Frame When Errored")
         col.prop(props, "use_bserver", text="Persistence Engine")
         col.prop(props, "use_async_upload", text="Async Frame Upload")
+        
 
 
 class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
@@ -362,17 +369,15 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
         logged_in = bool(Storage.data.get("user_token"))
         jobs_ok   = len(Storage.data.get("jobs", {})) > 0
 
-        # Top row: full width, shove everything to the absolute right
         tools = layout.row(align=True)
         tools.use_property_split = False
         tools.use_property_decorate = False
-        tools.separator_spacer()  # eat all space → next items dock to the right edge
+        tools.separator_spacer()
         tools.prop(wm_props, "live_job_updates", text="Auto Refresh")
         tools.operator("superluminal.fetch_project_jobs", text="", icon='FILE_REFRESH')
-        tools.separator()  # small gap
+        tools.separator()
         tools.menu("SUPERLUMINAL_MT_job_columns", text="", icon='DOWNARROW_HLT')
         
-        # Job list
         col = layout.column()
         col.enabled = logged_in and jobs_ok
         draw_header_row(col, prefs)
@@ -380,10 +385,9 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
         if not logged_in or not jobs_ok:
             box = col.box()
             if not logged_in:
-                box.alert = True  # make warning red
+                box.alert = True
                 box.label(text="Log in to see your jobs.", icon='ERROR')
             elif not jobs_ok:
-                # Not really a warning, keep informational
                 box.label(text="No jobs found in selected project.", icon='INFO')
             return
 

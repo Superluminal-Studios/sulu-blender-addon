@@ -184,6 +184,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "packed_addons_path": tempfile.mkdtemp(prefix="blender_addons_"),
             "packed_addons": [],
             "job_id": str(job_id),
+            "device_type": props.device_type,
             "blend_path": bpy.data.filepath,
             "temp_blend_path": str(
                 Path(tempfile.gettempdir())

@@ -183,6 +183,34 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         ),
     )
 
+    # device_type: bpy.props.EnumProperty(
+    #     name="Device Type",
+    #     items=[
+    #         ("GPU", "GPU", "Use GPU for rendering"),
+    #         ("CPU", "CPU", "Use CPU for rendering"),
+    #     ],
+    #     default="GPU",
+    #     description=(
+    #         "Specify which device type the render farm should use. "
+    #     ),
+    # )
+
+    device_type: bpy.props.EnumProperty(
+        name="Device Type",
+        items=[
+            ("1x-RTX4090-8CPU-32RAM", "RTX 4090, 8 Cores, 32GB RAM", "RTX 4090, 8 Cores, 32GB RAM"),
+            ("0x-None-16CPU-32RAM", "16 Cores, 32GB RAM", "16 Cores, 32GB RAM"),
+            ("0x-None-16CPU-64RAM", "16 Cores, 64GB RAM", "16 Cores, 64GB RAM"),
+            ("0x-None-16CPU-128RAM", "16 Cores, 128GB RAM", "16 Cores, 128GB RAM"),
+        ],
+        default="1x-RTX4090-8CPU-32RAM",
+        description=(
+            "Specify which device the render farm should use. "
+        ),
+    )
+
+
+
     # ------------------------------------------------------------
     #  Ignore errors
     # ------------------------------------------------------------
