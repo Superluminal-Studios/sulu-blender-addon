@@ -11,7 +11,7 @@ PocketBase JWT helpers for the Superluminal Blender add-on
 from __future__ import annotations
 import requests
 
-from constants import POCKETBASE_URL
+from .constants import POCKETBASE_URL
 from .storage import Storage
 import time
 # ------------------------------------------------------------------
@@ -45,7 +45,7 @@ def authorized_request(
         if int(time.time()) - int(Storage.data['user_token_time']) > 10:
             print("Refreshing token...")
             url = f"{POCKETBASE_URL}/api/collections/users/auth-refresh"
-            
+
             res = Storage.session.post(
                 url,
                 headers=headers,
