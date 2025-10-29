@@ -10,7 +10,10 @@ PocketBase JWT helpers for the Superluminal Blender add-on
 
 from __future__ import annotations
 import requests
+
+from constants import POCKETBASE_URL
 from .storage import Storage
+import time
 # ------------------------------------------------------------------
 #  Public API
 # ------------------------------------------------------------------
@@ -38,6 +41,27 @@ def authorized_request(
     headers = (kwargs.pop("headers", {}) or {}).copy()
     headers["Authorization"] = Storage.data["user_token"]
 
+    if Storage.data.get('user_token_time', None):
+        if int(time.time()) - int(Storage.data['user_token_time']) > 10:
+            print("Refreshing token...")
+            url = f"{POCKETBASE_URL}/api/collections/users/auth-refresh"
+            
+            res = Storage.session.post(
+                url,
+                headers=headers,
+                timeout=Storage.timeout,
+                **kwargs)
+            
+            if res.status_code == 200:
+                token = res.json().get('token', None)
+                if token:
+                    Storage.data["user_token"] = token
+                    Storage.data["user_token_time"] = int(time.time())
+                    Storage.save()
+                    headers["Authorization"] = token
+                    
+            else:
+                raise NotAuthenticated("Failed to set new token, please log in again")
     try:
         res = Storage.session.request(
             method,
@@ -46,8 +70,11 @@ def authorized_request(
             timeout=Storage.timeout,
             **kwargs,
         )
+
         if res.status_code == 401:
-            Storage.clear()
+            raise NotAuthenticated("Session expired - please log in again")
+
+        if res.status_code >= 404:
             raise NotAuthenticated("Session expired - please log in again")
 
         res.raise_for_status()

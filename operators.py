@@ -103,6 +103,7 @@ def _apply_bootstrap_to_blender(state: _BrowserLoginState):
     # install token + fetched data into Storage
     if state.token:
         Storage.data["user_token"] = state.token
+        Storage.data["user_token_time"] = int(time.time())
     Storage.data["projects"] = state.projects or []
     Storage.data["org_id"] = state.org_id or ""
     Storage.data["user_key"] = state.user_key or ""
