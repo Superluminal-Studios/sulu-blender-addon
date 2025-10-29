@@ -70,6 +70,7 @@ def authorized_request(
         )
 
         if res.status_code == 401:
+            Storage.clear()
             raise NotAuthenticated("Session expired - please log in again")
 
         if res.status_code >= 404:
