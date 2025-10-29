@@ -30,25 +30,16 @@ def request_jobs(org_id: str, user_key: str, project_id: str):
     """Verify farm availability and return (display_jobs, raw_jobs_json) for *project_id*."""
     prefs = get_prefs()
     prefs.jobs.clear()
-
-    # (a) farm status
-    authorized_request(
-        "GET",
-        f"{POCKETBASE_URL}/api/farm_status/{org_id}",
-        headers={"Auth-Token": user_key},
-    )
-
-    # (b) job list
     jobs_resp = authorized_request(
         "GET",
         f"{POCKETBASE_URL}/farm/{org_id}/api/job_list",
         headers={"Auth-Token": user_key},
     )
     jobs = jobs_resp.json()["body"]
-
     Storage.data["jobs"] = jobs
-
     return jobs
+
+
 
 def pulse():
     for window in bpy.context.window_manager.windows:

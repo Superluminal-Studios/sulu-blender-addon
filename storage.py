@@ -27,6 +27,7 @@ class Storage:
 
     data = {
         "user_token": "",
+        "user_token_time": 0,
         "org_id": "",
         "user_key": "",
         "projects": [],
@@ -67,6 +68,7 @@ class Storage:
                 # corrupted/partial file: reset to safe defaults
                 cls.data.update(
                     user_token="",
+                    user_token_time=0,
                     org_id="",
                     user_key="",
                     projects=[],
@@ -79,6 +81,7 @@ class Storage:
         with cls._lock:
             cls.data.update(
                 user_token="",
+                user_token_time=0,
                 org_id="",
                 user_key="",
                 projects=[],
@@ -86,4 +89,4 @@ class Storage:
             )
             cls._atomic_write(cls._file, cls.data)
 
-Storage.load()
+

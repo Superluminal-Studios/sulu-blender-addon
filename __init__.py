@@ -15,6 +15,9 @@ import atexit
 # -------------------------------------------------------------------
 #  Internal Imports
 # -------------------------------------------------------------------
+from .storage import Storage
+Storage.load()
+
 from . import icons
 icons.load_icons()
 
@@ -25,7 +28,7 @@ from .transfers.submit import submit_operator
 from .transfers.download import download_operator
 from . import panels
 from . import operators
-from .storage import Storage
+
 
 def get_prefs():
     addon_name = __name__

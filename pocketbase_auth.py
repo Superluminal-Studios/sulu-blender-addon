@@ -43,11 +43,9 @@ def authorized_request(
 
     if Storage.data.get('user_token_time', None):
         if int(time.time()) - int(Storage.data['user_token_time']) > 10:
-            print("Refreshing token...")
-            url = f"{POCKETBASE_URL}/api/collections/users/auth-refresh"
 
             res = Storage.session.post(
-                url,
+                f"{POCKETBASE_URL}/api/collections/users/auth-refresh",
                 headers=headers,
                 timeout=Storage.timeout,
                 **kwargs)
@@ -75,8 +73,12 @@ def authorized_request(
             raise NotAuthenticated("Session expired - please log in again")
 
         if res.status_code >= 404:
-            raise NotAuthenticated("Session expired - please log in again")
+            raise NotAuthenticated("Resource not found")
 
+        if res.text == "":
+            authorized_request("GET", f"{POCKETBASE_URL}/api/farm_status/{Storage.data['org_id']}", headers={"Auth-Token": Storage.data['user_key']})
+            print("Starting queue manager")
+        
         res.raise_for_status()
         return res
 
