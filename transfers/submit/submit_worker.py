@@ -523,7 +523,7 @@ def main() -> None:
     payload: Dict[str, object] = {
         "job_data": {
             "id": job_id,
-            "device_model": data["device_type"],
+            #"device_model": data["device_type"],
             "project_id": data["project"]["id"],
             "packed_addons": data["packed_addons"],
             "organization_id": org_id,
