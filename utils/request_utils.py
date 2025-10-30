@@ -35,11 +35,15 @@ def request_jobs(org_id: str, user_key: str, project_id: str):
         f"{POCKETBASE_URL}/farm/{org_id}/api/job_list",
         headers={"Auth-Token": user_key},
     )
-    jobs = jobs_resp.json()["body"]
-    Storage.data["jobs"] = jobs
-    return jobs
-
-
+    if jobs_resp.status_code == 200:
+        if jobs_resp.text != "":
+            jobs = jobs_resp.json().get("body", {})
+            Storage.data["jobs"] = jobs
+            return jobs
+        else:
+            Storage.data["jobs"] = {}
+            return {}
+    return {}
 
 def pulse():
     for window in bpy.context.window_manager.windows:
