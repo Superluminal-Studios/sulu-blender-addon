@@ -314,8 +314,8 @@ class SUPERLUMINAL_PT_RenderNode(bpy.types.Panel):
         sub.active = not props.auto_determine_blender_version
         sub.prop(props, "blender_version", text="Blender Version")
 
-        col = col.column()
-        col.prop(props, "device_type", text="Device Type")
+        #col = col.column()
+        #col.prop(props, "device_type", text="Device Type")
 
         
 
