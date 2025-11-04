@@ -78,7 +78,7 @@ def first_login(token):
         Storage.data["user_key"] = user_key
         jobs = fetch_jobs(org_id, user_key, bpy.context.preferences.addons[__package__].preferences.project_id)
         Storage.data["jobs"] = jobs
-        Storage.save()
+    Storage.save()
     
 
 class SUPERLUMINAL_OT_Login(bpy.types.Operator):
