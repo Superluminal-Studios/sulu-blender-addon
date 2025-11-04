@@ -446,7 +446,7 @@ def main() -> None:
         f"https://{CLOUDFLARE_R2_DOMAIN}",
         s3info,
     )
-    _log("🚀  Uploading…")
+    _log("🚀  Uploading…\n")
 
     try:
         if not use_project:
@@ -455,7 +455,7 @@ def main() -> None:
         else:
             if rel_manifest:
                 # 1) Copy project files (dependencies)
-                _log(f"\n📤  Uploading dependencies...")
+                _log(f"\n📤  Uploading dependencies...\n")
                 run_rclone(
                     base_cmd,
                     "copy",
@@ -468,7 +468,7 @@ def main() -> None:
             with filelist.open("a", encoding="utf-8") as fp:
                 fp.write(_s3key_clean(main_blend_s3) + "\n")
 
-            _log(f"\n📤  Uploading dependency manifest...")
+            _log(f"\n📤  Uploading dependency manifest...\n")
             run_rclone(
                 base_cmd,
                 "move",
@@ -478,7 +478,7 @@ def main() -> None:
             )
 
             # 3) Move the temp blend into place (fast, server-side). Sanitize key to avoid "//".
-            _log(f"\n📤  Uploading the main .blend...")
+            _log(f"\n📤  Uploading the main .blend...\n")
             move_to_path = _s3key_clean(f"{project_name}/{main_blend_s3}")
             run_rclone(
                 base_cmd,

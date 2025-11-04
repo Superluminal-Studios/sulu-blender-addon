@@ -242,13 +242,13 @@ def download_with_bar(url: str, dest: Path, logger=None) -> None:
         print("")  # newline after progress
 
 def ensure_rclone(logger=None) -> Path:
-    _log_or_print(logger, "🔍  Checking for rclone…")
+    #_log_or_print(logger, "🔍  Checking for rclone…")
     suf = get_platform_suffix()
     bin_name = "rclone.exe" if suf.startswith("windows") else "rclone"
     rclone_bin = get_rclone_platform_dir(suf) / bin_name
 
     if rclone_bin.exists():
-        _log_or_print(logger, "✅  rclone ready")
+        #_log_or_print(logger, "✅  rclone ready")
         return rclone_bin
 
     # Prepare dirs

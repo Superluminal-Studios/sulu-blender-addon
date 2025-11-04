@@ -163,13 +163,9 @@ def _print_first_run_hint():
 def single_downloader(dest_dir):
     _ensure_dir(dest_dir)
 
-    _log("🚀  Downloading render output…")
+    _log("🚀  Downloading render output…\n")
     ok = _rclone_copy_output(dest_dir)
-    if ok:
-        elapsed = time.perf_counter() - t_start
-        _log(f"✅  Download complete. Saved to: {dest_dir}")
-        _log(f"🕒  Took {elapsed:.1f}s in total.")
-    else:
+    if not ok:
         _log("ℹ️  No outputs found yet. Try again later or use Auto mode to wait for frames.")
 
 
@@ -208,9 +204,9 @@ def auto_downloader(dest_dir, poll_seconds: int = 5, min_delta_frames: int = 1, 
 
         if new_frames or enough_progress or refresh_due:
             if new_frames:
-                _log(f"📥  Detected {finished - last_finished} new frame(s). Pulling…")
+                _log(f"📥  Detected {finished - last_finished} new frame(s). Downloading…\n")
             elif enough_progress:
-                _log("📥  Pulling initial batch of frames...")
+                _log("📥  Downloading initial batch of frames...\n")
             else:
                 _log("📥  Periodic refresh...")
             last_refresh = time.monotonic()
@@ -225,11 +221,11 @@ def auto_downloader(dest_dir, poll_seconds: int = 5, min_delta_frames: int = 1, 
             except Exception:
                 pass
             if status == "finished":
-                _log("✅  All frames downloaded.")
+                _log("\n✅  All frames downloaded.")
             elif status == "paused":
-                _log("⏸️  Job paused. Current frames are downloaded. You can resume later.")
+                _log("\n⏸️  Job paused. Current frames are downloaded. You can resume later.")
             else:
-                _log("⚠️  Job ended with errors. Current frames are downloaded. You can rerun later to pick up more if retried.")
+                _log("\n⚠️  Job ended with errors. Current frames are downloaded. You can rerun later to download up more if requeued.")
             break
 
         time.sleep(max(1, int(poll_seconds)))
@@ -298,7 +294,8 @@ def main() -> None:
 
     # ─────── run selected mode ─────────────────────────────────
     try:
-        if download_type == "single":
+        job_data = _fetch_job_details()
+        if download_type == "single" or job_data[0] in ["finished", "paused", "error"]:
             single_downloader(dest_dir)
         else:
             if not sarfis_url or not sarfis_token:
@@ -308,12 +305,14 @@ def main() -> None:
             else:
                 _log(f"ℹ️  Mode: Auto (polling every 5s). Destination: {download_path}")
                 auto_downloader(dest_dir, poll_seconds=5)
-                elapsed = time.perf_counter() - t_start
-                _log(f"🎉  Download session finished. Elapsed: {elapsed:.1f}s")
+        elapsed = time.perf_counter() - t_start
             
-        print("open folder", dest_dir)
-        open_folder(dest_dir)
-        input("\nPress ENTER to close this window...")
+        
+        print(f"✅  Download Finished. Elapsed: {elapsed:.1f}s")
+        print(f"📁  Files saved to: {dest_dir}")
+        folder_ask = input("Open Folder?(y/n):").strip()
+        if folder_ask.lower() in {"y", "yes"}:
+            open_folder(dest_dir)
 
     except KeyboardInterrupt:
         _log("\n⏹️  Download interrupted by user. You can rerun this later to resume.")
