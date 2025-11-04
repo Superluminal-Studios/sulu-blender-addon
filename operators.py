@@ -14,75 +14,20 @@ from .utils.request_utils import fetch_projects, get_render_queue_key, fetch_job
 from .utils.logging import report_exception
 
 
-# ────────────────────────────────────────────────────────────────
-#  Helpers to scrub in-memory credentials (WindowManager props)
-# ────────────────────────────────────────────────────────────────
 def _flush_wm_credentials(wm: bpy.types.WindowManager) -> None:
     try:
         creds = wm.sulu_wm
         creds.username = ""
         creds.password = ""
     except Exception:
-        pass
+        print("Could not flush WM credentials.")
+
 
 def _flush_wm_password(wm: bpy.types.WindowManager) -> None:
     try:
         wm.sulu_wm.password = ""
     except Exception:
-        pass
-
-
-# ────────────────────────────────────────────────────────────────
-#  Non-blocking browser-login worker (thread + timer pump)
-# ────────────────────────────────────────────────────────────────
-class _BrowserLoginState:
-    """Shared state between the polling thread and the timer pump."""
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.active = False
-        self.stop = threading.Event()
-
-        # inputs
-        self.txn: str = ""
-        self.deadline: float = 0.0
-        self.interval: float = 2.0
-
-        # outputs / milestones
-        self.error: str | None = None
-        self.token: str | None = None
-        self.bootstrap_done: bool = False
-        self.bootstrap_error: str | None = None
-
-        # data fetched in background (applied on main thread)
-        self.projects: list | None = None
-        self.org_id: str = ""
-        self.user_key: str = ""
-        self.jobs: dict | None = None
-        self.selected_project_id: str = ""
-
-        self.thread: threading.Thread | None = None
-
-    def reset(self):
-        with self.lock:
-            self.active = False
-            self.stop.clear()
-            self.txn = ""
-            self.deadline = 0.0
-            self.interval = 2.0
-            self.error = None
-            self.token = None
-            self.bootstrap_done = False
-            self.bootstrap_error = None
-            self.projects = None
-            self.org_id = ""
-            self.user_key = ""
-            self.jobs = None
-            self.selected_project_id = ""
-            self.thread = None
-
-
-_LOGIN_STATE = _BrowserLoginState()
-_PUMP_REGISTERED = False
+        print("Could not flush WM password.")
 
 
 def _redraw_properties_ui() -> None:
@@ -96,186 +41,46 @@ def _redraw_properties_ui() -> None:
                 area.tag_redraw()
 
 
-def _apply_bootstrap_to_blender(state: _BrowserLoginState):
-    """Apply fetched data to Blender data on the main thread (UI-safe)."""
-    prefs = bpy.context.preferences.addons[__package__].preferences
+def _browser_login_thread_v2(txn):
+    token_url = f"{POCKETBASE_URL}/api/cli/token"
+    token = None
+    while token is None:
+        response = Storage.session.post(token_url, json={"txn": txn}, timeout=Storage.timeout)
 
-    # install token + fetched data into Storage
-    if state.token:
-        Storage.data["user_token"] = state.token
-        Storage.data["user_token_time"] = int(time.time())
-    Storage.data["projects"] = state.projects or []
-    Storage.data["org_id"] = state.org_id or ""
-    Storage.data["user_key"] = state.user_key or ""
-    Storage.data["jobs"] = state.jobs or {}
+        if response.status_code == 428:
+            time.sleep(0.2)
+            continue
 
-    # choose default project
-    if Storage.data["projects"]:
-        try:
-            project_id = state.selected_project_id or Storage.data["projects"][0]["id"]
-            prefs.project_id = project_id
-        except Exception:
-            pass
+        response.raise_for_status()
+        payload = response.json()
 
-    Storage.save()
-    _flush_wm_credentials(bpy.context.window_manager)
-    _redraw_properties_ui()
+        if "token" in payload:
+            token = payload.get("token")
+            first_login(token)
+
+    return token
 
 
-def _browser_login_thread(state: _BrowserLoginState):
-    """
-    Background thread:
-    1) Poll /api/cli/token until approved/denied/expired.
-    2) On approval, set token into Storage (for downstream API calls),
-       then fetch projects → org key → jobs in background.
-    NOTE: No Blender UI/RNA access here!
-    """
-    try:
-        token_url = f"{POCKETBASE_URL}/api/cli/token"
-        while not state.stop.is_set():
-            # check deadline
-            if time.time() >= state.deadline:
-                with state.lock:
-                    state.error = "Sign-in link expired. Please try again."
-                return
+def first_login(token):
+    Storage.data["user_token"] = token
+    Storage.data["user_token_time"] = int(time.time())
 
-            try:
-                r = Storage.session.post(
-                    token_url, json={"txn": state.txn}, timeout=Storage.timeout
-                )
-                if r.status_code == 428:
-                    # authorization_pending
-                    time.sleep(max(0.2, min(5.0, state.interval)))
-                    continue
-                if r.status_code in (400, 404):
-                    try:
-                        msg = r.json().get("message", "Denied or expired.")
-                    except Exception:
-                        msg = "Denied or expired."
-                    with state.lock:
-                        state.error = msg
-                    return
+    projects = fetch_projects()
+    Storage.data["projects"] = projects
+    bpy.context.preferences.addons[__package__].preferences.project_id = projects[0].get("id", "")
+    print("First login project:", bpy.context.preferences.addons[__package__].preferences.project_id)
 
-                r.raise_for_status()
-                payload = r.json()
-                token = payload.get("token")
-                if not token:
-                    with state.lock:
-                        state.error = "Approved but no token returned."
-                    return
+    if projects:
+        project = projects[0]
+        org_id = project["organization_id"]
+        user_key = get_render_queue_key(org_id)
+        Storage.data["org_id"] = org_id
+        Storage.data["user_key"] = user_key
+        jobs = fetch_jobs(org_id, user_key, bpy.context.preferences.addons[__package__].preferences.project_id)
+        Storage.data["jobs"] = jobs
+        Storage.save()
+    
 
-                # put token into Storage so API helpers can work
-                with state.lock:
-                    state.token = token
-                Storage.data["user_token"] = token
-
-                # background bootstrap (network only)
-                try:
-                    projects = fetch_projects() or []
-                    org_id = ""
-                    user_key = ""
-                    jobs = {}
-
-                    if projects:
-                        # pick first (same as password flow)
-                        project = projects[0]
-                        org_id = project.get("organization_id", "")
-                        if org_id:
-                            user_key = get_render_queue_key(org_id)
-                            if user_key:
-                                jobs = fetch_jobs(org_id, user_key, project.get("id", "")) or {}
-
-                    with state.lock:
-                        state.projects = projects
-                        state.org_id = org_id
-                        state.user_key = user_key
-                        state.jobs = jobs
-                        state.selected_project_id = projects[0]["id"] if projects else ""
-                        state.bootstrap_done = True
-                    return
-
-                except Exception as exc:
-                    with state.lock:
-                        state.bootstrap_error = f"Logged in but could not fetch data: {exc}"
-                        state.bootstrap_done = True
-                    return
-
-            except Exception:
-                # transient network error; short backoff
-                time.sleep(max(0.2, min(2.0, state.interval)))
-                continue
-    finally:
-        # thread exits; timer pump will observe flags and clean up state
-        pass
-
-
-def _browser_login_pump():
-    """Timer pump that reads state and updates Blender UI. Runs very fast + tiny."""
-    global _PUMP_REGISTERED
-    st = _LOGIN_STATE
-
-    with st.lock:
-        active = st.active
-        error = st.error
-        token = st.token
-        bootstrap_done = st.bootstrap_done
-        bootstrap_error = st.bootstrap_error
-
-    if not active:
-        _PUMP_REGISTERED = False
-        return None  # stop timer
-
-    # surface errors to the user and stop
-    if error:
-        _LOGIN_STATE.stop.set()
-        _LOGIN_STATE.active = False
-        try:
-            bpy.ops.wm.call_panel('INVOKE_DEFAULT')  # no-op; ensures status bar refresh
-        except Exception:
-            pass
-        bpy.ops.wm.report(type={'ERROR'}, message=error) if hasattr(bpy.ops.wm, "report") else None
-        return None
-
-    # once bootstrap is done, apply on main thread
-    if bootstrap_done:
-        if token:
-            _apply_bootstrap_to_blender(st)
-            if bootstrap_error:
-                # Informative warning but still considered a successful login.
-                try:
-                    bpy.ops.wm.report(type={'WARNING'}, message=bootstrap_error)
-                except Exception:
-                    pass
-            else:
-                try:
-                    bpy.ops.wm.report(type={'INFO'}, message="Logged in via browser.")
-                except Exception:
-                    pass
-        else:
-            # shouldn't happen: bootstrap_done but no token
-            try:
-                bpy.ops.wm.report(type={'ERROR'}, message="Login failed.")
-            except Exception:
-                pass
-
-        _LOGIN_STATE.stop.set()
-        _LOGIN_STATE.active = False
-        return None
-
-    # keep pumping
-    return 0.2
-
-
-def _ensure_pump_registered():
-    global _PUMP_REGISTERED
-    if not _PUMP_REGISTERED:
-        _PUMP_REGISTERED = True
-        bpy.app.timers.register(_browser_login_pump, first_interval=0.2, persistent=False)
-
-
-# -----------------------------------------------------------------------------
-#  Authentication (password)
-# -----------------------------------------------------------------------------
 class SUPERLUMINAL_OT_Login(bpy.types.Operator):
     """Sign in to Superluminal"""
     bl_idname = "superluminal.login"
@@ -293,7 +98,6 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
         url   = f"{POCKETBASE_URL}/api/collections/users/auth-with-password"
         data  = {"identity": creds.username.strip(), "password": creds.password}
 
-        # --- 0) authenticate -------------------------------------------------
         try:
             r = Storage.session.post(url, json=data, timeout=Storage.timeout)
             if r.status_code in (401, 403):
@@ -304,70 +108,19 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
             r.raise_for_status()
             payload = r.json()
             token = payload.get("token")
+            if token:
+                first_login(token)
             if not token:
                 _flush_wm_password(wm)
                 self.report({"WARNING"}, "Login succeeded but no token returned.")
                 return {"CANCELLED"}
 
-            Storage.data["user_token"] = token
 
         except Exception as exc:
             _flush_wm_password(wm)
             return report_exception(self, exc, "Login failed")
 
-        # --- 1) establish coherent session state ----------------------------
-        # Always overwrite these so we don't carry stale values.
-        Storage.data["projects"] = []
-        Storage.data["org_id"] = ""
-        Storage.data["user_key"] = ""
-        Storage.data["jobs"] = {}
-
-        projects = []
-        try:
-            projects = fetch_projects()
-        except Exception as exc:
-            self.report({"WARNING"}, f"Logged in but could not fetch projects: {exc}")
-        finally:
-            Storage.data["projects"] = projects or []
-
-        if projects:
-            try:
-                project = projects[0]
-                prefs.project_id = project["id"]
-                org_id = project["organization_id"]
-
-                # get queue key + jobs
-                try:
-                    user_key = get_render_queue_key(org_id)
-                    Storage.data["org_id"] = org_id
-                    Storage.data["user_key"] = user_key
-
-                    jobs = fetch_jobs(org_id, user_key, prefs.project_id) or {}
-                    Storage.data["jobs"] = jobs
-
-                    # Best-effort: set default job id if prop exists
-                    try:
-                        if jobs and hasattr(context.scene, "superluminal_settings"):
-                            # only set if property exists; ignore otherwise
-                            if hasattr(context.scene.superluminal_settings, "job_id"):
-                                context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
-                        # else ignore silently
-                    except Exception:
-                        pass
-
-                except Exception as exc:
-                    report_exception(self, exc, "Projects loaded, but could not fetch jobs")
-
-            except Exception as exc:
-                report_exception(self, exc, "Failed to initialize default project")
-
-        # Persist coherent state
-        Storage.save()
-
-        # Scrub credentials from memory after successful login
         _flush_wm_credentials(wm)
-
-        # --- refresh UI ------------------------------------------------------
         _redraw_properties_ui()
 
         self.report({"INFO"}, "Logged in and data preloaded.")
@@ -386,30 +139,19 @@ class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
         return {"FINISHED"}
 
 
-# -----------------------------------------------------------------------------
-#  Authentication (browser device-link) — NON-BLOCKING
-# -----------------------------------------------------------------------------
 class SUPERLUMINAL_OT_LoginBrowser(bpy.types.Operator):
     """Sign in via your default browser (non-blocking)"""
     bl_idname = "superluminal.login_browser"
     bl_label = "Sign in with Browser"
 
     def execute(self, context):
-        # If a previous login is running, cancel it
-        if _LOGIN_STATE.active:
-            _LOGIN_STATE.stop.set()
-            # let the previous timer tick once more and exit
-
-        # 1) start pairing
         url = f"{POCKETBASE_URL}/api/cli/start"
-        payload = {
-            "device_hint": f"Blender {bpy.app.version_string} / {platform.system()}",
-            "scope": "default",
-        }
+        payload = {"device_hint": f"Blender {bpy.app.version_string} / {platform.system()}", "scope": "default"}
+
         try:
-            r = Storage.session.post(url, json=payload, timeout=Storage.timeout)
-            r.raise_for_status()
-            data = r.json()
+            response = Storage.session.post(url, json=payload, timeout=Storage.timeout)
+            response.raise_for_status()
+            data = response.json()
         except Exception as exc:
             return report_exception(self, exc, "Could not start browser sign-in")
 
@@ -417,12 +159,9 @@ class SUPERLUMINAL_OT_LoginBrowser(bpy.types.Operator):
         if not txn:
             self.report({"ERROR"}, "Backend did not return a transaction id.")
             return {"CANCELLED"}
-
-        interval = float(data.get("interval", 2.0))
-        deadline = time.time() + float(data.get("expires_in", 480.0))
+        
         verification_url = data.get("verification_uri_complete") or data.get("verification_uri")
 
-        # 2) open browser (non-blocking)
         try:
             if verification_url:
                 webbrowser.open(verification_url)
@@ -430,26 +169,14 @@ class SUPERLUMINAL_OT_LoginBrowser(bpy.types.Operator):
             if verification_url:
                 self.report({"INFO"}, f"Open this URL to approve: {verification_url}")
 
-        # 3) kick off background polling thread
-        _LOGIN_STATE.reset()
-        _LOGIN_STATE.active = True
-        _LOGIN_STATE.txn = txn
-        _LOGIN_STATE.interval = interval
-        _LOGIN_STATE.deadline = deadline
-
-        t = threading.Thread(target=_browser_login_thread, args=(_LOGIN_STATE,), daemon=True)
-        _LOGIN_STATE.thread = t
+        t = threading.Thread(target=_browser_login_thread_v2, args=(txn,), daemon=True)
         t.start()
 
-        # 4) ensure timer pump is running and finish immediately
-        _ensure_pump_registered()
+
         self.report({"INFO"}, "Browser opened. Approve to connect; you can keep working.")
         return {"FINISHED"}
 
 
-# -----------------------------------------------------------------------------
-#  Project list utilities
-# -----------------------------------------------------------------------------
 class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
     """Fetch the project list from Superluminal."""
     bl_idname = "superluminal.fetch_projects"
@@ -484,9 +211,9 @@ class SUPERLUMINAL_OT_OpenProjectsWebPage(bpy.types.Operator):
     def execute(self, context):
         try:
             webbrowser.open(f"https://superlumin.al/p")
-        except:
-            pass
-        
+        except Exception as exc:
+            print("Could not open web browser.", exc)
+
         self.report({"INFO"}, "Opened Web Browser")
         return {"FINISHED"}
 
@@ -524,8 +251,8 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
             if jobs and hasattr(context.scene, "superluminal_settings"):
                 if hasattr(context.scene.superluminal_settings, "job_id"):
                     context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
-        except Exception:
-            pass
+        except Exception as exc:
+            print("Could not set default job after login.", exc)
 
         _redraw_properties_ui()
         return {"FINISHED"}

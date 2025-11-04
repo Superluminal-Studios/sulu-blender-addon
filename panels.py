@@ -12,6 +12,7 @@ from .storage import Storage
 from .preferences import refresh_jobs_collection, draw_header_row
 from .icons import preview_collections
 from .preferences import draw_login
+from .utils.request_utils import fetch_jobs
 
 # NEW: project scan for UI warnings about cross-drive assets
 from .utils.project_scan import quick_cross_drive_hint, human_shorten
@@ -72,6 +73,7 @@ class ToggleAddonSelectionOperator(bpy.types.Operator):
 
 
 # Main panel
+
 class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
     bl_idname      = "SUPERLUMINAL_PT_RenderPanel"
     bl_label       = "Superluminal Render"
@@ -95,6 +97,15 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
 
         prefs = context.preferences.addons[__package__].preferences
         props  = scene.superluminal_settings
+
+        if Storage.data.get("user_token") != Storage.panel_data.get("last_token"):
+            Storage.panel_data["last_token"] = Storage.data.get("user_token")
+            if prefs.project_id:
+                print("Fetching jobs for project:", prefs.project_id)
+                jobs = Storage.data['jobs'] = fetch_jobs(Storage.data['org_id'], Storage.data['user_key'], prefs.project_id)
+                if jobs and hasattr(context.scene, "superluminal_settings"):
+                    if hasattr(context.scene.superluminal_settings, "job_id"):
+                        context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
 
         refresh_jobs_collection(prefs)
 

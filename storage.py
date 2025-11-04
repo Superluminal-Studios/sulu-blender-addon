@@ -34,6 +34,11 @@ class Storage:
         "jobs": {},
     }
 
+    panel_data = {
+        "last_token": "",
+        "last_token_time": 0,
+    }
+
     @classmethod
     def _atomic_write(cls, path: str, payload: dict) -> None:
         tmp = path + ".tmp"
