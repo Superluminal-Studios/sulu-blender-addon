@@ -1,7 +1,8 @@
 import bpy
 from .storage            import Storage
 from .utils.date_utils   import format_submitted
-from .icons              import preview_collections
+from .icons              import status_icons
+from .storage            import Storage
 
 COLUMN_ORDER = [
     "name",
@@ -17,14 +18,6 @@ COLUMN_ORDER = [
     "type",
 ]
 
-
-STATUS_ICONS = {
-    "queued":   preview_collections["main"].get("QUEUED").icon_id,
-    "running":  preview_collections["main"].get("RUNNING").icon_id,
-    "finished": preview_collections["main"].get("FINISHED").icon_id,
-    "error":    preview_collections["main"].get("ERROR").icon_id,
-    "paused":   preview_collections["main"].get("PAUSED").icon_id,
-}
 
 def get_project_items(self, context):
     return [(p["id"], p["name"], p["name"]) for p in Storage.data["projects"]]
@@ -75,7 +68,7 @@ def refresh_jobs_collection(prefs):
         it.finished_frames  = job.get("tasks", {}).get("finished", 0)
         it.blender_version  = job.get("blender_version", "")
         it.type             = "Zip" if job.get("zip", True) else "Project"
-        it.icon             = STATUS_ICONS.get(job.get("status", ""), "FILE_FOLDER")
+        it.icon             = status_icons().get(job.get("status", ""), "FILE_FOLDER")
 
 
 class SuperluminalJobItem(bpy.types.PropertyGroup):
@@ -141,7 +134,7 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
                 continue
 
             if key == "name":
-                cols.label(text=item.name, icon_value=STATUS_ICONS.get(item.status, "FILE_FOLDER"))
+                cols.label(text=item.name, icon_value=status_icons().get(item.status, "FILE_FOLDER"))
             elif key == "status":
                 cols.label(text=item.status)
             elif key == "submission_time":
@@ -176,7 +169,7 @@ def draw_login(layout):
     layout.operator(
         "superluminal.login_browser",
         text="Connect to Superluminal",
-        icon_value=preview_collections["main"].get("SULU").icon_id,
+        icon_value=Storage.icons.get("SULU").icon_id,
     )
 
     # 2) Collapsible password login (closed by default)

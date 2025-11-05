@@ -10,7 +10,6 @@ from .utils.version_utils import get_blender_version_string
 from .constants import DEFAULT_ADDONS
 from .storage import Storage
 from .preferences import refresh_jobs_collection, draw_header_row
-from .icons import preview_collections
 from .preferences import draw_login
 from .utils.request_utils import fetch_jobs
 
@@ -83,7 +82,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
 
     def draw_header(self, context):
         self.layout.label(
-            text="", icon_value=preview_collections["main"].get("SULU").icon_id
+            text="", icon_value=Storage.icons.get("SULU").icon_id
         )
 
     def draw(self, context):

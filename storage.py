@@ -39,6 +39,8 @@ class Storage:
         "last_token_time": 0,
     }
 
+    icons = {}
+
     @classmethod
     def _atomic_write(cls, path: str, payload: dict) -> None:
         tmp = path + ".tmp"
