@@ -4,10 +4,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import threading
-import queue  # kept if you use it elsewhere
 
 class Storage:
-    # ---- resilient session (HTTP + HTTPS) ---------------------------------
     session = requests.Session()
     retries = Retry(
         total=5,

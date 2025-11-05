@@ -1,7 +1,7 @@
 import bpy
 from .storage            import Storage
 from .utils.date_utils   import format_submitted
-from .icons              import status_icons
+from .icons              import icon_values
 from .storage            import Storage
 
 COLUMN_ORDER = [
@@ -68,7 +68,7 @@ def refresh_jobs_collection(prefs):
         it.finished_frames  = job.get("tasks", {}).get("finished", 0)
         it.blender_version  = job.get("blender_version", "")
         it.type             = "Zip" if job.get("zip", True) else "Project"
-        it.icon             = status_icons().get(job.get("status", ""), "FILE_FOLDER")
+        it.icon             = icon_values.get(it.status.upper(), 'FILE_FOLDER')
 
 
 class SuperluminalJobItem(bpy.types.PropertyGroup):
@@ -134,7 +134,7 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
                 continue
 
             if key == "name":
-                cols.label(text=item.name, icon_value=status_icons().get(item.status, "FILE_FOLDER"))
+                cols.label(text=item.name, icon=icon_values.get(item.status.upper(), 'FILE_FOLDER'))
             elif key == "status":
                 cols.label(text=item.status)
             elif key == "submission_time":
@@ -169,7 +169,7 @@ def draw_login(layout):
     layout.operator(
         "superluminal.login_browser",
         text="Connect to Superluminal",
-        icon_value=Storage.icons.get("SULU").icon_id,
+        #icon_value=CustomIcons.icons["main"].get("SULU").icon_id,
     )
 
     # 2) Collapsible password login (closed by default)

@@ -15,9 +15,6 @@ import atexit
 from .storage import Storage
 Storage.load()
 
-from . import icons
-icons.load_icons()
-
 from . import constants
 from . import properties
 from . import preferences
@@ -34,13 +31,13 @@ def get_prefs():
 
 def register():
     atexit.register(Storage.save)
-
     properties.register()
     preferences.register()
     submit_operator.register()
     download_operator.register()
     panels.register()
     operators.register()
+    
 
 def unregister():
     operators.unregister()
@@ -49,8 +46,8 @@ def unregister():
     submit_operator.unregister()
     preferences.unregister()
     properties.unregister()
-    icons.unload_icons()
 
 
 if __name__ == "__main__":
+
     register()

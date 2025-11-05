@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-# ─── Blender / stdlib ─────────────────────────────────────────
 import bpy
 import addon_utils
 from bpy.types import UILayout
 
-# ─── Local helpers -------------------------------------------
 from .utils.version_utils import get_blender_version_string
 from .constants import DEFAULT_ADDONS
 from .storage import Storage
 from .preferences import refresh_jobs_collection, draw_header_row
 from .preferences import draw_login
 from .utils.request_utils import fetch_jobs
+from .icons import icon_values
 
-# NEW: project scan for UI warnings about cross-drive assets
 from .utils.project_scan import quick_cross_drive_hint, human_shorten
 
 addons_to_send: list[str] = []
@@ -75,14 +73,15 @@ class ToggleAddonSelectionOperator(bpy.types.Operator):
 
 class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
     bl_idname      = "SUPERLUMINAL_PT_RenderPanel"
-    bl_label       = "Superluminal Render"
+    bl_label       = " Superluminal Render"
     bl_space_type  = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context     = "render"
 
     def draw_header(self, context):
         self.layout.label(
-            text="", icon_value=Storage.icons.get("SULU").icon_id
+            text="",
+            icon='RESTRICT_RENDER_OFF'
         )
 
     def draw(self, context):
@@ -442,9 +441,7 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
 
 
 
-# ------------------------------------------------------------------
-#  Registration
-# ------------------------------------------------------------------
+
 classes = (
     ToggleAddonSelectionOperator,
     SUPERLUMINAL_PT_RenderPanel,
