@@ -168,6 +168,19 @@ class ScanSummary:
         return samples
 
 
+def _iter_sequence_editor_strips(se) -> Iterable:
+    """
+    Blender 5.0+ uses strips/strips_all (Strip API).
+    Older versions used sequences/sequences_all (Sequence API).
+    Return the best available collection without creating data.
+    """
+    for attr in ("strips_all", "sequences_all", "strips", "sequences"):
+        coll = getattr(se, attr, None)
+        if coll is not None:
+            return coll
+    return ()
+
+
 def scan_dependencies_fast() -> ScanSummary:
     """
     Return a quick but fairly complete scan of dependency file paths for the current file.
@@ -198,32 +211,65 @@ def scan_dependencies_fast() -> ScanSummary:
                 continue
             summary.all_paths.add(ap)
 
-    # 2) VSE (explicit) – IMAGE (directory+elements), MOVIE (filepath), SOUND (sound.filepath or seq.filepath), MOVIECLIP strips.
+    # 2) VSE (explicit) – Blender 5.0+ uses "strips" (not "sequences").
+    #    We still support older Blender by falling back to sequences_* if present.
     for scn in bpy.data.scenes:
         se = getattr(scn, "sequence_editor", None)
         if not se:
             continue
-        for seq in se.sequences_all:
-            st = getattr(seq, "type", "")
+
+        for strip in _iter_sequence_editor_strips(se):
+            st = getattr(strip, "type", "")
+
+            # IMAGE / IMAGE-SEQUENCE:
+            # File list is stored as directory + elements[].filename (not a single filepath).
             if st == "IMAGE":
-                directory = getattr(seq, "directory", "")
-                for elem in getattr(seq, "elements", []):
-                    fname = getattr(elem, "filename", "")
-                    if directory and fname:
+                directory = getattr(strip, "directory", "")
+                elems = getattr(strip, "elements", None)
+
+                if directory and elems:
+                    for elem in elems:
+                        fname = getattr(elem, "filename", "")
+                        if not fname:
+                            continue
                         ap = _abspath_for_id_path(os.path.join(directory, fname), None)
                         summary.all_paths.add(ap)
-            elif st in {"MOVIE", "SOUND"}:
-                fp = getattr(seq, "filepath", "")
+                else:
+                    # Fallback (covers any future API changes or odd single-file cases)
+                    fp = getattr(strip, "filepath", "")
+                    if fp:
+                        ap = _abspath_for_id_path(fp, None)
+                        summary.all_paths.add(ap)
+
+            # MOVIE:
+            elif st == "MOVIE":
+                fp = getattr(strip, "filepath", "")
                 if fp:
                     ap = _abspath_for_id_path(fp, None)
                     summary.all_paths.add(ap)
-            elif st == "MOVIECLIP":
-                clip = getattr(seq, "clip", None)
-                if clip:
-                    fp = getattr(clip, "filepath", "")
-                    if fp:
-                        ap = _abspath_for_id_path(fp, clip)
-                        summary.all_paths.add(ap)
+
+            # SOUND:
+            # Sound strips do not reliably have strip.filepath; use strip.sound.filepath.
+            elif st == "SOUND":
+                snd = getattr(strip, "sound", None)
+                fp = getattr(snd, "filepath", "") if snd else ""
+
+                # Best-effort fallback (in case some build exposes filepath directly)
+                if not fp:
+                    fp = getattr(strip, "filepath", "")
+
+                if fp:
+                    ap = _abspath_for_id_path(fp, snd)
+                    summary.all_paths.add(ap)
+
+            # Movie Clip strips (type naming differs across versions):
+            elif st in {"CLIP", "MOVIECLIP"}:
+                clip = getattr(strip, "clip", None)
+                fp = getattr(clip, "filepath", "") if clip else ""
+                if fp:
+                    ap = _abspath_for_id_path(fp, clip)
+                    summary.all_paths.add(ap)
+
 
     # 3) Shader nodes with explicit file paths (IES, OSL script)
     def _scan_node_tree(nt: bpy.types.NodeTree | None):
