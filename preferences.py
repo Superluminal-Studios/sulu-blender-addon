@@ -113,11 +113,17 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
     """List of render jobs with user-selectable columns."""
     order = COLUMN_ORDER  # single source-of-truth for column order
 
+    def filter_items(self, context, data, propname):
+        items = getattr(data, propname)
+        flt_flags = [self.bitflag_filter_item] * len(items)
+        flt_neworder = list(range(len(items) - 1, -1, -1))
+        return flt_flags, flt_neworder
+
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         prefs = context.preferences.addons[__package__].preferences
 
         # ---- Header row -----------------------------------------------------
-        if index == -1: 
+        if index == -1:
             for key in self.order:
                 if getattr(prefs, f"show_col_{key}"):
                     text = "Prog." if key == "progress" else key.replace("_", " ").title()
@@ -155,8 +161,6 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
                 cols.label(text=item.blender_version)
             elif key == "type":
                 cols.label(text=item.type)
-
-
 
 
 def draw_login(layout):
