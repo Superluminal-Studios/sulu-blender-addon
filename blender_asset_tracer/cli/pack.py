@@ -18,7 +18,6 @@
 #
 # (c) 2018, Blender Foundation - Sybren A. Stüvel
 """Create a BAT-pack for the given blend file."""
-
 import logging
 import pathlib
 import sys
@@ -68,7 +67,8 @@ def add_parser(subparsers):
         "--exclude",
         nargs="*",
         default="",
-        help="Space-separated list of glob patterns (like '*.abc *.vbo') to exclude.",
+        help="Space-separated list of glob patterns (like '*.abc *.vbo') to "
+        "exclude.",
     )
     parser.add_argument(
         "-c",

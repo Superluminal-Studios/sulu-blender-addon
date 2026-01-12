@@ -23,7 +23,6 @@ Note that this supports the Shaman API of Flamenco Manager 2.x. Support for
 Flamenco 3.x will be implemented in a new Flamenco Blender add-on, and not in
 BAT itself.
 """
-
 import logging
 import os
 import pathlib
@@ -51,7 +50,7 @@ class ShamanPacker(bat_pack.Packer):
         target: str,
         endpoint: str,
         checkout_id: str,
-        **kwargs,
+        **kwargs
     ) -> None:
         """Constructor
 

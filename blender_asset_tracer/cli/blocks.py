@@ -18,7 +18,6 @@
 #
 # (c) 2018, Blender Foundation - Sybren A. Stüvel
 """List count and total size of datablocks in a blend file."""
-
 import collections
 import logging
 import pathlib
@@ -113,7 +112,7 @@ def cli_blocks(args):
     # From the blocks of the most space-using category, the biggest block.
     biggest_block = sorted(infos[0].blocks, key=lambda blck: blck.size, reverse=True)[0]
     print(
-        "Biggest %s block is %s at address %s"
+        "Biggest %s block is %s at address 0x%x"
         % (
             block_key(biggest_block),
             common.humanize_bytes(biggest_block.size),

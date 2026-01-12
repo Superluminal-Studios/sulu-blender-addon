@@ -23,7 +23,6 @@
 Those can expand data blocks and yield their dependencies (e.g. other data
 blocks necessary to render/display/work with the given data block).
 """
-
 import logging
 import typing
 
@@ -96,9 +95,9 @@ def _expand_generic_nodetree(block: blendfile.BlendFileBlock):
         yield block
         return
 
-    assert block.dna_type.dna_type_id == b"bNodeTree", (
-        f"Expected bNodeTree, got {block.dna_type.dna_type_id.decode()})"
-    )
+    assert (
+        block.dna_type.dna_type_id == b"bNodeTree"
+    ), f"Expected bNodeTree, got {block.dna_type.dna_type_id.decode()})"
 
     nodes = block.get_pointer((b"nodes", b"first"))
 

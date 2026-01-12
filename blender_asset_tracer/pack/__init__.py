@@ -114,7 +114,6 @@ class Packer:
         self._aborted = threading.Event()
         self._abort_lock = threading.RLock()
         self._abort_reason = ""
-
         self.file_map = {}
 
         # Set this to a custom Callback() subclass instance before calling
@@ -126,8 +125,13 @@ class Packer:
 
         self._shorten = functools.partial(shorten_path, self.project)
 
+        if noop:
+            log.warning("Running in no-op mode, only showing what will be done.")
+
         # Filled by strategise()
-        self._actions = collections.defaultdict(AssetAction)  # type: typing.DefaultDict[pathlib.Path, AssetAction]
+        self._actions = collections.defaultdict(
+            AssetAction
+        )  # type: typing.DefaultDict[pathlib.Path, AssetAction]
         self.missing_files = set()  # type: typing.Set[pathlib.Path]
         self._new_location_paths = set()  # type: typing.Set[pathlib.Path]
         self._output_path = None  # type: typing.Optional[pathlib.PurePath]
@@ -472,9 +476,9 @@ class Packer:
             # It is *not* used for any disk I/O, since the file may not even
             # exist on the local filesystem.
             bfile_pp = action.new_path
-            assert bfile_pp is not None, (
-                f"Action {action.path_action.name} on {bfile_path} has no final path set, unable to process"
-            )
+            assert (
+                bfile_pp is not None
+            ), f"Action {action.path_action.name} on {bfile_path} has no final path set, unable to process"
 
             # Use tempfile to create a unique name in our temporary directoy.
             # The file should be deleted when self.close() is called, and not

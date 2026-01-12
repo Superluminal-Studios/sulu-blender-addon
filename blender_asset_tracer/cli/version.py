@@ -18,7 +18,6 @@
 #
 # (c) 2021, Blender Foundation - Sybren A. Stüvel
 """Print version of BAT and exit."""
-
 from .. import __version__
 
 

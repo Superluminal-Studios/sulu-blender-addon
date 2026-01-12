@@ -18,7 +18,6 @@
 #
 # (c) 2018, Blender Foundation - Sybren A. Stüvel
 """Callback class definition for BAT Pack progress reporting."""
-
 import threading
 
 import functools

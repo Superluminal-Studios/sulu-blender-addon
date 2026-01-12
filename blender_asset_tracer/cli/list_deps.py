@@ -18,7 +18,6 @@
 #
 # (c) 2018, Blender Foundation - Sybren A. Stüvel
 """List dependencies of a blend file."""
-
 import functools
 import hashlib
 import json
