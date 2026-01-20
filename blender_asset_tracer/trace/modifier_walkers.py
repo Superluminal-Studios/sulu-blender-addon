@@ -72,16 +72,53 @@ def modifier_filepath(
 def modifier_mesh_sequence_cache(
     ctx: ModifierContext, modifier: blendfile.BlendFileBlock, block_name: bytes
 ) -> typing.Iterator[result.BlockUsage]:
-    """Yield the Alembic file(s) used by this modifier"""
+    """Yield the Alembic/USD file(s) used by this modifier."""
     cache_file = modifier.get_pointer(b"cache_file")
     if cache_file is None:
         return
 
-    is_sequence = bool(cache_file[b"is_sequence"])
+    try:
+        path, field = cache_file.get(b"filepath", return_field=True)
+        try:
+            is_sequence = bool(cache_file[b"is_sequence"])
+        except (KeyError, SegmentationFault):
+            is_sequence = False
+    except (KeyError, SegmentationFault):
+        try:
+            cache_ptr = modifier.get(b"cache_file")
+        except KeyError:
+            return
+        if not cache_ptr:
+            return
+
+        try:
+            cache_file = modifier.bfile.dereference_pointer(cache_ptr)
+        except SegmentationFault:
+            return
+        if not cache_file:
+            return
+
+        try:
+            path, field = cache_file.get(b"filepath", return_field=True)
+        except (KeyError, SegmentationFault):
+            log.debug(
+                "MeshSequenceCache: cannot read CacheFile filepath for modifier %r (%r), "
+                "cache points to dna=%s id=%r",
+                modifier[b"modifier", b"name"],
+                block_name,
+                getattr(cache_file, "dna_type_name", None),
+                getattr(cache_file, "id_name", None),
+            )
+            return
+
+        try:
+            is_sequence = bool(cache_file[b"is_sequence"])
+        except (KeyError, SegmentationFault):
+            is_sequence = False
+
     cache_block_name = cache_file.id_name
     assert cache_block_name is not None
 
-    path, field = cache_file.get(b"filepath", return_field=True)
     yield result.BlockUsage(
         cache_file,
         path,
