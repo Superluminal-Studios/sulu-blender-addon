@@ -77,43 +77,43 @@ def modifier_mesh_sequence_cache(
     if cache_file is None:
         return
 
+    # In some nested library override setups the cache_file pointer can resolve to a
+    # generic ID-view (only the ID header fields are readable). In that case, CacheFile
+    # fields like 'filepath' and 'is_sequence' are not directly accessible.
+    #
+    # If this happens, fall back to dereferencing the raw pointer to get the concrete
+    # datablock type. If that still fails, don't crash submission.
+    try:
+        if getattr(cache_file, "dna_type_name", None) == "ID":
+            cache_ptr = modifier.get(b"cache_file")
+            if cache_ptr:
+                cache_file2 = modifier.bfile.dereference_pointer(cache_ptr)
+                if cache_file2:
+                    cache_file = cache_file2
+    except (KeyError, SegmentationFault):
+        # If we can't even resolve the pointer reliably, just stop.
+        return
+
     try:
         path, field = cache_file.get(b"filepath", return_field=True)
-        try:
-            is_sequence = bool(cache_file[b"is_sequence"])
-        except (KeyError, SegmentationFault):
-            is_sequence = False
     except (KeyError, SegmentationFault):
-        try:
-            cache_ptr = modifier.get(b"cache_file")
-        except KeyError:
-            return
-        if not cache_ptr:
-            return
+        log.debug(
+            "MeshSequenceCache: cannot read CacheFile filepath for modifier %r (%r), "
+            "cache points to dna=%s id=%r",
+            modifier[b"modifier", b"name"],
+            block_name,
+            getattr(cache_file, "dna_type_name", None),
+            getattr(cache_file, "id_name", None),
+        )
+        return
 
-        try:
-            cache_file = modifier.bfile.dereference_pointer(cache_ptr)
-        except SegmentationFault:
-            return
-        if not cache_file:
-            return
-
-        try:
-            path, field = cache_file.get(b"filepath", return_field=True)
-        except (KeyError, SegmentationFault):
-            log.debug(
-                "MeshSequenceCache: cannot read CacheFile filepath for modifier %r (%r), "
-                "cache points to dna=%s id=%r",
-                modifier[b"modifier", b"name"],
-                block_name,
-                getattr(cache_file, "dna_type_name", None),
-                getattr(cache_file, "id_name", None),
-            )
-            return
-
-        try:
-            is_sequence = bool(cache_file[b"is_sequence"])
-        except (KeyError, SegmentationFault):
+    try:
+        is_sequence = bool(cache_file[b"is_sequence"])
+    except (KeyError, SegmentationFault):
+        # Heuristic fallback: treat filepath patterns as sequences.
+        if isinstance(path, (bytes, bytearray)) and (b"#" in path or b"*" in path):
+            is_sequence = True
+        else:
             is_sequence = False
 
     cache_block_name = cache_file.id_name
@@ -152,7 +152,30 @@ def _get_texture(
     if dblock is None:
         return
 
-    tx = dblock.get_pointer(prop_name)
+    try:
+        tx = dblock.get_pointer(prop_name)
+    except (KeyError, SegmentationFault):
+        return
+
+    if not tx:
+        return
+
+    # Similar to CacheFile: texture pointers can sometimes resolve as a generic ID-view.
+    # Attempt to re-dereference the raw pointer to get the concrete datablock type.
+    if getattr(tx, "dna_type_name", None) == "ID":
+        try:
+            tx_ptr = dblock.get(prop_name)
+        except (KeyError, SegmentationFault):
+            tx_ptr = None
+
+        if tx_ptr:
+            try:
+                tx2 = dblock.bfile.dereference_pointer(tx_ptr)
+            except SegmentationFault:
+                tx2 = None
+            if tx2:
+                tx = tx2
+
     yield from _get_image(b"ima", tx, block_name)
 
 
@@ -174,11 +197,33 @@ def _get_image(
         # No such property, just return.
         log.debug("_get_image() called with non-existing property name: %s", ex)
         return
+    except SegmentationFault:
+        return
 
     if not ima:
         return
 
-    path, field = ima.get(b"name", return_field=True)
+    # Image pointers can sometimes resolve as a generic ID-view. Try to re-dereference
+    # the raw pointer to get the concrete datablock type.
+    if getattr(ima, "dna_type_name", None) == "ID":
+        try:
+            ima_ptr = dblock.get(prop_name)
+        except (KeyError, SegmentationFault):
+            ima_ptr = None
+
+        if ima_ptr:
+            try:
+                ima2 = dblock.bfile.dereference_pointer(ima_ptr)
+            except SegmentationFault:
+                ima2 = None
+            if ima2:
+                ima = ima2
+
+    try:
+        path, field = ima.get(b"name", return_field=True)
+    except (KeyError, SegmentationFault):
+        return
+
     yield result.BlockUsage(ima, path, path_full_field=field, block_name=block_name)
 
 
