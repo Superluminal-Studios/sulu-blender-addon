@@ -70,13 +70,14 @@ clear_console()
 
 
 def warn(
-    message: str, emoji: str = "x", close_window: bool = True, new_line: bool = False
+    message: str, emoji: str = "none", close_window: bool = True, new_line: bool = False
 ) -> None:
     emojis = {
         "x": "❌",  # error / stop
         "w": "⚠️",  # warning
         "c": "✅",  # success/ok
         "i": "ℹ️",  # info
+        "none": "",  # no emoji
     }
     new_line_str = "\n" if new_line else ""
     _log(f"{new_line_str}{emojis[emoji]}  {message}")
@@ -311,7 +312,7 @@ def main() -> None:
             try:
                 offlist = Path(tempfile.gettempdir()) / f"{job_id}_off_drive.txt"
                 offlist.write_text("\n".join(off_drive), encoding="utf-8")
-                _log(f"ℹ️  Full list saved: {shorten_path(str(offlist))}")
+                warn(f"Full list saved: {shorten_path(str(offlist))}", emoji="i", close_window=False)
             except Exception:
                 pass
 
@@ -322,6 +323,7 @@ def main() -> None:
             try:
                 common_path = os.path.commonpath(on_drive).replace("\\", "/")
             except ValueError:
+                warn("Could not determine a common path for on-drive files. Using the .blend's directory instead.", emoji="w", close_window=False)
                 common_path = os.path.dirname(abs_blend)
         else:
             common_path = os.path.dirname(abs_blend)
@@ -329,8 +331,10 @@ def main() -> None:
         # Ensure project root is a directory (not the .blend file)
         if os.path.isfile(common_path) or _samepath(common_path, abs_blend):
             common_path = os.path.dirname(abs_blend)
-            _log(
-                f"ℹ️  Using the .blend's folder as the Project Path: {shorten_path(common_path)}"
+            warn(
+                "Project root resolved to a file. Using the .blend's directory instead.",
+                emoji="w",
+                close_window=False,
             )
 
         # Respect custom base if provided: filter to files under it and same drive.
@@ -344,8 +348,10 @@ def main() -> None:
             custom_base = _norm_abs_for_detection(custom_project_path)
             if os.path.isfile(custom_base):
                 custom_base = os.path.dirname(custom_base)
-                _log(
-                    f"ℹ️  The chosen Project Path points to a file. Using its folder: {shorten_path(custom_base)}"
+                warn(
+                    "The chosen Project Path points to a file. Using its folder instead.",
+                    emoji="w",
+                    close_window=False,
                 )
             base_drive = _drive(custom_base)
             under_custom = [
@@ -375,13 +381,17 @@ def main() -> None:
                 if rel:
                     rel_manifest.append(rel)
                 else:
-                    _log(
-                        f"ℹ️  Skipped one entry that resolves to the project root only: {shorten_path(p)}"
+                    warn(
+                        f"Skipped one entry that resolves to the project root only: {shorten_path(p)}",
+                        emoji="i",
+                        close_window=False
                     )
             except Exception:
-                _log(
-                    f"⚠️  Couldn't compute a relative path under the project root for: {shorten_path(p)}. "
-                    "Consider switching to Zip or choosing a higher-level Project Path."
+                warn(
+                    f"Couldn't compute a relative path under the project root for: {shorten_path(p)}. "
+                    "Consider switching to Zip or choosing a higher-level Project Path.",
+                    emoji="x",
+                    close_window=True
                 )
 
         # Write files-from manifest
@@ -395,16 +405,17 @@ def main() -> None:
         if not main_blend_s3:
             # Extremely rare after the guard above, but keep a friendly fallback.
             main_blend_s3 = os.path.basename(abs_blend)
-            _log(f"ℹ️  Placing the main .blend at the project root: {main_blend_s3}")
+            warn(f"Placing the main .blend at the project root: {main_blend_s3}", emoji="i", close_window=False)
 
         # Quick summary
-        _log(
+        warn(
             f"\n📄  [Summary] to upload: {len(rel_manifest)} dependencies (+ main .blend), "
-            f"excluded (other drives): {len(off_drive)}, missing on disk: {missing_count}"
+            f"excluded (other drives): {len(off_drive)}, missing on disk: {missing_count}",
+            close_window=False,
         )
 
     else:
-        _log("📦  Creating a single zip with all dependencies, this can take a while…")
+        warn("📦  Creating a single zip with all dependencies, this can take a while…", close_window=False)
         abs_blend_norm = _norm_abs_for_detection(blend_path)
         pack_blend(abs_blend_norm, str(zip_file), method="ZIP")
 
@@ -415,10 +426,10 @@ def main() -> None:
         rel_manifest = []
         common_path = ""
         main_blend_s3 = ""
-        _log(f"ℹ️  Zip size estimate: {required_storage / 1_048_576:.1f} MiB")
+        warn(f"Zip size estimate: {required_storage / 1_048_576:.1f} MiB", emoji="i", close_window=False)
 
     # R2 credentials
-    _log("\n🔑  Fetching temporary storage credentials...")
+    warn("\n🔑  Fetching temporary storage credentials...", close_window=False)
     try:
         s3_response = session.get(
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
@@ -455,8 +466,19 @@ def main() -> None:
             # Zip upload: move single archive to the bucket root
             run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/", [])
         else:
+            # 1) Move the temp blend into place (fast, server-side). Sanitize key to avoid "//".
+            _log(f"\n📤  Uploading the main .blend...\n")
+            move_to_path = _s3key_clean(f"{project_name}/{main_blend_s3}")
+            run_rclone(
+                base_cmd,
+                "copyto",
+                blend_path,
+                f":s3:{bucket}/{move_to_path}",
+                ["--checksum", "--ignore-times"],
+            )
+
             if rel_manifest:
-                # 1) Copy project files (dependencies)
+                # 2) Copy project files (dependencies)
                 _log(f"\n📤  Uploading dependencies...\n")
                 run_rclone(
                     base_cmd,
@@ -466,7 +488,7 @@ def main() -> None:
                     ["--files-from", str(filelist), "--checksum"],
                 )
 
-            # 2) Upload the manifest so the worker knows what to grab (append main blend key, newline)
+            # 3) Upload the manifest so the worker knows what to grab (append main blend key, newline)
             with filelist.open("a", encoding="utf-8") as fp:
                 fp.write(_s3key_clean(main_blend_s3) + "\n")
 
@@ -477,17 +499,6 @@ def main() -> None:
                 str(filelist),
                 f":s3:{bucket}/{project_name}/",
                 ["--checksum"],
-            )
-
-            # 3) Move the temp blend into place (fast, server-side). Sanitize key to avoid "//".
-            _log(f"\n📤  Uploading the main .blend...\n")
-            move_to_path = _s3key_clean(f"{project_name}/{main_blend_s3}")
-            run_rclone(
-                base_cmd,
-                "moveto",
-                str(tmp_blend),
-                f":s3:{bucket}/{move_to_path}",
-                ["--checksum", "--ignore-times"],
             )
 
         # 4) Always move packed add-ons
