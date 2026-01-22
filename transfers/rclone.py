@@ -267,6 +267,42 @@ def _bytes_from_stats(obj):
         return None
     return int(cur), int(tot)
 
+
+# -------------------------------------------------------------------
+#  Small rclone feature detection (cached)
+# -------------------------------------------------------------------
+
+_RCLONE_FLAG_CACHE = {}  # (exe_path, flag) -> bool
+_RCLONE_HELPFLAGS_CACHE = {}  # exe_path -> text
+
+
+def _rclone_supports_flag(rclone_exe: str, flag: str) -> bool:
+    key = (str(rclone_exe), flag)
+    if key in _RCLONE_FLAG_CACHE:
+        return _RCLONE_FLAG_CACHE[key]
+
+    exe = str(rclone_exe)
+    text = _RCLONE_HELPFLAGS_CACHE.get(exe)
+    if text is None:
+        try:
+            p = subprocess.run(
+                [exe, "help", "flags"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            text = p.stdout or ""
+        except Exception:
+            text = ""
+        _RCLONE_HELPFLAGS_CACHE[exe] = text
+
+    ok = flag in text
+    _RCLONE_FLAG_CACHE[key] = ok
+    return ok
+
+
 # -------------------------------------------------------------------
 #  Error classification + UX cleanup
 # -------------------------------------------------------------------
@@ -543,6 +579,10 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
     """
     Execute rclone safely with a friendly progress display.
     Raises RuntimeError on failure (message is user-friendly, no emoji).
+
+    Reliability patches:
+    - Automatically add --local-unicode-normalization when supported
+    - Automatically upgrade --files-from -> --files-from-raw when supported
     """
     extra = list(extra or [])
     src = str(src).replace("\\", "/")
@@ -550,6 +590,30 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
 
     if not isinstance(base, (list, tuple)) or not base:
         raise RuntimeError("Invalid rclone base command.")
+
+    rclone_exe = str(base[0])
+
+    # Auto-upgrade files list flag to avoid comment/whitespace parsing issues.
+    # Only do this if the args look like ["--files-from", "<path>"] etc.
+    if "--files-from" in extra and _rclone_supports_flag(rclone_exe, "--files-from-raw"):
+        upgraded = []
+        i = 0
+        while i < len(extra):
+            if extra[i] == "--files-from":
+                upgraded.append("--files-from-raw")
+                # preserve next arg (path)
+                if i + 1 < len(extra):
+                    upgraded.append(extra[i + 1])
+                    i += 2
+                    continue
+            upgraded.append(extra[i])
+            i += 1
+        extra = upgraded
+
+    # Add local unicode normalization if supported and not already present.
+    if _rclone_supports_flag(rclone_exe, "--local-unicode-normalization"):
+        if "--local-unicode-normalization" not in extra and "--local-unicode-normalization" not in base:
+            extra = ["--local-unicode-normalization"] + extra
 
     cmd = [base[0], verb, src, dst, *extra,
            "--stats=0.1s", "--use-json-log", "--stats-log-level", "NOTICE",
