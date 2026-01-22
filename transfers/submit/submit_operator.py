@@ -178,7 +178,6 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         )
 
         job_id = uuid.uuid4()
-        blend_path_anchor = Path(bpy.data.filepath).anchor
         handoff = {
             "addon_dir": str(addon_dir),
             "addon_version": addon_version("Superluminal Render Farm"),
@@ -186,7 +185,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "packed_addons": [],
             "job_id": str(job_id),
             "device_type": props.device_type,
-            "blend_path": bpy.path.abspath(bpy.data.filepath).replace("\\", "/"),
+            "blend_path": bpy.data.filepath,
             "temp_blend_path": str(
                 Path(tempfile.gettempdir())
                 / bpy.path.basename(bpy.context.blend_data.filepath)
@@ -218,12 +217,12 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "farm_url": f"{FARM_IP}/farm/{Storage.data.get('org_id', '')}/api/",
         }
 
-        # bpy.ops.wm.save_as_mainfile(
-        #     filepath=handoff["temp_blend_path"],
-        #     compress=True,
-        #     copy=True,
-        #     relative_remap=False,
-        # )
+        bpy.ops.wm.save_as_mainfile(
+            filepath=handoff["temp_blend_path"],
+            compress=True,
+            copy=True,
+            relative_remap=False,
+        )
 
         worker = Path(__file__).with_name("submit_worker.py")
 
