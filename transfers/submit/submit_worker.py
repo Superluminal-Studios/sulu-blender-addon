@@ -62,7 +62,6 @@ def warn(
         "w": "⚠️",  # warning
         "c": "✅",  # success/ok
         "i": "ℹ️",  # info
-        "none": "",  # no emoji
     }
     new_line_str = "\n" if new_line else ""
     _LOG(f"{new_line_str}{emojis.get(emoji, '❌')}  {message}")
@@ -394,7 +393,6 @@ def main() -> None:
             try:
                 common_path = os.path.commonpath(on_drive).replace("\\", "/")
             except ValueError:
-                warn("Could not determine a common path for on-drive files. Using the .blend's directory instead.", emoji="w", close_window=False)
                 common_path = os.path.dirname(abs_blend)
         else:
             common_path = os.path.dirname(abs_blend)
@@ -440,8 +438,7 @@ def main() -> None:
 
         _LOG(
             f"\n📄  [Summary] to upload: {len(rel_manifest)} dependencies (+ main .blend), "
-            f"excluded (other drives): {len(off_drive)}, missing on disk: {missing_count}",
-            close_window=False,
+            f"excluded (other drives): {len(off_drive)}, missing on disk: {missing_count}"
         )
 
     else:
@@ -480,17 +477,6 @@ def main() -> None:
         if not use_project:
             run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/", [])
         else:
-            # 1) Move the temp blend into place (fast, server-side). Sanitize key to avoid "//".
-            _log(f"\n📤  Uploading the main .blend...\n")
-            move_to_path = _s3key_clean(f"{project_name}/{main_blend_s3}")
-            run_rclone(
-                base_cmd,
-                "copyto",
-                blend_path,
-                f":s3:{bucket}/{move_to_path}",
-                ["--checksum", "--ignore-times"],
-            )
-
             if rel_manifest:
                 _LOG("\n📤  Uploading dependencies...\n")
                 run_rclone(
