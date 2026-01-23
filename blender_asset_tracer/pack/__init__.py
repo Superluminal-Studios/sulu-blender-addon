@@ -177,6 +177,10 @@ class Packer:
       - Only assets truly outside project root go under `_outside_project/`.
       - `_outside_project` paths are collision-safe across drives/UNC shares.
       - Target paths are NFC-normalized.
+      - NEW: Recursively scans linked .blend libraries, so textures/caches referenced
+        inside linked characters are included (critical for real productions).
+      - NEW: Only uses rewritten temp .blend copies when they actually changed; avoids
+        unnecessary rewritten files and improves cross-platform stability.
     """
 
     def __init__(
@@ -347,22 +351,54 @@ class Packer:
         self._check_aborted()
         self._new_location_paths = set()
 
-        for usage in trace.deps(self.blendfile, self._progress_cb):
+        # ------------------------------------------------------------------
+        # CRITICAL FIX (production): recursively scan linked .blend libraries.
+        #
+        # If we only scan the top-level .blend, we can miss textures/caches
+        # referenced *inside* linked character .blend libraries, especially
+        # when assets are linked (not overridden).
+        # ------------------------------------------------------------------
+        to_scan = collections.deque([self.blendfile])
+        scanned_blends = set()  # type: typing.Set[pathlib.Path]
+
+        while to_scan:
             self._check_aborted()
-            asset_path = usage.abspath
+            bfile_to_scan = pathlib.Path(to_scan.popleft())
+            bfile_abs = bpathlib.make_absolute(bfile_to_scan)
 
-            if any(asset_path.match(glob) for glob in self._exclude_globs):
-                log.info("Excluding file: %s", asset_path)
+            if bfile_abs in scanned_blends:
                 continue
+            scanned_blends.add(bfile_abs)
 
-            if self.relative_only and not usage.asset_path.startswith(b"//"):
-                log.info("Skipping absolute path: %s", usage.asset_path)
-                continue
+            for usage in trace.deps(bfile_abs, self._progress_cb):
+                self._check_aborted()
+                asset_path = usage.abspath
 
-            if usage.is_sequence:
-                self._visit_sequence(asset_path, usage)
-            else:
-                self._visit_asset(asset_path, usage)
+                if any(asset_path.match(glob) for glob in self._exclude_globs):
+                    log.info("Excluding file: %s", asset_path)
+                    continue
+
+                if self.relative_only and not usage.asset_path.startswith(b"//"):
+                    log.info("Skipping absolute path: %s", usage.asset_path)
+                    continue
+
+                if usage.is_sequence:
+                    self._visit_sequence(asset_path, usage)
+                else:
+                    self._visit_asset(asset_path, usage)
+
+                # If this dependency is itself a .blend, scan it too.
+                try:
+                    if (
+                        not usage.is_sequence
+                        and asset_path.suffix.lower() == ".blend"
+                        and asset_path.exists()
+                    ):
+                        lib_abs = bpathlib.make_absolute(asset_path)
+                        if lib_abs not in scanned_blends:
+                            to_scan.append(lib_abs)
+                except Exception:
+                    pass
 
         self._find_new_paths()
         self._group_rewrites()
@@ -571,6 +607,8 @@ class Packer:
                 bfile_pp is not None
             ), f"Action {action.path_action.name} on {bfile_path} has no final path set, unable to process"
 
+            # Create a unique temp file. IMPORTANT for Windows: close the handle
+            # immediately so Blender can open it for rb+.
             bfile_tmp = tempfile.NamedTemporaryFile(
                 dir=str(self._rewrite_in),
                 prefix="bat-",
@@ -578,7 +616,14 @@ class Packer:
                 delete=False,
             )
             bfile_tp = pathlib.Path(bfile_tmp.name)
-            action.read_from = bfile_tp
+            try:
+                bfile_tmp.close()
+            except Exception:
+                pass
+
+            # Do NOT set action.read_from yet; only do it if the file actually changes.
+            action.read_from = None
+
             log.info("Rewriting %s to %s", bfile_path, bfile_tp)
 
             bfile = blendfile.open_cached(bfile_path, assert_cached=True)
@@ -621,9 +666,21 @@ class Packer:
                     written = block.set(usage.path_full_field.name.name_only, relpath)
                     log.debug("   - written %d bytes", written)
 
-            if bfile.is_modified:
+            modified = bool(getattr(bfile, "is_modified", False))
+            if modified:
+                # Only use the rewritten copy if it actually changed.
+                action.read_from = bfile_tp
                 self._progress_cb.rewrite_blendfile(bfile_path)
+
             bfile.close()
+
+            # If nothing changed, remove the temp file so we don't leak junk
+            # and we don't accidentally upload redundant rewritten copies.
+            if not modified:
+                try:
+                    bfile_tp.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
     def _copy_asset_and_deps(self, asset_path: pathlib.Path, action: AssetAction):
         asset_path_is_dir = asset_path.is_dir()

@@ -46,7 +46,10 @@ def pack_blend(
         temp files are copied into a persistent temp dir so they survive packer.close()
 
     ZIP:
-      - produces zip at target (existing behavior)
+      - produces zip at target
+      - IMPORTANT: ZIP packs are always rooted at the folder containing the main .blend.
+        This guarantees the main blend ends up at:  input/<blendname>.blend
+        which matches the farm runner expectation.
     """
     infile_p = Path(infile)
 
@@ -79,6 +82,7 @@ def pack_blend(
             new_map: Dict[Path, object] = {}
             for src, dst in file_map.items():
                 src_p = Path(src)
+
                 try:
                     rewrite_root = Path(packer._rewrite_in)  # type: ignore[attr-defined]
                     is_rewrite = str(src_p).startswith(str(rewrite_root))
@@ -86,7 +90,10 @@ def pack_blend(
                     is_rewrite = False
 
                 if is_rewrite and src_p.exists():
+                    # Avoid name collisions if two rewritten libs share the same basename.
                     new_src = persist_dir / src_p.name
+                    if new_src.exists():
+                        new_src = persist_dir / f"{src_p.stem}-{uuid.uuid4().hex[:8]}{src_p.suffix}"
                     try:
                         shutil.copy2(src_p, new_src)
                         new_map[new_src] = dst
@@ -100,8 +107,12 @@ def pack_blend(
         packer.close()
         return file_map
 
-    elif method == "ZIP":
-        with zipped.ZipPacker(Path(infile), Path(infile).parent, Path(target)) as packer:
+    if method == "ZIP":
+        # CRITICAL: Root ZIP at the directory containing the main .blend.
+        # This ensures the main blend always becomes: input/<blendname>.blend
+        project_root = infile_p.parent
+
+        with zipped.ZipPacker(infile_p, project_root, Path(target)) as packer:
             packer.strategise()
             packer.execute()
         return None

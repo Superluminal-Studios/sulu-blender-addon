@@ -125,13 +125,6 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             )
             return {"CANCELLED"}
 
-        # Gather outputs safely
-        # outputs = gather_render_outputs(scene).get("outputs", [])
-        # if not outputs:
-        #     self.report({"ERROR"}, "No render outputs detected for this scene.")
-        #     return {"CANCELLED"}
-        # layers = outputs[0].get("layers", [])
-
         # Non-blocking heads-up if Project upload will ignore off-drive deps
         if props.upload_type == "PROJECT":
             try:
@@ -193,13 +186,18 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             # project upload controls
             "use_project_upload": (props.upload_type == "PROJECT"),
             "automatic_project_path": bool(props.automatic_project_path),
-            "custom_project_path": os.path.abspath(
-                bpy.path.abspath(props.custom_project_path)
-            ).replace("\\", "/"),
+
+            # IMPORTANT FIX:
+            # If the user left this blank, do NOT turn it into CWD via os.path.abspath("").
+            "custom_project_path": (
+                os.path.abspath(bpy.path.abspath(props.custom_project_path)).replace("\\", "/")
+                if str(props.custom_project_path or "").strip()
+                else ""
+            ),
+
             "job_name": (
                 Path(bpy.data.filepath).stem if props.use_file_name else props.job_name
             ),
-            # "render_passes": layers,
             "image_format": image_format_val,
             # keep for backward compatibility with worker / API
             "use_scene_image_format": use_scene_image_format,
@@ -216,13 +214,6 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "use_async_upload": props.use_async_upload,
             "farm_url": f"{FARM_IP}/farm/{Storage.data.get('org_id', '')}/api/",
         }
-
-        # bpy.ops.wm.save_as_mainfile(
-        #     filepath=handoff["temp_blend_path"],
-        #     compress=True,
-        #     copy=True,
-        #     relative_remap=False,
-        # )
 
         worker = Path(__file__).with_name("submit_worker.py")
 

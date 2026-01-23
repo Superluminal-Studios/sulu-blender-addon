@@ -4,13 +4,14 @@ submit_worker.py – Superluminal Submit worker (robust, with retries).
 Business logic only; all generic helpers live in submit_utils.py.
 
 Key guarantees:
-- Filters out cross-drive dependencies during Project uploads so path-root
-  detection is stable (works on Windows, macOS, Linux, and with fake Windows
-  paths while testing on Linux).
-- Sanitizes ALL S3 keys and manifest entries to prevent leading slashes or
-  duplicate separators (e.g., avoids "input//Users/...").
-- Handles empty/invalid custom project paths gracefully.
-- User-facing logs are calm, actionable, and avoid scary wording.
+- Recursively discovers dependencies inside linked .blend libraries (critical for real productions).
+- Generates canonical, sanitized S3 keys and manifests (no leading slashes, no duplicate separators).
+- Project uploads:
+    • bulk-upload in-root files via rclone copy + files-from
+    • individually upload rewritten blends + outside-root assets via copyto
+    • always upload the main .blend deterministically (copyto) so it never “gets missed”
+- Never edits user project files on disk: rewritten .blend files are temporary copies only.
+- Works on Windows/macOS/Linux; handles Unicode normalization and path-root detection safely.
 
 IMPORTANT:
 This file is imported by Blender during add-on enable/registration in some setups.
@@ -30,6 +31,7 @@ import shutil
 import tempfile
 import time
 import types
+import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import webbrowser
@@ -78,6 +80,14 @@ def warn(
 _WIN_DRIVE = re.compile(r"^[A-Za-z]:[\\/]+")
 
 
+def _nfc(s: str) -> str:
+    """Normalize to NFC for stable comparisons & remote keys (does not touch local file bytes)."""
+    try:
+        return unicodedata.normalize("NFC", str(s))
+    except Exception:
+        return str(s)
+
+
 def _is_win_drive_path(p: str) -> bool:
     return bool(_WIN_DRIVE.match(str(p)))
 
@@ -113,21 +123,23 @@ def _s3key_clean(key: str) -> str:
     - collapse duplicate slashes
     - strip any leading slash
     - normalize '.' and '..'
+    - NFC normalize for cross-platform stability (macOS unicode)
     """
     k = str(key).replace("\\", "/")
     k = re.sub(r"/+", "/", k)  # collapse duplicate slashes
     k = k.lstrip("/")  # forbid leading slash
     k = os.path.normpath(k).replace("\\", "/")
+    k = _nfc(k)
     if k == ".":
         return ""  # do not allow '.' as a key
     return k
 
 
 def _samepath(a: str, b: str) -> bool:
-    """Case-insensitive, normalized equality check suitable for Windows/POSIX."""
-    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(
-        os.path.normpath(b)
-    )
+    """Case-insensitive, normalized equality check suitable for Windows/POSIX, NFC-aware."""
+    aa = _nfc(str(a))
+    bb = _nfc(str(b))
+    return os.path.normcase(os.path.normpath(aa)) == os.path.normcase(os.path.normpath(bb))
 
 
 def _should_moveto_local_file(local_path: str, original_blend_path: str) -> bool:
@@ -313,17 +325,16 @@ def main() -> None:
         )
 
     # Local paths / settings
-    blend_path: str = data["blend_path"]
-    project_path = (blend_path.replace("\\", "/").split("/")[0] + "/")  # drive root (Windows) or '/' (POSIX)
-
+    blend_path: str = str(data["blend_path"])
     use_project: bool = bool(data["use_project_upload"])
     automatic_project_path: bool = bool(data["automatic_project_path"])
-    custom_project_path: str = data["custom_project_path"]
-    job_id: str = data["job_id"]
-    tmp_blend: str = data["temp_blend_path"]
+    custom_project_path: str = str(data.get("custom_project_path") or "")
+    job_id: str = str(data["job_id"])
+    tmp_blend: str = str(data["temp_blend_path"])
 
     zip_file = Path(tempfile.gettempdir()) / f"{job_id}.zip"
-    filelist = Path(tempfile.gettempdir()) / f"{job_id}.txt"
+    filelist = Path(tempfile.gettempdir()) / f"{job_id}.txt"          # farm manifest (uploaded)
+    bulk_filelist = Path(tempfile.gettempdir()) / f"{job_id}_bulk.txt"  # local list for bulk upload only
 
     org_id = proj["organization_id"]
     project_sqid = proj["sqid"]
@@ -332,130 +343,244 @@ def main() -> None:
     # Wait until .blend is fully written
     is_blend_saved(blend_path)
 
-    # Pack assets
-    if use_project:
-        _LOG("🔍  Scanning project files, this can take a while…\n")
-        fmap = pack_blend(
-            blend_path,
-            target="",
-            method="PROJECT",
-            project_path=project_path,
-        )
+    def _is_under_root(local_path: str, root_path: str) -> bool:
+        """Return True if local_path is under root_path, best-effort cross-platform (NFC-aware)."""
+        try:
+            ap = _nfc(_norm_abs_for_detection(local_path))
+            ar = _nfc(_norm_abs_for_detection(root_path))
+            if _drive(ap) != _drive(ar):
+                return False
+            common = _nfc(os.path.commonpath([ap, ar]).replace("\\", "/"))
+            return _samepath(common, ar)
+        except Exception:
+            return False
 
-        # Normalize all dependency paths to absolute (OS-agnostic)
+    def _pick_project_root_auto() -> str:
+        """
+        Auto project root: derive a stable common path from all deps
+        (including deps inside linked .blend libraries).
+        """
         abs_blend = _norm_abs_for_detection(blend_path)
         blend_drive = _drive(abs_blend)
 
-        abs_files_all: List[str] = []
-        for f in fmap.keys():
-            raw = str(f).replace("\\", "/")
-            if _is_win_drive_path(raw) or raw.startswith("//") or raw.startswith("\\\\"):
-                f_abs = raw
-            elif os.path.isabs(raw):
-                f_abs = _norm_abs_for_detection(raw)
-            else:
-                f_abs = _norm_abs_for_detection(os.path.join(os.path.dirname(abs_blend), raw))
-            abs_files_all.append(f_abs)
+        # Provisional root is the blend folder; always contains the blend.
+        provisional_root = os.path.dirname(abs_blend)
 
-        if abs_blend not in abs_files_all:
-            abs_files_all.insert(0, abs_blend)
-
-        on_drive = [p for p in abs_files_all if _drive(p) == blend_drive]
-        off_drive = [p for p in abs_files_all if _drive(p) != blend_drive]
-
-        required_storage = 0
-        missing_count = 0
-        for idx, p in enumerate(abs_files_all):
-            if os.path.isfile(p):
-                _LOG(f"✅  [{idx + 1}/{len(abs_files_all)}] {shorten_path(p)}")
-                try:
-                    required_storage += os.path.getsize(p)
-                except Exception:
-                    pass
-            else:
-                missing_count += 1
-                _LOG(f"⚠️  [{idx + 1}/{len(abs_files_all)}] {shorten_path(p)} — not found")
-
-        if off_drive:
-            warn(
-                f"{len(off_drive)} file(s) are on a different drive/root. "
-                "They may not upload reliably with Project upload. Consider Zip upload.",
-                emoji="w",
-                close_window=False,
-                new_line=True,
+        # Use a disposable target for path ops.
+        scan_root = Path(tempfile.mkdtemp(prefix="bat_scanroot_"))
+        try:
+            fmap_scan = pack_blend(
+                blend_path,
+                target=str(scan_root),
+                method="PROJECT",
+                project_path=provisional_root,
+                rewrite_blendfiles=False,
             )
-            warn("Would you like to continue submission?", emoji="w", close_window=False)
-            answer = input("y/n: ")
-            if answer.lower() != "y":
-                sys.exit(1)
+        finally:
+            shutil.rmtree(scan_root, ignore_errors=True)
 
-        if on_drive:
-            try:
-                common_path = os.path.commonpath(on_drive).replace("\\", "/")
-            except ValueError:
-                common_path = os.path.dirname(abs_blend)
-        else:
-            common_path = os.path.dirname(abs_blend)
+        deps = [_norm_abs_for_detection(str(p)) for p in (fmap_scan or {}).keys()]
+        if abs_blend not in deps:
+            deps.insert(0, abs_blend)
 
-        if os.path.isfile(common_path) or _samepath(common_path, abs_blend):
-            common_path = os.path.dirname(abs_blend)
-            _LOG(f"ℹ️  Using the .blend's folder as the Project Path: {shorten_path(common_path)}")
+        on_drive = [p for p in deps if _drive(p) == blend_drive]
+        if not on_drive:
+            return os.path.dirname(abs_blend)
 
+        try:
+            common = os.path.commonpath(on_drive).replace("\\", "/")
+        except Exception:
+            common = os.path.dirname(abs_blend)
+
+        # If common is a file or equals the blend file, use blend folder.
+        if os.path.isfile(common) or _samepath(common, abs_blend):
+            common = os.path.dirname(abs_blend)
+
+        return common
+
+    # -------------------------------------------------------------------
+    # Pack assets
+    # -------------------------------------------------------------------
+    if use_project:
+        _LOG("🔍  Building a project upload plan (including linked libraries)…\n")
+
+        # Decide project_root
         if not automatic_project_path:
-            if not custom_project_path or not str(custom_project_path).strip():
+            if not custom_project_path.strip():
                 warn(
                     "Custom Project Path is empty. Either enable Automatic Project Path or set a valid folder.",
                     emoji="w",
                     close_window=True,
                 )
-            custom_base = _norm_abs_for_detection(custom_project_path)
-            if os.path.isfile(custom_base):
-                custom_base = os.path.dirname(custom_base)
-                _LOG(f"ℹ️  The chosen Project Path points to a file. Using its folder: {shorten_path(custom_base)}")
-            common_path = custom_base
 
-        rel_manifest: List[str] = []
-        for p in on_drive:
-            if _samepath(_norm_abs_for_detection(p), abs_blend):
-                continue
+            project_root = custom_project_path
+            if os.path.isfile(project_root):
+                project_root = os.path.dirname(project_root)
+                _LOG(f"ℹ️  Project Path points to a file. Using its folder: {shorten_path(project_root)}")
+        else:
+            project_root = _pick_project_root_auto()
+
+        project_root = _norm_abs_for_detection(project_root)
+
+        # Safety: project_root must contain the main blend, otherwise BAT will fail.
+        if not _is_under_root(blend_path, project_root):
+            # If custom was invalid, try auto as fallback.
+            if not automatic_project_path:
+                _LOG("⚠️  The chosen Project Root does not contain the .blend file. Falling back to Automatic Project Root.\n")
+                try:
+                    project_root = _norm_abs_for_detection(_pick_project_root_auto())
+                except Exception:
+                    project_root = _norm_abs_for_detection(os.path.dirname(_norm_abs_for_detection(blend_path)))
+
+            if not _is_under_root(blend_path, project_root):
+                # Last resort: blend folder.
+                project_root = _norm_abs_for_detection(os.path.dirname(_norm_abs_for_detection(blend_path)))
+                _LOG(f"⚠️  Using the .blend folder as Project Root: {shorten_path(project_root)}")
+
+        _LOG(f"ℹ️  Project Root: {shorten_path(project_root)}\n")
+
+        # Plan root is purely for stable relpath computation (no file IO)
+        plan_root = Path(tempfile.mkdtemp(prefix="bat_planroot_"))
+
+        try:
+            # IMPORTANT: rewrite_blendfiles=True so absolute/outside-root paths get rewritten
+            # in *temporary copies* of any blend files that need it.
+            fmap = pack_blend(
+                blend_path,
+                target=str(plan_root),
+                method="PROJECT",
+                project_path=project_root,
+                rewrite_blendfiles=True,
+            )
+        except Exception:
+            shutil.rmtree(plan_root, ignore_errors=True)
+            raise
+
+        # Build canonical relpaths using BAT's planned dst paths
+        entries: List[Tuple[Path, str]] = []
+        required_storage = 0
+        missing_count = 0
+
+        for src, dst in (fmap or {}).items():
+            src_p = Path(src)
+            dst_p = Path(str(dst))
+
             try:
-                rel = _relpath_safe(p, common_path)
-                rel = _s3key_clean(rel)
-                if rel:
-                    rel_manifest.append(rel)
+                rel = dst_p.relative_to(plan_root).as_posix()
             except Exception:
-                _LOG(
-                    f"⚠️  Couldn't compute a relative path under the project root for: {shorten_path(p)}. "
-                    "Consider switching to Zip or choosing a higher-level Project Path."
-                )
+                rel = str(dst_p).replace("\\", "/")
+            rel = _s3key_clean(rel)
 
+            if not rel:
+                continue
+
+            entries.append((src_p, rel))
+
+            try:
+                if src_p.is_file():
+                    required_storage += src_p.stat().st_size
+                else:
+                    missing_count += 1
+            except Exception:
+                pass
+
+        # We no longer need plan_root on disk
+        shutil.rmtree(plan_root, ignore_errors=True)
+
+        # Collapse into rel -> src (prefer existing file if duplicates ever happen)
+        rel_to_src: Dict[str, Path] = {}
+        for src_p, rel in entries:
+            if rel not in rel_to_src:
+                rel_to_src[rel] = src_p
+            else:
+                try:
+                    if (not rel_to_src[rel].exists()) and src_p.exists():
+                        rel_to_src[rel] = src_p
+                except Exception:
+                    pass
+
+        # Determine main blend key from relpaths (robust; avoids unicode relpath pitfalls)
+        main_name = Path(blend_path).name
+        candidates = [r for r in rel_to_src.keys() if r == main_name or r.endswith("/" + main_name)]
+
+        expected_rel = ""
+        try:
+            expected_rel = _s3key_clean(_relpath_safe(_norm_abs_for_detection(blend_path), project_root))
+        except Exception:
+            expected_rel = ""
+
+        if expected_rel and expected_rel in candidates:
+            main_blend_s3 = expected_rel
+        elif candidates:
+            non_out = [r for r in candidates if not r.startswith("_outside_project/")]
+            pick_from = non_out or candidates
+            # prefer shallower paths
+            main_blend_s3 = sorted(pick_from, key=lambda r: (r.count("/"), len(r)))[0]
+        else:
+            main_blend_s3 = _s3key_clean(main_name) or main_name
+
+        main_local_src = rel_to_src.get(main_blend_s3, None)
+
+        # Split upload strategy
+        bulk_list: List[str] = []
+        individual: List[Tuple[Path, str]] = []
+
+        for rel, src_p in rel_to_src.items():
+            if rel == main_blend_s3:
+                continue  # main handled separately (always copyto)
+            if rel.startswith("_outside_project/"):
+                individual.append((src_p, rel))
+                continue
+            if _is_under_root(str(src_p), project_root):
+                bulk_list.append(rel)
+            else:
+                # rewritten blend copies + anything else not under root
+                individual.append((src_p, rel))
+
+        bulk_list = sorted(set(bulk_list))
+        manifest_lines = sorted(set(rel_to_src.keys()))
+
+        # Write bulk list (local-only)
+        with bulk_filelist.open("w", encoding="utf-8") as fp:
+            for rel in bulk_list:
+                fp.write(rel + "\n")
+
+        # Write manifest (uploaded; includes main blend key too)
         with filelist.open("w", encoding="utf-8") as fp:
-            for rel in rel_manifest[0:-1]:
-                fp.write(f"{rel}\n")
-
-        blend_rel = _relpath_safe(abs_blend, common_path)
-        main_blend_s3 = _s3key_clean(blend_rel) or os.path.basename(abs_blend)
+            for rel in manifest_lines:
+                fp.write(rel + "\n")
 
         _LOG(
-            f"\n📄  [Summary] to upload: {len(rel_manifest)} dependencies (+ main .blend), "
-            f"excluded (other drives): {len(off_drive)}, missing on disk: {missing_count}"
+            f"\n📄  [Summary] planned files: {len(manifest_lines)}  "
+            f"(bulk={len(bulk_list)}, individual={len(individual)}), "
+            f"missing on disk: {missing_count}"
         )
+        _LOG(f"ℹ️  Main blend key on farm: {main_blend_s3}")
 
     else:
         _LOG("📦  Creating a single zip with all dependencies, this can take a while…")
+
+        # CRITICAL FIX:
+        # ZIP uploads must always place the main .blend at: input/<blendname>.blend
+        # The farm runner expects that exact location.
         abs_blend_norm = _norm_abs_for_detection(blend_path)
-        pack_blend(abs_blend_norm, str(zip_file), method="ZIP")
+        pack_blend(abs_blend_norm, str(zip_file), method="ZIP", project_path=None)
 
         if not zip_file.exists():
             warn("Zip file does not exist", emoji="x", close_window=True)
 
         required_storage = zip_file.stat().st_size
-        rel_manifest = []
-        common_path = ""
-        main_blend_s3 = ""
         _LOG(f"ℹ️  Zip size estimate: {required_storage / 1_048_576:.1f} MiB")
 
+        # Keep these defined for later payload sections
+        project_root = ""
+        main_blend_s3 = ""
+        individual = []
+        bulk_list = []
+
+    # -------------------------------------------------------------------
     # R2 credentials
+    # -------------------------------------------------------------------
     _LOG("\n🔑  Fetching temporary storage credentials...")
     try:
         s3_response = session.get(
@@ -473,57 +598,63 @@ def main() -> None:
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
     _LOG("🚀  Uploading\n")
 
+    # rclone tuning (avoid duplicate --stats args; run_rclone already adds stats/json log)
+    upload_tune = [
+        "--checksum",
+        "--transfers", "4",
+        "--checkers", "32",
+        "--s3-chunk-size", "16M",
+        "--s3-upload-concurrency", "8",
+        "--buffer-size", "32M",
+        "--multi-thread-streams", "8",
+        "--fast-list",
+        "--retries", "10",
+        "--low-level-retries", "50",
+        "--retries-sleep", "2s",
+    ]
+
     try:
         if not use_project:
             run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/", [])
         else:
-            _LOG("📤  Uploading the main .blend\n")
-            move_to_path = _s3key_clean(f"{project_name}/{main_blend_s3}")
-            remote_main = f":s3:{bucket}/{move_to_path}"
-            run_rclone(
-                base_cmd,
-                "copyto",
-                blend_path,
-                remote_main,
-                [
-                "--transfers", "4",
-                "--checkers", "32",
-                "--s3-chunk-size", "16M",
-                "--s3-upload-concurrency", "8",
-                "--buffer-size", "32M",
-                "--multi-thread-streams", "8",
-                "--fast-list",
-                "--retries", "10",
-                "--low-level-retries", "50",
-                "--retries-sleep", "2s",
-                "--stats", "0.1s"
-                ],
-            )
+            # 1) Upload main blend deterministically (always copyto)
+            _LOG("\n📤  Uploading the main .blend\n")
+            if main_local_src is None:
+                main_local_src = Path(blend_path)
 
+            main_remote_key = _s3key_clean(f"{project_name}/{main_blend_s3}")
+            main_remote = f":s3:{bucket}/{main_remote_key}"
+            run_rclone(base_cmd, "copyto", str(main_local_src), main_remote, upload_tune)
 
+            # 2) Upload rewritten/outside-root items individually
+            if individual:
+                _LOG("\n📤  Uploading rewritten/outside-root files\n")
+                # upload in a stable order
+                for src_p, rel in sorted(individual, key=lambda t: t[1]):
+                    remote_key = _s3key_clean(f"{project_name}/{rel}")
+                    remote = f":s3:{bucket}/{remote_key}"
+                    run_rclone(base_cmd, "copyto", str(src_p), remote, upload_tune)
 
-            if rel_manifest:
-                _LOG("📤  Uploading dependencies\n")
+            # 3) Bulk upload in-project dependencies
+            if bulk_list:
+                _LOG("\n📤  Uploading in-project dependencies (bulk)\n")
                 run_rclone(
                     base_cmd,
                     "copy",
-                    str(common_path),
+                    str(project_root),
                     f":s3:{bucket}/{project_name}/",
-                    ["--files-from", str(filelist),"--checksum", "--stats", "0.1s"],
+                    ["--files-from", str(bulk_filelist), "--checksum"],
                 )
 
-            with filelist.open("a", encoding="utf-8") as fp:
-                fp.write(_s3key_clean(main_blend_s3) + "\n")
-
-            _LOG("📤  Uploading dependency manifest\n")
+            # 4) Upload dependency manifest
+            _LOG("\n📤  Uploading dependency manifest\n")
             run_rclone(
                 base_cmd,
                 "move",
                 str(filelist),
                 f":s3:{bucket}/{project_name}/",
-                ["--checksum", "--stats", "0.1s"],
+                ["--checksum"],
             )
-
 
         if data.get("packed_addons") and len(data["packed_addons"]) > 0:
             _LOG("📤  Uploading packed add-ons")
@@ -533,17 +664,17 @@ def main() -> None:
                 data["packed_addons_path"],
                 f":s3:{bucket}/{job_id}/addons/",
                 [
-                "--transfers", "4",
-                "--checkers", "32",
-                "--s3-chunk-size", "16M",
-                "--s3-upload-concurrency", "8",
-                "--buffer-size", "64M",
-                "--multi-thread-streams", "8",
-                "--fast-list",
-                "--retries", "10",
-                "--low-level-retries", "50",
-                "--retries-sleep", "2s",
-                "--stats", "0.1s"
+                    "--checksum",
+                    "--transfers", "4",
+                    "--checkers", "32",
+                    "--s3-chunk-size", "16M",
+                    "--s3-upload-concurrency", "8",
+                    "--buffer-size", "64M",
+                    "--multi-thread-streams", "8",
+                    "--fast-list",
+                    "--retries", "10",
+                    "--low-level-retries", "50",
+                    "--retries-sleep", "2s",
                 ],
             )
 
@@ -557,8 +688,15 @@ def main() -> None:
         except Exception:
             pass
 
-    #_LOG("\n🗄️  Submitting job to Superluminal...")
+        # best-effort cleanup local helper lists
+        try:
+            bulk_filelist.unlink(missing_ok=True)
+        except Exception:
+            pass
 
+    # -------------------------------------------------------------------
+    # Submit job to API
+    # -------------------------------------------------------------------
     use_scene_image_format = bool(data.get("use_scene_image_format")) or (
         str(data.get("image_format", "")).upper() == "SCENE"
     )
