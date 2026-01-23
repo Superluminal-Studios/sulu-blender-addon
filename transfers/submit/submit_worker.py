@@ -430,7 +430,7 @@ def main() -> None:
                 )
 
         with filelist.open("w", encoding="utf-8") as fp:
-            for rel in rel_manifest:
+            for rel in rel_manifest[0:-1]:
                 fp.write(f"{rel}\n")
 
         blend_rel = _relpath_safe(abs_blend, common_path)
@@ -471,63 +471,80 @@ def main() -> None:
         warn(f"Could not obtain storage credentials: {exc}", emoji="x", close_window=True)
 
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
-    _LOG("🚀  Uploading…\n")
+    _LOG("🚀  Uploading\n")
 
     try:
         if not use_project:
             run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/", [])
         else:
+            _LOG("📤  Uploading the main .blend\n")
+            move_to_path = _s3key_clean(f"{project_name}/{main_blend_s3}")
+            remote_main = f":s3:{bucket}/{move_to_path}"
+            run_rclone(
+                base_cmd,
+                "copyto",
+                blend_path,
+                remote_main,
+                [
+                "--transfers", "4",
+                "--checkers", "32",
+                "--s3-chunk-size", "16M",
+                "--s3-upload-concurrency", "8",
+                "--buffer-size", "32M",
+                "--multi-thread-streams", "8",
+                "--fast-list",
+                "--retries", "10",
+                "--low-level-retries", "50",
+                "--retries-sleep", "2s",
+                "--stats", "0.1s"
+                ],
+            )
+
+
+
             if rel_manifest:
-                _LOG("\n📤  Uploading dependencies...\n")
+                _LOG("📤  Uploading dependencies\n")
                 run_rclone(
                     base_cmd,
                     "copy",
                     str(common_path),
                     f":s3:{bucket}/{project_name}/",
-                    ["--files-from", str(filelist), "--checksum"],
+                    ["--files-from", str(filelist),"--checksum", "--stats", "0.1s"],
                 )
 
             with filelist.open("a", encoding="utf-8") as fp:
                 fp.write(_s3key_clean(main_blend_s3) + "\n")
 
-            _LOG("\n📤  Uploading dependency manifest...\n")
+            _LOG("📤  Uploading dependency manifest\n")
             run_rclone(
                 base_cmd,
                 "move",
                 str(filelist),
                 f":s3:{bucket}/{project_name}/",
-                ["--checksum"],
+                ["--checksum", "--stats", "0.1s"],
             )
 
-            _LOG("\n📤  Uploading the main .blend...\n")
-
-            move_to_path = _s3key_clean(f"{project_name}/{main_blend_s3}")
-            local_main = str(tmp_blend)
-            remote_main = f":s3:{bucket}/{move_to_path}"
-
-            verb = "moveto" if _should_moveto_local_file(local_main, blend_path) else "copyto"
-            if verb != "moveto":
-                _LOG(
-                    "ℹ️  Uploading with copy (local .blend will be kept). "
-                    "If you expected a temp file to be removed, check your temp blend path wiring."
-                )
-
-            run_rclone(
-                base_cmd,
-                verb,
-                local_main,
-                remote_main,
-                ["--checksum", "--ignore-times"],
-            )
 
         if data.get("packed_addons") and len(data["packed_addons"]) > 0:
-            _LOG("\n📤  Uploading packed add-ons...")
+            _LOG("📤  Uploading packed add-ons")
             run_rclone(
                 base_cmd,
                 "moveto",
                 data["packed_addons_path"],
                 f":s3:{bucket}/{job_id}/addons/",
-                ["--checksum", "--ignore-times"],
+                [
+                "--transfers", "4",
+                "--checkers", "32",
+                "--s3-chunk-size", "16M",
+                "--s3-upload-concurrency", "8",
+                "--buffer-size", "64M",
+                "--multi-thread-streams", "8",
+                "--fast-list",
+                "--retries", "10",
+                "--low-level-retries", "50",
+                "--retries-sleep", "2s",
+                "--stats", "0.1s"
+                ],
             )
 
     except RuntimeError as exc:
@@ -540,7 +557,7 @@ def main() -> None:
         except Exception:
             pass
 
-    _LOG("\n🗄️  Submitting job to Superluminal...")
+    #_LOG("\n🗄️  Submitting job to Superluminal...")
 
     use_scene_image_format = bool(data.get("use_scene_image_format")) or (
         str(data.get("image_format", "")).upper() == "SCENE"

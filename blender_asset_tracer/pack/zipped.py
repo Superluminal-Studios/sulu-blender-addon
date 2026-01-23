@@ -30,11 +30,37 @@ import pathlib
 import shutil
 import sys
 import time
+import gzip
 from typing import Iterable, List, Tuple
+
+
+try:
+    import zstandard as zstd
+except Exception:  # pragma: no cover
+    zstd = None  # type: ignore[assignment]
 
 from . import Packer, transfer
 
 log = logging.getLogger(__name__)
+
+
+_ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
+_GZIP_MAGIC = b"\x1f\x8b"
+
+def shorten_path(path: str) -> str:
+    """
+    Return a version of `path` no longer than 64 characters,
+    inserting “...” in the middle if it’s longer. Preserves both ends.
+    """
+    max_len = 64
+    dots = "..."
+    path = str(path)
+    if len(path) <= max_len:
+        return path
+    keep = max_len - len(dots)
+    left = keep // 2
+    right = keep - left
+    return f"{path[:left]}{dots}{path[-right:]}"
 
 
 def _env_int(name: str, default: int) -> int:
@@ -117,6 +143,33 @@ STORE_ONLY = {
     ".mp3", ".ogg", ".flac",
     ".zip", ".rar", ".7z", ".gz", ".bz2", ".xz",
     ".ktx2", ".dds",
+    ".blend"
+}
+
+COMPRESSION_LEVELS = {
+    0: "Store",
+    1: "Fast Compression",
+    2: "Fast Compression",
+    3: "Normal Compression",
+    4: "Normal Compression",
+    5: "Balanced Compression",
+    6: "High Compression",
+    7: "High Compression",
+    8: "High Compression",
+    9: "Maximum Compression",
+}
+
+COMPRESS_ICONS = {
+    0: "✅",
+    1: "📦",
+    2: "📦",
+    3: "📦",
+    4: "📦",
+    5: "📦",
+    6: "📦",
+    7: "📦",
+    8: "📦",
+    9: "📦",
 }
 
 
@@ -231,7 +284,7 @@ class ZipTransferrer(transfer.FileTransferer):
         default_compression = zipfile.ZIP_STORED if ZIP_NO_COMPRESS else zipfile.ZIP_DEFLATED
         default_level = None if ZIP_NO_COMPRESS else ZIP_COMPRESSLEVEL
 
-        _emit(f"📦  Creating zip: {zippath}")
+        _emit(f"ℹ️  Creating zip: {zippath}")
         _emit(
             f"ℹ️  ZIP settings: "
             f"{'store-only' if ZIP_NO_COMPRESS else f'deflate level {ZIP_COMPRESSLEVEL}'}; "
@@ -240,7 +293,7 @@ class ZipTransferrer(transfer.FileTransferer):
             f"verbose={'on' if ZIP_VERBOSE else 'off'}"
         )
         if total_files:
-            _emit(f"📦  Files queued: {total_files}  (size est.: {_human_bytes(total_bytes)})")
+            _emit(f"ℹ️  Files queued: {total_files}  (size est.: {_human_bytes(total_bytes)})\n")
 
         try:
             with zipfile.ZipFile(
@@ -250,8 +303,9 @@ class ZipTransferrer(transfer.FileTransferer):
                 compresslevel=default_level,
                 allowZip64=True,
             ) as outzip:
-
+                #print('\x1b[?7l')
                 for idx, (src, dst, act) in enumerate(items, start=1):
+                    
                     # Compute archive name (must be POSIX separators)
                     dst_abs = pathlib.Path(dst).absolute()
                     relpath = dst_abs.relative_to(zippath)
@@ -275,9 +329,9 @@ class ZipTransferrer(transfer.FileTransferer):
                     # Optional verbose per-file logging (slower)
                     if ZIP_VERBOSE:
                         if total_files > 0:
-                            _emit(f"📦  [{idx}/{total_files}] Zipping {src} ({_human_bytes(size)}) [{comp_label}]")
+                            _emit(f"ℹ️  [{idx}/{total_files}] Zipping {src} ({_human_bytes(size)}) [{comp_label}]")
                         else:
-                            _emit(f"📦  [{idx}] Zipping {src} ({_human_bytes(size)}) [{comp_label}]")
+                            _emit(f"ℹ️  [{idx}] Zipping {src} ({_human_bytes(size)}) [{comp_label}]")
 
                     try:
                         # Handle directories (rare in your pack flow, but safe)
@@ -302,12 +356,45 @@ class ZipTransferrer(transfer.FileTransferer):
                             except Exception:
                                 pass
 
-                            zi.compress_type = compress_type
+                            # For .blend we potentially apply our own Zstd layer.
+                            # Keep the ZIP entry stored to avoid double-compressing.
+                            if arcname.endswith(".blend"):
+                                zi.compress_type = zipfile.ZIP_STORED
+                            else:
+                                zi.compress_type = compress_type
 
                             # Write file data with a large buffer (faster)
                             with open(src, "rb") as fp:
                                 with outzip.open(zi, mode="w", force_zip64=True) as zf:
-                                    shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
+                                    if arcname.endswith(".blend"):
+                                        head = b""
+                                        try:
+                                            head = fp.read(4)
+                                            fp.seek(0)
+                                        except Exception:
+                                            head = b""
+
+                                        # If Zstandard isn't available in this Python environment,
+                                        # preserve the file bytes (still Blender-openable for gzip/plain).
+                                        if zstd is None:
+                                            shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
+                                            if ZIP_VERBOSE:
+                                                _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files} ⚠️  Zstd not available; stored .blend as-is: {shorten_path(arcname)}")
+                                            continue
+
+                                        # If the source .blend is already Zstd-compressed, keep it as-is.
+                                        if head == _ZSTD_MAGIC:
+
+                                            _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files}✅  Store: {shorten_path(arcname)}")
+                                            shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
+
+                                        else:
+                                            _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files}📦  Zstd: {shorten_path(arcname)}")
+                                            zstd_compressor = zstd.ZstdCompressor(level=1)
+                                            zstd_compressor.copy_stream(fp, zf, read_size=ZIP_IO_BUFSIZE)
+                                    else:
+                                        _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files}{COMPRESS_ICONS.get(compress_type, '')} {COMPRESSION_LEVELS.get(compress_type, compress_type)}: {shorten_path(arcname)}")
+                                        shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
 
                         # Delete source if MOVE
                         if act == transfer.Action.MOVE:
@@ -317,25 +404,25 @@ class ZipTransferrer(transfer.FileTransferer):
 
                         # Throttled inline progress update (fast, non-spammy)
                         now = time.perf_counter()
-                        if (now - last_print) >= ZIP_PRINT_INTERVAL or idx == total_files:
-                            last_print = now
+                        # if (now - last_print) >= ZIP_PRINT_INTERVAL or idx == total_files:
+                        #     last_print = now
 
-                            if total_files > 0:
-                                prefix = f"📦  Zipping [{idx}/{total_files}]"
-                            else:
-                                prefix = f"📦  Zipping [{idx}]"
+                        #     if total_files > 0:
+                        #         prefix = f"📦  Zipping [{idx}/{total_files}]"
+                        #     else:
+                        #         prefix = f"📦  Zipping [{idx}]"
 
-                            if total_bytes > 0:
-                                pct = (bytes_done / max(total_bytes, 1)) * 100.0
-                                line = (
-                                    f"{prefix} "
-                                    f"{_human_bytes(bytes_done)} / {_human_bytes(total_bytes)} "
-                                    f"({pct:5.1f}%) — {src.name}"
-                                )
-                            else:
-                                line = f"{prefix} {_human_bytes(bytes_done)} — {src.name}"
+                        #     if total_bytes > 0:
+                        #         pct = (bytes_done / max(total_bytes, 1)) * 100.0
+                        #         line = (
+                        #             f"{prefix} "
+                        #             f"{_human_bytes(bytes_done)} / {_human_bytes(total_bytes)} "
+                        #             f"({pct:5.1f}%) — {src.name}"
+                        #         )
+                        #     else:
+                        #         line = f"{prefix} {_human_bytes(bytes_done)} — {src.name}"
 
-                            emit_inline(line)
+                        #     emit_inline(line)
 
                     except Exception:
                         # Make sure the inline line doesn't hide the traceback / message
