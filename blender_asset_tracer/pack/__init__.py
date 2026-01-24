@@ -27,6 +27,7 @@ import logging
 import os
 import pathlib
 import re
+import sys
 import tempfile
 import threading
 import typing
@@ -77,6 +78,10 @@ class AssetAction:
         Empty list if this AssetAction is not for a blend file.
         """
 
+        # NEW: extra source files that should be packed next to this asset.
+        # Used for UDIM tiles and other “multi-file for one logical asset” situations.
+        self.extra_files = set()  # type: typing.Set[pathlib.Path]
+
 
 class Aborted(RuntimeError):
     """Raised by Packer to abort the packing process.
@@ -86,6 +91,8 @@ class Aborted(RuntimeError):
 
 
 _WIN_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]+")
+_UDIM_TOKEN_RE = re.compile(r"(?<!\d)(\d{4})(?!\d)")
+_UDIM_MARKER = "<UDIM>"
 
 
 def _nfc(s: str) -> str:
@@ -159,6 +166,58 @@ def _outside_project_relpath(path: pathlib.Path) -> pathlib.PurePosixPath:
     return pathlib.PurePosixPath(*parts)
 
 
+def _is_macos() -> bool:
+    return sys.platform == "darwin"
+
+
+def _looks_like_cloud_storage(p: pathlib.Path) -> bool:
+    s = str(p).replace("\\", "/")
+    return (
+        "/Library/CloudStorage/" in s
+        or "/Dropbox" in s
+        or "/OneDrive" in s
+        or "/iCloud" in s
+        or "/Mobile Documents/" in s
+    )
+
+
+def _macos_permission_hint(path: pathlib.Path, err: str) -> str:
+    # Keep this very actionable and non-technical.
+    # We can’t know whether this is “Terminal” or “Blender” without the launcher change,
+    # so we phrase it as “the app running this upload”.
+    lines = [
+        "macOS blocked file access.",
+        "Fix:",
+        "  • System Settings → Privacy & Security → Full Disk Access",
+        "  • Enable the app running this upload (Terminal/iTerm if you see a console window; otherwise Blender).",
+    ]
+    if _looks_like_cloud_storage(path):
+        lines += [
+            "",
+            "Cloud storage note:",
+            "  • This file is in a cloud-synced folder.",
+            "  • Make sure it’s downloaded / available offline, then retry.",
+        ]
+    lines += ["", f"Technical: {err}"]
+    return "\n".join(lines)
+
+
+def _udim_template_from_name(name: str) -> typing.Optional[typing.Tuple[str, int]]:
+    """Return (glob_template, udim_number) based on last 4-digit token in filename."""
+    matches = list(_UDIM_TOKEN_RE.finditer(name))
+    if not matches:
+        return None
+    m = matches[-1]
+    try:
+        tile = int(m.group(1))
+    except Exception:
+        return None
+    if tile < 1001:
+        return None
+    template = name[: m.start()] + "*" + name[m.end() :]
+    return template, tile
+
+
 class Packer:
     """Takes a blend file and bundle it with its dependencies.
 
@@ -177,10 +236,11 @@ class Packer:
       - Only assets truly outside project root go under `_outside_project/`.
       - `_outside_project` paths are collision-safe across drives/UNC shares.
       - Target paths are NFC-normalized.
-      - NEW: Recursively scans linked .blend libraries, so textures/caches referenced
-        inside linked characters are included (critical for real productions).
-      - NEW: Only uses rewritten temp .blend copies when they actually changed; avoids
-        unnecessary rewritten files and improves cross-platform stability.
+
+    Diagnostics patch (UDIM + unreadable reporting):
+      - Detect UDIM tiles even when BAT doesn't flag `usage.is_sequence`.
+      - Track unreadable files separately from missing files.
+      - Emit macOS permission hints when unreadable due to access control.
     """
 
     def __init__(
@@ -230,8 +290,16 @@ class Packer:
             AssetAction
         )  # type: typing.DefaultDict[pathlib.Path, AssetAction]
         self.missing_files = set()  # type: typing.Set[pathlib.Path]
+
+        # NEW: files that exist but can't be read/opened (permissions, cloud placeholders, etc.)
+        self.unreadable_files = {}  # type: typing.Dict[pathlib.Path, str]
+
         self._new_location_paths = set()  # type: typing.Set[pathlib.Path]
         self._output_path = None  # type: typing.Optional[pathlib.PurePath]
+
+        # Caches (speed + consistent reporting)
+        self._readability_cache = {}  # type: typing.Dict[pathlib.Path, typing.Tuple[bool, str]]
+        self._udim_tiles_cache = {}  # type: typing.Dict[typing.Tuple[pathlib.Path, str], typing.List[pathlib.Path]]
 
         # Filled by execute()
         self._file_transferer = None  # type: typing.Optional[transfer.FileTransferer]
@@ -318,6 +386,153 @@ class Packer:
             )
         self._exclude_globs.update(globs)
 
+    # -------------------------------------------------------------------------
+    # Diagnostics helpers
+    # -------------------------------------------------------------------------
+
+    def _record_missing(self, path: pathlib.Path) -> None:
+        if path in self.missing_files:
+            return
+        self.missing_files.add(path)
+        try:
+            self._progress_cb.missing_file(path)
+        except Exception:
+            pass
+
+    def _record_unreadable(self, path: pathlib.Path, err: str) -> None:
+        if path in self.unreadable_files:
+            return
+        self.unreadable_files[path] = err
+        # Also report via existing callback channel.
+        try:
+            self._progress_cb.missing_file(path)
+        except Exception:
+            pass
+
+        if _is_macos():
+            log.warning(_macos_permission_hint(path, err))
+        else:
+            log.warning("Unreadable file: %s (%s)", path, err)
+
+    def _check_readable(self, path: pathlib.Path) -> bool:
+        """Return True if the path exists and can be opened for reading.
+
+        Records missing/unreadable internally. Cached.
+        """
+        # Normalize to an absolute path for cache stability.
+        try:
+            abs_path = bpathlib.make_absolute(path)
+        except Exception:
+            abs_path = pathlib.Path(path)
+
+        cached = self._readability_cache.get(abs_path)
+        if cached is not None:
+            ok, _ = cached
+            return ok
+
+        # Existence first.
+        if not abs_path.exists():
+            self._readability_cache[abs_path] = (False, "missing")
+            self._record_missing(abs_path)
+            return False
+
+        # Directories are “readable enough” for our purposes here; the packer
+        # expands them later into files.
+        try:
+            if abs_path.is_dir():
+                self._readability_cache[abs_path] = (True, "")
+                return True
+        except Exception:
+            # If is_dir fails due to permissions, treat as unreadable.
+            err = "cannot stat directory"
+            self._readability_cache[abs_path] = (False, err)
+            self._record_unreadable(abs_path, err)
+            return False
+
+        # Read test.
+        try:
+            with abs_path.open("rb") as f:
+                f.read(1)
+            self._readability_cache[abs_path] = (True, "")
+            return True
+        except (PermissionError, OSError) as exc:
+            err = f"{type(exc).__name__}: {exc}"
+            self._readability_cache[abs_path] = (False, err)
+            self._record_unreadable(abs_path, err)
+            return False
+        except Exception as exc:
+            err = f"{type(exc).__name__}: {exc}"
+            self._readability_cache[abs_path] = (False, err)
+            self._record_unreadable(abs_path, err)
+            return False
+
+    def _find_udim_tiles(self, asset_path: pathlib.Path) -> typing.List[pathlib.Path]:
+        """Return UDIM tile files for a given path.
+
+        Covers:
+          - <UDIM> placeholder filenames
+          - filenames containing a 4-digit token >= 1001 (uses the last token)
+
+        Returns [] if this doesn't look like a UDIM tileset or no tiles exist.
+        """
+        name = asset_path.name
+
+        # Case A: <UDIM> placeholder
+        if _UDIM_MARKER in name:
+            glob_name = name.replace(_UDIM_MARKER, "*")
+            key = (asset_path.parent, glob_name)
+            cached = self._udim_tiles_cache.get(key)
+            if cached is not None:
+                return list(cached)
+
+            glob_path = asset_path.with_name(glob_name)
+            try:
+                tiles = [p for p in file_sequence.expand_sequence(glob_path) if p.is_file()]
+            except Exception:
+                tiles = []
+
+            tiles = sorted(set(tiles))
+            self._udim_tiles_cache[key] = tiles
+            return list(tiles)
+
+        # Case B: numeric token (1001+)
+        tpl = _udim_template_from_name(name)
+        if not tpl:
+            return []
+        glob_name, _tile = tpl
+
+        key = (asset_path.parent, glob_name)
+        cached = self._udim_tiles_cache.get(key)
+        if cached is not None:
+            return list(cached)
+
+        tiles = []
+        try:
+            for cand in sorted(asset_path.parent.glob(glob_name)):
+                if not cand.is_file():
+                    continue
+                cand_tpl = _udim_template_from_name(cand.name)
+                if not cand_tpl:
+                    continue
+                cand_glob_name, cand_tile = cand_tpl
+                if cand_glob_name != glob_name:
+                    continue
+                if cand_tile < 1001:
+                    continue
+                tiles.append(cand)
+        except Exception:
+            tiles = []
+
+        tiles = sorted(set(tiles))
+
+        # Only treat as a “tileset” if it’s clearly multi-file.
+        if len(tiles) >= 2:
+            self._udim_tiles_cache[key] = tiles
+            return list(tiles)
+
+        self._udim_tiles_cache[key] = []
+        return []
+
     def strategise(self) -> None:
         """Determine what to do with the assets.
 
@@ -351,54 +566,22 @@ class Packer:
         self._check_aborted()
         self._new_location_paths = set()
 
-        # ------------------------------------------------------------------
-        # CRITICAL FIX (production): recursively scan linked .blend libraries.
-        #
-        # If we only scan the top-level .blend, we can miss textures/caches
-        # referenced *inside* linked character .blend libraries, especially
-        # when assets are linked (not overridden).
-        # ------------------------------------------------------------------
-        to_scan = collections.deque([self.blendfile])
-        scanned_blends = set()  # type: typing.Set[pathlib.Path]
-
-        while to_scan:
+        for usage in trace.deps(self.blendfile, self._progress_cb):
             self._check_aborted()
-            bfile_to_scan = pathlib.Path(to_scan.popleft())
-            bfile_abs = bpathlib.make_absolute(bfile_to_scan)
+            asset_path = usage.abspath
 
-            if bfile_abs in scanned_blends:
+            if any(asset_path.match(glob) for glob in self._exclude_globs):
+                log.info("Excluding file: %s", asset_path)
                 continue
-            scanned_blends.add(bfile_abs)
 
-            for usage in trace.deps(bfile_abs, self._progress_cb):
-                self._check_aborted()
-                asset_path = usage.abspath
+            if self.relative_only and not usage.asset_path.startswith(b"//"):
+                log.info("Skipping absolute path: %s", usage.asset_path)
+                continue
 
-                if any(asset_path.match(glob) for glob in self._exclude_globs):
-                    log.info("Excluding file: %s", asset_path)
-                    continue
-
-                if self.relative_only and not usage.asset_path.startswith(b"//"):
-                    log.info("Skipping absolute path: %s", usage.asset_path)
-                    continue
-
-                if usage.is_sequence:
-                    self._visit_sequence(asset_path, usage)
-                else:
-                    self._visit_asset(asset_path, usage)
-
-                # If this dependency is itself a .blend, scan it too.
-                try:
-                    if (
-                        not usage.is_sequence
-                        and asset_path.suffix.lower() == ".blend"
-                        and asset_path.exists()
-                    ):
-                        lib_abs = bpathlib.make_absolute(asset_path)
-                        if lib_abs not in scanned_blends:
-                            to_scan.append(lib_abs)
-                except Exception:
-                    pass
+            if usage.is_sequence:
+                self._visit_sequence(asset_path, usage)
+            else:
+                self._visit_asset(asset_path, usage)
 
         self._find_new_paths()
         self._group_rewrites()
@@ -408,8 +591,7 @@ class Packer:
 
         def handle_missing_file():
             log.warning("Missing file: %s", asset_path)
-            self.missing_files.add(asset_path)
-            self._progress_cb.missing_file(asset_path)
+            self._record_missing(asset_path)
 
         try:
             for file_path in file_sequence.expand_sequence(asset_path):
@@ -433,12 +615,19 @@ class Packer:
         Determines where this asset will be packed, whether it needs rewriting,
         and records the blend file data block referring to it.
         """
+        is_udim_placeholder = _UDIM_MARKER in asset_path.name
+        udim_tiles = self._find_udim_tiles(asset_path) if (is_udim_placeholder) else []
+
         # Sequences are allowed to not exist at this point.
         if not usage.is_sequence and not asset_path.exists():
-            log.warning("Missing file: %s", asset_path)
-            self.missing_files.add(asset_path)
-            self._progress_cb.missing_file(asset_path)
-            return
+            # UDIM placeholders often do not exist as a literal file.
+            # If we can find tiles on disk, treat it as present.
+            if is_udim_placeholder and udim_tiles:
+                log.info("UDIM placeholder %s expanded to %d tiles", asset_path, len(udim_tiles))
+            else:
+                log.warning("Missing file: %s", asset_path)
+                self._record_missing(asset_path)
+                return
 
         bfile_path = usage.block.bfile.filepath.absolute()
         self._progress_cb.trace_asset(asset_path)
@@ -458,6 +647,19 @@ class Packer:
         act = self._actions[asset_path]
         assert isinstance(act, AssetAction)
         act.usages.append(usage)
+
+        # NEW: UDIM tileset detection even when not flagged as sequence.
+        # - If asset is a placeholder: store all discovered tiles.
+        # - If asset is a numeric tile: add its sibling tiles as extras.
+        if is_udim_placeholder and udim_tiles:
+            act.extra_files.update(udim_tiles)
+        else:
+            tiles = self._find_udim_tiles(asset_path)
+            if tiles:
+                # Avoid copying the same file twice; the asset itself is already copied separately.
+                for t in tiles:
+                    if t != asset_path:
+                        act.extra_files.add(t)
 
         project_abs = bpathlib.make_absolute(self.project)
 
@@ -540,7 +742,10 @@ class Packer:
 
         self._start_file_transferrer()
         self._perform_file_transfer()
-        self._progress_cb.pack_done(self.output_path, self.missing_files)
+
+        # Include unreadables in the “done” callback so they show up in UIs that only know 'missing'.
+        missing_all = set(self.missing_files) | set(self.unreadable_files.keys())
+        self._progress_cb.pack_done(self.output_path, missing_all)
 
     def _perform_file_transfer(self):
         """Use file transferrer to do the actual file transfer."""
@@ -607,8 +812,6 @@ class Packer:
                 bfile_pp is not None
             ), f"Action {action.path_action.name} on {bfile_path} has no final path set, unable to process"
 
-            # Create a unique temp file. IMPORTANT for Windows: close the handle
-            # immediately so Blender can open it for rb+.
             bfile_tmp = tempfile.NamedTemporaryFile(
                 dir=str(self._rewrite_in),
                 prefix="bat-",
@@ -616,14 +819,7 @@ class Packer:
                 delete=False,
             )
             bfile_tp = pathlib.Path(bfile_tmp.name)
-            try:
-                bfile_tmp.close()
-            except Exception:
-                pass
-
-            # Do NOT set action.read_from yet; only do it if the file actually changes.
-            action.read_from = None
-
+            action.read_from = bfile_tp
             log.info("Rewriting %s to %s", bfile_path, bfile_tp)
 
             bfile = blendfile.open_cached(bfile_path, assert_cached=True)
@@ -666,21 +862,9 @@ class Packer:
                     written = block.set(usage.path_full_field.name.name_only, relpath)
                     log.debug("   - written %d bytes", written)
 
-            modified = bool(getattr(bfile, "is_modified", False))
-            if modified:
-                # Only use the rewritten copy if it actually changed.
-                action.read_from = bfile_tp
+            if bfile.is_modified:
                 self._progress_cb.rewrite_blendfile(bfile_path)
-
             bfile.close()
-
-            # If nothing changed, remove the temp file so we don't leak junk
-            # and we don't accidentally upload redundant rewritten copies.
-            if not modified:
-                try:
-                    bfile_tp.unlink(missing_ok=True)
-                except Exception:
-                    pass
 
     def _copy_asset_and_deps(self, asset_path: pathlib.Path, action: AssetAction):
         asset_path_is_dir = asset_path.is_dir()
@@ -697,6 +881,20 @@ class Packer:
             self._send_to_target(
                 read_path, packed_path, may_move=action.read_from is not None
             )
+
+        # NEW: Copy any extra files associated with this asset (UDIM tiles, etc.)
+        if action.extra_files:
+            base_pp = action.new_path
+            if base_pp is not None:
+                for extra_path in sorted(set(action.extra_files)):
+                    if extra_path == asset_path:
+                        continue
+                    # Place next to the packed asset (same directory, actual filename).
+                    try:
+                        extra_target = base_pp.with_name(extra_path.name)
+                    except Exception:
+                        extra_target = pathlib.PurePath(base_pp.parent, extra_path.name)
+                    self._send_to_target(extra_path, extra_target)
 
         if asset_path_is_dir:  # like 'some/directory':
             asset_base_path = asset_path
@@ -729,6 +927,24 @@ class Packer:
     def _send_to_target(
         self, asset_path: pathlib.Path, target: pathlib.PurePath, may_move: bool = False
     ):
+        # Preflight checks so we can report missing/unreadable *before* transfer.
+        # This also ensures sequence files & UDIM tiles are validated.
+        try:
+            # Only check files; for dirs we rely on later expansion to files.
+            if asset_path.exists() and asset_path.is_dir():
+                ok = True
+            else:
+                ok = self._check_readable(asset_path)
+        except Exception:
+            ok = False
+
+        if not ok:
+            # Still record the planned target path in noop mode for diagnostics.
+            if self.noop:
+                self.file_map[asset_path] = _nfc_path(target)
+            # Do not queue unreadable/missing files.
+            return
+
         if self.noop:
             # NFC normalize planned target paths
             self.file_map[asset_path] = _nfc_path(target)

@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 from ..blender_asset_tracer.pack import Packer
 from ..blender_asset_tracer.pack import zipped
@@ -37,6 +37,7 @@ def pack_blend(
     project_path: Optional[str] = None,
     *,
     rewrite_blendfiles: bool = False,
+    return_report: bool = False,
 ):
     """Pack a blend.
 
@@ -46,10 +47,8 @@ def pack_blend(
         temp files are copied into a persistent temp dir so they survive packer.close()
 
     ZIP:
-      - produces zip at target
-      - IMPORTANT: ZIP packs are always rooted at the folder containing the main .blend.
-        This guarantees the main blend ends up at:  input/<blendname>.blend
-        which matches the farm runner expectation.
+      - produces zip at target (existing behavior)
+      - if return_report=True, returns a dict with missing/unreadable details
     """
     infile_p = Path(infile)
 
@@ -82,7 +81,6 @@ def pack_blend(
             new_map: Dict[Path, object] = {}
             for src, dst in file_map.items():
                 src_p = Path(src)
-
                 try:
                     rewrite_root = Path(packer._rewrite_in)  # type: ignore[attr-defined]
                     is_rewrite = str(src_p).startswith(str(rewrite_root))
@@ -90,10 +88,7 @@ def pack_blend(
                     is_rewrite = False
 
                 if is_rewrite and src_p.exists():
-                    # Avoid name collisions if two rewritten libs share the same basename.
                     new_src = persist_dir / src_p.name
-                    if new_src.exists():
-                        new_src = persist_dir / f"{src_p.stem}-{uuid.uuid4().hex[:8]}{src_p.suffix}"
                     try:
                         shutil.copy2(src_p, new_src)
                         new_map[new_src] = dst
@@ -104,17 +99,29 @@ def pack_blend(
 
             file_map = new_map  # type: ignore[assignment]
 
+        # Optional report (for project mode, callers often do their own scanning,
+        # but we expose it anyway).
+        report: Dict[str, Any] = {
+            "missing_files": [str(p) for p in sorted(getattr(packer, "missing_files", set()))],
+            "unreadable_files": {str(k): v for k, v in sorted(getattr(packer, "unreadable_files", {}).items(), key=lambda kv: str(kv[0]))},
+        }
+
         packer.close()
-        return file_map
+        return (file_map, report) if return_report else file_map
 
-    if method == "ZIP":
-        # CRITICAL: Root ZIP at the directory containing the main .blend.
-        # This ensures the main blend always becomes: input/<blendname>.blend
-        project_root = infile_p.parent
-
-        with zipped.ZipPacker(infile_p, project_root, Path(target)) as packer:
+    elif method == "ZIP":
+        # Keep the existing behavior unless return_report is requested.
+        with zipped.ZipPacker(Path(infile), Path(infile).parent, Path(target)) as packer:
             packer.strategise()
             packer.execute()
+
+            if return_report:
+                return {
+                    "zip_path": str(Path(target)),
+                    "output_path": str(packer.output_path),
+                    "missing_files": [str(p) for p in sorted(getattr(packer, "missing_files", set()))],
+                    "unreadable_files": {str(k): v for k, v in sorted(getattr(packer, "unreadable_files", {}).items(), key=lambda kv: str(kv[0]))},
+                }
         return None
 
     raise ValueError(f"Unknown method: {method!r}")
