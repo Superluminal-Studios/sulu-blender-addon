@@ -112,8 +112,7 @@ def pack_blend(
 
     elif method == "ZIP":
         # Keep the existing behavior unless return_report is requested.
-        # Use the blend file's parent directory as the project root for ZIP packing
-        with zipped.ZipPacker(Path(infile), Path(infile).anchor.replace("\\", "/"), Path(target)) as packer:
+        with zipped.ZipPacker(Path(infile), Path(infile).replace("\\", "/").anchor, Path(target)) as packer:
             packer.strategise()
             packer.execute()
 

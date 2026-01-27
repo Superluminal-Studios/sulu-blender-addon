@@ -31,7 +31,6 @@ import queue
 import typing
 
 from .. import blendfile, bpathlib
-from ..blendfile.exceptions import SegmentationFault
 from . import expanders, progress
 
 _funcs_for_code = {}  # type: typing.Dict[bytes, typing.Callable]
@@ -90,12 +89,7 @@ class BlockIterator:
         yield from self._visit_linked_blocks(blocks_per_lib)
 
     def _visit_blocks(self, bfile, limit_to):
-        try:
-            bpath = bpathlib.make_absolute(bfile.filepath)
-        except (PermissionError, OSError) as e:
-            log.warning("Cannot resolve blend file path %s: %s", bfile.filepath, e)
-            return collections.defaultdict(set)
-
+        bpath = bpathlib.make_absolute(bfile.filepath)
         root_dir = bpathlib.BlendPath(bpath.parent)
 
         # Mapping from library path to data blocks to expand.
@@ -113,26 +107,16 @@ class BlockIterator:
                 # the entire set of data blocks required to render them. We
                 # defer the handling of those so that we can work with one
                 # blend file at a time.
-                try:
-                    lib = block.get_pointer(b"lib")
-                    if lib is None:
-                        log.warning("ID block %s has no library pointer", block)
-                        continue
-                    lib_bpath = bpathlib.BlendPath(lib[b"name"]).absolute(root_dir)
-                    blocks_per_lib[lib_bpath].add(block)
+                lib = block.get_pointer(b"lib")
+                lib_bpath = bpathlib.BlendPath(lib[b"name"]).absolute(root_dir)
+                blocks_per_lib[lib_bpath].add(block)
 
-                    # The library block itself should also be reported, because it
-                    # represents a blend file that is a dependency as well.
-                    self.to_visit.put(lib)
-                except (KeyError, SegmentationFault) as e:
-                    log.warning("Error processing ID block %s: %s", block, e)
+                # The library block itself should also be reported, because it
+                # represents a blend file that is a dependency as well.
+                self.to_visit.put(lib)
                 continue
 
-            try:
-                self._queue_dependencies(block)
-            except (KeyError, SegmentationFault) as e:
-                log.debug("Error queueing dependencies for block %s: %s", block, e)
-
+            self._queue_dependencies(block)
             self.blocks_yielded.add((bpath, block.addr_old))
             yield block
 
@@ -142,34 +126,15 @@ class BlockIterator:
         # We've gone through all the blocks in this file, now open the libraries
         # and iterate over the blocks referred there.
         for lib_bpath, idblocks in blocks_per_lib.items():
-            try:
-                lib_path = bpathlib.make_absolute(lib_bpath.to_path())
-            except (ValueError, PermissionError, OSError) as e:
-                log.warning("Cannot resolve library path %s: %s", lib_bpath, e)
-                continue
+            lib_path = bpathlib.make_absolute(lib_bpath.to_path())
 
-            try:
-                exists = lib_path.exists()
-            except (PermissionError, OSError) as e:
-                log.warning("Cannot check existence of library %s: %s", lib_path, e)
-                continue
-
-            if not exists:
+            if not lib_path.exists():
                 log.warning("Library %s does not exist", lib_path)
                 continue
 
             log.debug("Expanding %d blocks in %s", len(idblocks), lib_path)
-
-            try:
-                libfile = self.open_blendfile(lib_path)
-            except (PermissionError, OSError, Exception) as e:
-                log.warning("Cannot open library %s: %s", lib_path, e)
-                continue
-
-            try:
-                yield from self.iter_blocks(libfile, idblocks)
-            except (KeyError, SegmentationFault) as e:
-                log.warning("Error iterating blocks in library %s: %s", lib_path, e)
+            libfile = self.open_blendfile(lib_path)
+            yield from self.iter_blocks(libfile, idblocks)
 
     def _queue_all_blocks(self, bfile: blendfile.BlendFile):
         log.debug("Queueing all blocks from file %s", bfile.filepath)
@@ -192,24 +157,15 @@ class BlockIterator:
         """
 
         for to_find in limit_to:
-            try:
-                assert to_find.code == b"ID"
-                name_to_find = to_find[b"name"]
-                code = name_to_find[:2]
-            except (KeyError, SegmentationFault, AssertionError) as e:
-                log.debug("Error getting ID block name: %s", e)
-                continue
-
+            assert to_find.code == b"ID"
+            name_to_find = to_find[b"name"]
+            code = name_to_find[:2]
             log.debug("Finding block %r with code %r", name_to_find, code)
             same_code = bfile.find_blocks_from_code(code)
             for block in same_code:
-                try:
-                    if block.id_name == name_to_find:
-                        log.debug("Queueing %r from file %s", block, bfile.filepath)
-                        self.to_visit.put(block)
-                except (KeyError, SegmentationFault) as e:
-                    log.debug("Error checking block name: %s", e)
-                    continue
+                if block.id_name == name_to_find:
+                    log.debug("Queueing %r from file %s", block, bfile.filepath)
+                    self.to_visit.put(block)
 
     def _queue_dependencies(self, block: blendfile.BlendFileBlock):
         for block in expanders.expand_block(block):

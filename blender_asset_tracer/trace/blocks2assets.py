@@ -29,7 +29,6 @@ import typing
 
 from .. import blendfile, bpathlib, cdefs
 from ..blendfile import iterators
-from ..blendfile.exceptions import SegmentationFault
 from . import result, modifier_walkers
 
 log = logging.getLogger(__name__)
@@ -49,11 +48,7 @@ def iter_assets(block: blendfile.BlendFileBlock) -> typing.Iterator[result.Block
             return
 
         blocktype = block.code.decode()
-        try:
-            filepath = block.get(b"filepath", "", as_str=True)
-        except (KeyError, SegmentationFault):
-            filepath = ""
-
+        filepath = block.get(b"filepath", "", as_str=True)
         if filepath:
             log.debug(
                 "No reader implemented for block type %r (filepath=%r)",
@@ -66,10 +61,7 @@ def iter_assets(block: blendfile.BlendFileBlock) -> typing.Iterator[result.Block
         return
 
     log.debug("Tracing block %r", block)
-    try:
-        yield from block_reader(block)
-    except (KeyError, SegmentationFault) as e:
-        log.debug("Error tracing block %r: %s", block, e)
+    yield from block_reader(block)
 
 
 def dna_code(block_code: str):
@@ -110,11 +102,7 @@ def cache_file(block: blendfile.BlendFileBlock) -> typing.Iterator[result.BlockU
 def image(block: blendfile.BlendFileBlock) -> typing.Iterator[result.BlockUsage]:
     """Image data blocks."""
     # old files miss this
-    try:
-        image_source = block.get(b"source", default=cdefs.IMA_SRC_FILE)
-    except (KeyError, SegmentationFault):
-        image_source = cdefs.IMA_SRC_FILE
-
+    image_source = block.get(b"source", default=cdefs.IMA_SRC_FILE)
     if image_source not in {
         cdefs.IMA_SRC_FILE,
         cdefs.IMA_SRC_SEQUENCE,
@@ -124,11 +112,7 @@ def image(block: blendfile.BlendFileBlock) -> typing.Iterator[result.BlockUsage]
         log.debug("skiping image source type %s", image_source)
         return
 
-    try:
-        pathname, field = block.get(b"name", return_field=True)
-    except (KeyError, SegmentationFault):
-        return
-
+    pathname, field = block.get(b"name", return_field=True)
     is_sequence = image_source in {cdefs.IMA_SRC_SEQUENCE, cdefs.IMA_SRC_TILED}
 
     yield result.BlockUsage(block, pathname, is_sequence, path_full_field=field)
@@ -149,21 +133,14 @@ def library(block: blendfile.BlendFileBlock) -> typing.Iterator[result.BlockUsag
 @dna_code("ME")
 def mesh(block: blendfile.BlendFileBlock) -> typing.Iterator[result.BlockUsage]:
     """Mesh data blocks."""
-    try:
-        block_external = block.get_pointer((b"ldata", b"external"), None)
-        if block_external is None:
-            block_external = block.get_pointer((b"fdata", b"external"), None)
-    except (KeyError, SegmentationFault):
-        return
-
+    block_external = block.get_pointer((b"ldata", b"external"), None)
+    if block_external is None:
+        block_external = block.get_pointer((b"fdata", b"external"), None)
     if block_external is None:
         return
 
-    try:
-        path, field = block_external.get(b"filename", return_field=True)
-        yield result.BlockUsage(block, path, path_full_field=field)
-    except (KeyError, SegmentationFault):
-        pass
+    path, field = block_external.get(b"filename", return_field=True)
+    yield result.BlockUsage(block, path, path_full_field=field)
 
 
 @dna_code("MC")
@@ -177,41 +154,26 @@ def movie_clip(block: blendfile.BlendFileBlock) -> typing.Iterator[result.BlockU
 @dna_code("OB")
 def object_block(block: blendfile.BlendFileBlock) -> typing.Iterator[result.BlockUsage]:
     """Object data blocks."""
-    try:
-        ctx = modifier_walkers.ModifierContext(owner=block)
-    except (KeyError, SegmentationFault, AssertionError):
-        return
+    ctx = modifier_walkers.ModifierContext(owner=block)
 
     # 'ob->modifiers[...].filepath'
     for mod_idx, block_mod in enumerate(iterators.modifiers(block)):
-        try:
-            block_name = b"%s.modifiers[%d]" % (block.id_name, mod_idx)
-            mod_type = block_mod[b"modifier", b"type"]
-        except (KeyError, SegmentationFault):
-            continue
-
+        block_name = b"%s.modifiers[%d]" % (block.id_name, mod_idx)
+        mod_type = block_mod[b"modifier", b"type"]
         log.debug("Tracing modifier %s, type=%d", block_name.decode(), mod_type)
 
         try:
             mod_handler = modifier_walkers.modifier_handlers[mod_type]
         except KeyError:
             continue
-
-        try:
-            yield from mod_handler(ctx, block_mod, block_name)
-        except (KeyError, SegmentationFault) as e:
-            log.debug("Error tracing modifier %s: %s", block_name.decode(), e)
+        yield from mod_handler(ctx, block_mod, block_name)
 
 
 @dna_code("SC")
 def scene(block: blendfile.BlendFileBlock) -> typing.Iterator[result.BlockUsage]:
     """Scene data blocks."""
     # Sequence editor is the only interesting bit.
-    try:
-        block_ed = block.get_pointer(b"ed")
-    except (KeyError, SegmentationFault):
-        return
-
+    block_ed = block.get_pointer(b"ed")
     if block_ed is None:
         return
 
@@ -226,37 +188,25 @@ def scene(block: blendfile.BlendFileBlock) -> typing.Iterator[result.BlockUsage]
         if seq_type not in asset_types:
             continue
 
-        try:
-            seq_strip = seq.get_pointer(b"strip")
-        except (KeyError, SegmentationFault):
-            continue
-
+        seq_strip = seq.get_pointer(b"strip")
         if seq_strip is None:
             continue
-
-        try:
-            seq_stripdata = seq_strip.get_pointer(b"stripdata")
-        except (KeyError, SegmentationFault):
-            continue
-
+        seq_stripdata = seq_strip.get_pointer(b"stripdata")
         if seq_stripdata is None:
             continue
 
-        try:
-            dirname, dn_field = seq_strip.get(b"dir", return_field=True)
-            basename, bn_field = seq_stripdata.get(b"name", return_field=True)
-            asset_path = bpathlib.BlendPath(dirname) / basename
+        dirname, dn_field = seq_strip.get(b"dir", return_field=True)
+        basename, bn_field = seq_stripdata.get(b"name", return_field=True)
+        asset_path = bpathlib.BlendPath(dirname) / basename
 
-            is_sequence = seq_type not in single_asset_types
-            yield result.BlockUsage(
-                seq_strip,
-                asset_path,
-                is_sequence=is_sequence,
-                path_dir_field=dn_field,
-                path_base_field=bn_field,
-            )
-        except (KeyError, SegmentationFault):
-            continue
+        is_sequence = seq_type not in single_asset_types
+        yield result.BlockUsage(
+            seq_strip,
+            asset_path,
+            is_sequence=is_sequence,
+            path_dir_field=dn_field,
+            path_base_field=bn_field,
+        )
 
 
 @dna_code("SO")
@@ -281,35 +231,17 @@ def vector_font(block: blendfile.BlendFileBlock) -> typing.Iterator[result.Block
 @skip_packed
 def lamp(block: blendfile.BlendFileBlock) -> typing.Iterator[result.BlockUsage]:
     """Lamp data blocks."""
-    try:
-        block_ntree = block.get_pointer(b"nodetree", None)
-    except (KeyError, SegmentationFault):
-        return
-
+    block_ntree = block.get_pointer(b"nodetree", None)
     if block_ntree is None:
         return
-
-    try:
-        nodes_first = block_ntree.get_pointer((b"nodes", b"first"))
-    except (KeyError, SegmentationFault):
-        return
-
-    for node in iterators.listbase(nodes_first):
-        try:
-            storage = node.get_pointer(b"storage")
-        except (KeyError, SegmentationFault):
-            continue
-
+    for node in iterators.listbase(block_ntree.get_pointer((b"nodes", b"first"))):
+        storage = node.get_pointer(b"storage")
         if not storage:
             continue
 
         # A storage block of `NodeShaderTexIES` type has a `filepath`, but not
         # all types that can be pointed to by the `storage` pointer do.
-        try:
-            path, field = storage.get(b"filepath", return_field=True, default=None)
-        except (KeyError, SegmentationFault):
-            continue
-
+        path, field = storage.get(b"filepath", return_field=True, default=None)
         if path is None:
             continue
 

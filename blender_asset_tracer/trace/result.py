@@ -137,20 +137,9 @@ class BlockUsage:
         It is assumed that paths are valid UTF-8.
         """
 
-        try:
-            path = self.__fspath__()
-        except Exception as e:
-            log.warning("Could not determine absolute path for %s: %s", self, e)
-            return
-
+        path = self.__fspath__()
         if not self.is_sequence:
-            try:
-                exists = path.exists()
-            except (PermissionError, OSError) as e:
-                log.warning("Cannot check existence of %s: %s", path, e)
-                return
-
-            if not exists:
+            if not path.exists():
                 log.warning("Path %s does not exist for %s", path, self)
                 return
             yield path
@@ -160,47 +149,36 @@ class BlockUsage:
             yield from file_sequence.expand_sequence(path)
         except file_sequence.DoesNotExist:
             log.warning("Path %s does not exist for %s", path, self)
-        except (PermissionError, OSError) as e:
-            log.warning("Cannot access path %s for %s: %s", path, self, e)
 
     def __fspath__(self) -> pathlib.Path:
         """Determine the absolute path of the asset on the filesystem."""
         if self._abspath is None:
+            bpath = self.block.bfile.abspath(self.asset_path)
+            log.info(
+                "Resolved %s rel to %s -> %s",
+                self.asset_path,
+                self.block.bfile.filepath,
+                bpath,
+            )
+
+            as_path = pathlib.Path(bpath.to_path())
+
+            # Windows cannot make a path that has a glob pattern in it absolute.
+            # Since globs are generally only on the filename part, we take that off,
+            # make the parent directory absolute, then put the filename back.
             try:
-                bpath = self.block.bfile.abspath(self.asset_path)
-                log.info(
-                    "Resolved %s rel to %s -> %s",
-                    self.asset_path,
-                    self.block.bfile.filepath,
-                    bpath,
-                )
+                abs_parent = bpathlib.make_absolute(as_path.parent)
+            except FileNotFoundError:
+                self._abspath = as_path
+            else:
+                self._abspath = abs_parent / as_path.name
 
-                as_path = pathlib.Path(bpath.to_path())
-
-                # Windows cannot make a path that has a glob pattern in it absolute.
-                # Since globs are generally only on the filename part, we take that off,
-                # make the parent directory absolute, then put the filename back.
-                try:
-                    abs_parent = bpathlib.make_absolute(as_path.parent)
-                except (FileNotFoundError, PermissionError, OSError):
-                    self._abspath = as_path
-                else:
-                    self._abspath = abs_parent / as_path.name
-
-                log.info(
-                    "Resolving %s rel to %s -> %s",
-                    self.asset_path,
-                    self.block.bfile.filepath,
-                    self._abspath,
-                )
-            except Exception as e:
-                # Fallback: try to use the asset path directly
-                log.warning("Error resolving path %s: %s", self.asset_path, e)
-                try:
-                    self._abspath = pathlib.Path(str(self.asset_path))
-                except Exception:
-                    # Last resort: just use the raw bytes decoded
-                    self._abspath = pathlib.Path(self.asset_path.decode("utf-8", errors="replace"))
+            log.info(
+                "Resolving %s rel to %s -> %s",
+                self.asset_path,
+                self.block.bfile.filepath,
+                self._abspath,
+            )
         else:
             log.info("Reusing abspath %s", self._abspath)
         return self._abspath
@@ -210,7 +188,7 @@ class BlockUsage:
     def __lt__(self, other: "BlockUsage"):
         """Allow sorting for repeatable and predictable unit tests."""
         if not isinstance(other, BlockUsage):
-            raise NotImplementedError()
+            raise NotImplemented()
         return self.block_name < other.block_name and self.block < other.block
 
     def __eq__(self, other: object):
