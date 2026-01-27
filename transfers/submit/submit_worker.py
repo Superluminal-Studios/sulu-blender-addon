@@ -16,6 +16,11 @@ IMPORTANT:
 This file is imported by Blender during add-on enable/registration in some setups.
 It must NOT access sys.argv[1] or run worker logic at import time.
 All worker execution happens inside main(), guarded by __name__ == "__main__".
+
+TUI Mode:
+- Set USE_TUI=1 environment variable or add --tui flag to enable beautiful TUI
+- The TUI shows real-time progress for tracing, packing, and uploading
+- Falls back to plain text in non-interactive terminals
 """
 
 from __future__ import annotations
@@ -31,10 +36,19 @@ import tempfile
 import time
 import types
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import webbrowser
 
 import requests
+
+# ─── TUI mode detection ──────────────────────────────────────────
+# TUI is ON by default. Disable with: NO_TUI=1 env var, or --no-tui flag
+_TUI_DISABLED = (
+    os.environ.get("NO_TUI", "").lower() in ("1", "true", "yes")
+    or "--no-tui" in sys.argv
+)
+_TUI_ENABLED = not _TUI_DISABLED
+_TUI_INSTANCE: Any = None  # Will hold SubmitTUI instance when enabled
 
 
 # ─── Lightweight logger fallback ──────────────────────────────────
@@ -246,7 +260,11 @@ def _print_missing_unreadable_summary(
             # If *any* unreadable looks like permission, show help.
             for p, err in unreadable:
                 low = err.lower()
-                if "permission" in low or "operation not permitted" in low or "not permitted" in low:
+                if (
+                    "permission" in low
+                    or "operation not permitted" in low
+                    or "not permitted" in low
+                ):
                     _LOG("\n" + _mac_permission_help(p, err) + "\n")
                     break
 
@@ -521,7 +539,9 @@ def _run_test_mode(
         if unreadable_dict:
             _LOG(f"    - {len(unreadable_dict)} unreadable file(s)")
         if cross_drive_deps and upload_type == "PROJECT":
-            _LOG(f"    - {len(cross_drive_deps)} cross-drive file(s) (excluded in PROJECT mode)")
+            _LOG(
+                f"    - {len(cross_drive_deps)} cross-drive file(s) (excluded in PROJECT mode)"
+            )
 
     _LOG("\n  [TEST MODE] No actual submission performed.")
     if report_path:
@@ -530,6 +550,7 @@ def _run_test_mode(
 
 
 # ─── Worker bootstrap (safe to import) ────────────────────────────
+
 
 def _load_handoff_from_argv(argv: List[str]) -> Dict[str, object]:
     if len(argv) < 2:
@@ -547,6 +568,8 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     Import internal add-on modules based on addon_dir in the handoff file.
     Returns a dict with required callables/values.
     """
+    global _TUI_INSTANCE
+
     addon_dir = Path(data["addon_dir"]).resolve()
     pkg_name = addon_dir.name.replace("-", "_")
 
@@ -576,6 +599,19 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     run_rclone = rclone.run_rclone
     ensure_rclone = rclone.ensure_rclone
 
+    # TUI modules (optional)
+    tui_module = None
+    tui_trace_module = None
+    tui_rclone_module = None
+
+    if _TUI_ENABLED:
+        try:
+            tui_module = importlib.import_module(f"{pkg_name}.utils.submit_tui")
+            tui_trace_module = importlib.import_module(f"{pkg_name}.utils.tui_trace")
+            tui_rclone_module = importlib.import_module(f"{pkg_name}.utils.tui_rclone")
+        except ImportError as e:
+            _LOG(f"TUI modules not available: {e}")
+
     return {
         "pkg_name": pkg_name,
         "clear_console": clear_console,
@@ -589,11 +625,16 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "compute_project_root": compute_project_root,
         "run_rclone": run_rclone,
         "ensure_rclone": ensure_rclone,
+        # TUI modules
+        "tui_module": tui_module,
+        "tui_trace_module": tui_trace_module,
+        "tui_rclone_module": tui_rclone_module,
     }
 
 
 # ─── main ────────────────────────────────────────────────────────
 def main() -> None:
+    global _TUI_INSTANCE
     t_start = time.perf_counter()
 
     # Load handoff + bootstrap the add-on environment (ONLY in worker mode)
@@ -612,9 +653,49 @@ def main() -> None:
     run_rclone = mods["run_rclone"]
     ensure_rclone = mods["ensure_rclone"]
 
-    proj = data["project"]
+    # TUI setup
+    tui_module = mods.get("tui_module")
+    tui_trace_module = mods.get("tui_trace_module")
+    tui_rclone_module = mods.get("tui_rclone_module")
 
-    clear_console()
+    proj = data["project"]
+    use_project: bool = bool(data["use_project_upload"])
+
+    # Initialize TUI if available
+    # Force TUI mode since we're running in a dedicated terminal window
+    has_packed_addons = bool(data.get("packed_addons") and len(data["packed_addons"]) > 0)
+
+    if _TUI_ENABLED and tui_module:
+        try:
+            _TUI_INSTANCE = tui_module.SubmitTUI(
+                blend_name=Path(data["blend_path"]).name,
+                project_name=proj["name"],
+                upload_type="PROJECT" if use_project else "ZIP",
+                force_tui=True,  # Force since terminal launched from Blender
+                include_addons=has_packed_addons,
+            )
+            _TUI_INSTANCE.start()
+        except Exception as e:
+            _LOG(f"TUI initialization failed: {e}")
+            import traceback
+
+            traceback.print_exc()
+            _TUI_INSTANCE = None
+
+    # Override trace_dependencies if TUI is active
+    if _TUI_INSTANCE and tui_trace_module:
+        _original_trace = trace_dependencies
+
+        def trace_dependencies(blend_path):
+            return tui_trace_module.trace_dependencies_with_tui(
+                blend_path, _TUI_INSTANCE
+            )
+
+    # Override run_rclone if TUI is active
+    if _TUI_INSTANCE and tui_rclone_module:
+        run_rclone = tui_rclone_module.create_rclone_runner(_TUI_INSTANCE)
+
+    # clear_console()
 
     # Single resilient session for *all* HTTP traffic
     session = requests_retry_session()
@@ -625,30 +706,60 @@ def main() -> None:
             "https://api.github.com/repos/Superluminal-Studios/sulu-blender-addon/releases/latest"
         )
         if github_response.status_code == 200:
-            latest_version = github_response.json().get("tag_name")
-            if latest_version:
-                latest_version = tuple(int(i) for i in latest_version.split("."))
-                if latest_version > tuple(data["addon_version"]):
-                    answer = input(
-                        "A new version of the Superluminal Render Farm addon is available, would you like to update? (y/n)"
-                    )
-                    if answer.lower() == "y":
-                        webbrowser.open("https://superlumin.al/blender-addon")
-                        print("\nhttps://superlumin.al/blender-addon")
-                        warn(
-                            "To update:\n"
-                            "  • Download the latest addon zip from the link above.\n"
-                            "  • Uninstall the current version in Blender.\n"
-                            "  • Install the latest version in Blender.\n"
-                            "  • Close this window and restart Blender.",
-                            emoji="i",
-                            close_window=True,
-                            new_line=True,
-                        )
+            latest_version_str = github_response.json().get("tag_name", "")
+            if latest_version_str:
+                latest_version = tuple(int(i) for i in latest_version_str.split("."))
+                current_version = tuple(data["addon_version"])
+                if latest_version > current_version:
+                    current_str = ".".join(str(x) for x in current_version)
+                    latest_str = ".".join(str(x) for x in latest_version)
+
+                    if _TUI_INSTANCE:
+                        # Use beautiful TUI dialog (waits for single keypress)
+                        key = _TUI_INSTANCE.show_update_dialog(current_str, latest_str)
+
+                        if key == "ESC":
+                            _LOG("Cancelled.")
+                            sys.exit(0)
+                        elif key == "y":
+                            webbrowser.open("https://superlumin.al/blender-addon")
+                            _TUI_INSTANCE.show_question(
+                                title="Update Instructions",
+                                text="Opening download page...\n\n"
+                                     "  1. Download the latest addon zip\n"
+                                     "  2. Uninstall current version in Blender\n"
+                                     "  3. Install the new version\n"
+                                     "  4. Restart Blender",
+                                options=["Close"],
+                                hotkeys=["y", "n"],
+                            )
+                            _TUI_INSTANCE.wait_for_key(["y", "n"])
+                            sys.exit(0)
+                        # User chose Skip (n) - continue
+                    else:
+                        # Fallback to simple prompt
+                        answer = input(
+                            f"Update available: v{latest_str} (you have v{current_str}). Update [y] Skip [n]: "
+                        ).strip().lower()
+                        if answer in ("y", "yes"):
+                            webbrowser.open("https://superlumin.al/blender-addon")
+                            print("\nhttps://superlumin.al/blender-addon")
+                            warn(
+                                "To update:\n"
+                                "  • Download the latest addon zip from the link above.\n"
+                                "  • Uninstall the current version in Blender.\n"
+                                "  • Install the latest version in Blender.\n"
+                                "  • Close this window and restart Blender.",
+                                emoji="i",
+                                close_window=True,
+                                new_line=True,
+                            )
     except SystemExit:
         sys.exit(0)
     except Exception:
-        _LOG("ℹ️  Skipped add-on update check (network not available or rate-limited). Continuing...")
+        _LOG(
+            "ℹ️  Skipped add-on update check (network not available or rate-limited). Continuing..."
+        )
 
     headers = {"Authorization": data["user_token"]}
 
@@ -656,7 +767,9 @@ def main() -> None:
     try:
         rclone_bin = ensure_rclone(logger=_LOG)
     except Exception as e:
-        warn(f"Couldn't prepare the uploader (rclone): {e}", emoji="x", close_window=True)
+        warn(
+            f"Couldn't prepare the uploader (rclone): {e}", emoji="x", close_window=True
+        )
 
     # Verify farm availability (nice error if org misconfigured)
     try:
@@ -666,7 +779,11 @@ def main() -> None:
             timeout=30,
         )
         if farm_status.status_code != 200:
-            warn(f"Farm status check failed: {farm_status.json()}", emoji="x", close_window=False)
+            warn(
+                f"Farm status check failed: {farm_status.json()}",
+                emoji="x",
+                close_window=False,
+            )
             warn(
                 "Please verify that you are logged in and a project is selected. "
                 "If the issue persists, try logging out and back in.",
@@ -707,9 +824,11 @@ def main() -> None:
 
     # Pack assets
     if use_project:
-        _LOG("🔍  Scanning project files, this can take a while…\n")
+        if not _TUI_INSTANCE:
+            _LOG("🔍  Scanning project files, this can take a while…\n")
 
         # 1. Trace dependencies (lightweight, before BAT packing)
+        # Note: If TUI is enabled, trace_dependencies was overridden above
         dep_paths, missing_set, unreadable_dict = trace_dependencies(Path(blend_path))
 
         # 2. Compute project root BEFORE calling BAT
@@ -748,6 +867,12 @@ def main() -> None:
 
         # 3. Warn about cross-drive dependencies
         if cross_drive_deps:
+            if _TUI_INSTANCE:
+                _TUI_INSTANCE.add_warning(
+                    f"{len(cross_drive_deps)} file(s) on different drive (excluded)"
+                )
+                _TUI_INSTANCE.stop()  # Pause TUI for user input
+
             warn(
                 f"{len(cross_drive_deps)} file(s) are on a different drive/root. "
                 "They will be excluded from Project upload. Consider Zip upload.",
@@ -755,14 +880,33 @@ def main() -> None:
                 close_window=False,
                 new_line=True,
             )
-            warn("Would you like to continue submission?", emoji="w", close_window=False)
+            warn(
+                "Would you like to continue submission?", emoji="w", close_window=False
+            )
             answer = input("y/n: ")
             if answer.lower() != "y":
                 sys.exit(1)
 
+            if _TUI_INSTANCE:
+                _TUI_INSTANCE.start()  # Resume TUI
+
         # 4. Warn about missing/unreadable
         missing_files_list = [str(p) for p in sorted(missing_set)]
-        unreadable_files_list = [(str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))]
+        unreadable_files_list = [
+            (str(p), err)
+            for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))
+        ]
+
+        if _TUI_INSTANCE:
+            if missing_files_list:
+                _TUI_INSTANCE.add_warning(f"{len(missing_files_list)} missing file(s)")
+            if unreadable_files_list:
+                _TUI_INSTANCE.add_warning(
+                    f"{len(unreadable_files_list)} unreadable file(s)"
+                )
+            if missing_files_list or unreadable_files_list:
+                _TUI_INSTANCE.stop()  # Pause TUI for user input
+
         _print_missing_unreadable_summary(
             missing_files_list,
             unreadable_files_list,
@@ -779,7 +923,14 @@ def main() -> None:
             if answer.lower() != "y":
                 sys.exit(1)
 
+            if _TUI_INSTANCE:
+                _TUI_INSTANCE.start()  # Resume TUI
+
         # 5. Pack with correct project root (now BAT uses the computed root)
+        if _TUI_INSTANCE:
+            _TUI_INSTANCE.set_phase("pack")
+            _TUI_INSTANCE.pack_start(total_files=len(dep_paths), mode="PROJECT")
+
         fmap, report = pack_blend(
             blend_path,
             target="",
@@ -787,6 +938,9 @@ def main() -> None:
             project_path=common_path,
             return_report=True,
         )
+
+        if _TUI_INSTANCE:
+            _TUI_INSTANCE.pack_done()
 
         # 6. Build manifest from BAT's file_map directly
         abs_blend = _norm_abs_for_detection(blend_path)
@@ -808,20 +962,35 @@ def main() -> None:
             # Probe readability and accumulate size
             ok, err = _probe_readable_file(src_str)
             if ok:
-                _LOG(f"✅  [{idx + 1}/{total_files}] {shorten_path(src_str)}")
+                if not _TUI_INSTANCE:
+                    _LOG(f"✅  [{idx + 1}/{total_files}] {shorten_path(src_str)}")
                 try:
-                    required_storage += os.path.getsize(src_str)
+                    file_size = os.path.getsize(src_str)
+                    required_storage += file_size
+                    if _TUI_INSTANCE:
+                        _TUI_INSTANCE.pack_file(src_str, file_size)
                 except Exception:
-                    pass
+                    if _TUI_INSTANCE:
+                        _TUI_INSTANCE.pack_file(src_str, 0)
                 # Use BAT's computed destination path for manifest
                 rel = _s3key_clean(dst_str)
                 if rel:
                     rel_manifest.append(rel)
             else:
                 if err == "missing":
-                    _LOG(f"⚠️  [{idx + 1}/{total_files}] {shorten_path(src_str)} — not found")
+                    if not _TUI_INSTANCE:
+                        _LOG(
+                            f"⚠️  [{idx + 1}/{total_files}] {shorten_path(src_str)} — not found"
+                        )
+                    else:
+                        _TUI_INSTANCE.pack_missing(src_str)
                 else:
-                    _LOG(f"❌  [{idx + 1}/{total_files}] {shorten_path(src_str)} — unreadable")
+                    if not _TUI_INSTANCE:
+                        _LOG(
+                            f"❌  [{idx + 1}/{total_files}] {shorten_path(src_str)} — unreadable"
+                        )
+                    else:
+                        _TUI_INSTANCE.pack_unreadable(src_str, err or "unreadable")
 
         # Include main blend in storage calculation
         try:
@@ -838,19 +1007,26 @@ def main() -> None:
         blend_rel = _relpath_safe(abs_blend, common_path)
         main_blend_s3 = _s3key_clean(blend_rel) or os.path.basename(abs_blend)
 
-        _LOG(
-            f"\n📄  [Summary] to upload: {len(rel_manifest)} dependencies (+ main .blend), "
-            f"excluded (other drives): {len(cross_drive_deps)}, missing on disk: {len(missing_files_list)}, unreadable: {len(unreadable_files_list)}"
-        )
+        if not _TUI_INSTANCE:
+            _LOG(
+                f"\n📄  [Summary] to upload: {len(rel_manifest)} dependencies (+ main .blend), "
+                f"excluded (other drives): {len(cross_drive_deps)}, missing on disk: {len(missing_files_list)}, unreadable: {len(unreadable_files_list)}"
+            )
 
     else:  # ZIP mode
-        _LOG("📦  Creating a single zip with all dependencies, this can take a while…")
+        if not _TUI_INSTANCE:
+            _LOG(
+                "📦  Creating a single zip with all dependencies, this can take a while…"
+            )
 
         # 1. Trace dependencies (lightweight, before BAT packing)
+        # Note: If TUI is enabled, trace_dependencies was overridden above
         dep_paths, missing_set, unreadable_dict = trace_dependencies(Path(blend_path))
 
         # 2. Compute project root for cleaner zip structure
-        project_root, same_drive_deps, cross_drive_deps = compute_project_root(Path(blend_path), dep_paths)
+        project_root, same_drive_deps, cross_drive_deps = compute_project_root(
+            Path(blend_path), dep_paths
+        )
         project_root_str = str(project_root).replace("\\", "/")
         _LOG(f"ℹ️  Using project root for zip: {shorten_path(project_root_str)}")
 
@@ -872,6 +1048,10 @@ def main() -> None:
             sys.exit(0)
 
         # 3. Pack with computed project root (not drive root)
+        if _TUI_INSTANCE:
+            _TUI_INSTANCE.set_phase("pack")
+            _TUI_INSTANCE.pack_start(total_files=len(dep_paths), mode="ZIP")
+
         abs_blend_norm = _norm_abs_for_detection(blend_path)
         zip_report = pack_blend(
             abs_blend_norm,
@@ -880,6 +1060,9 @@ def main() -> None:
             project_path=project_root_str,
             return_report=True,
         )
+
+        if _TUI_INSTANCE:
+            _TUI_INSTANCE.pack_done()
 
         if not zip_file.exists():
             warn("Zip file does not exist", emoji="x", close_window=True)
@@ -892,6 +1075,14 @@ def main() -> None:
             u = zip_report.get("unreadable_files") or {}
             if isinstance(u, dict):
                 unreadable = [(k, str(v)) for k, v in u.items()]
+
+        if _TUI_INSTANCE:
+            if missing:
+                _TUI_INSTANCE.add_warning(f"{len(missing)} missing file(s)")
+            if unreadable:
+                _TUI_INSTANCE.add_warning(f"{len(unreadable)} unreadable file(s)")
+            if missing or unreadable:
+                _TUI_INSTANCE.stop()  # Pause TUI for user input
 
         _print_missing_unreadable_summary(
             missing,
@@ -909,6 +1100,9 @@ def main() -> None:
             answer = input("y/n: ")
             if answer.lower() != "y":
                 sys.exit(1)
+
+            if _TUI_INSTANCE:
+                _TUI_INSTANCE.start()  # Resume TUI
 
         required_storage = zip_file.stat().st_size
         rel_manifest = []
@@ -950,36 +1144,60 @@ def main() -> None:
         s3_response = session.get(
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
             headers=headers,
-            params={"filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')"},
+            params={
+                "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')"
+            },
             timeout=30,
         )
         s3_response.raise_for_status()
         s3info = s3_response.json()["items"][0]
         bucket = s3info["bucket_name"]
     except Exception as exc:
-        warn(f"Could not obtain storage credentials: {exc}", emoji="x", close_window=True)
+        warn(
+            f"Could not obtain storage credentials: {exc}", emoji="x", close_window=True
+        )
 
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
-    _LOG("🚀  Uploading\n")
+
+    if _TUI_INSTANCE:
+        _TUI_INSTANCE.set_phase("upload")
+    else:
+        _LOG("🚀  Uploading\n")
 
     try:
         if not use_project:
-            run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/",
+            run_rclone(
+                base_cmd,
+                "move",
+                str(zip_file),
+                f":s3:{bucket}/",
                 [
-                    "--transfers", "32",
-                    "--checkers", "32",
-                    "--s3-chunk-size", "50M",
-                    "--s3-upload-concurrency", "32",
-                    "--buffer-size", "64M",
-                    "--multi-thread-streams", "8",
+                    "--transfers",
+                    "32",
+                    "--checkers",
+                    "32",
+                    "--s3-chunk-size",
+                    "50M",
+                    "--s3-upload-concurrency",
+                    "32",
+                    "--buffer-size",
+                    "64M",
+                    "--multi-thread-streams",
+                    "8",
                     "--fast-list",
-                    "--retries", "10",
-                    "--low-level-retries", "50",
-                    "--retries-sleep", "2s",
-                    "--stats", "0.1s"
-                ],)
+                    "--retries",
+                    "10",
+                    "--low-level-retries",
+                    "50",
+                    "--retries-sleep",
+                    "2s",
+                    "--stats",
+                    "0.1s",
+                ],
+            )
         else:
-            _LOG("📤  Uploading the main .blend\n")
+            if not _TUI_INSTANCE:
+                _LOG("📤  Uploading the main .blend\n")
             move_to_path = _s3key_clean(f"{project_name}/{main_blend_s3}")
             remote_main = f":s3:{bucket}/{move_to_path}"
             run_rclone(
@@ -988,22 +1206,33 @@ def main() -> None:
                 blend_path,
                 remote_main,
                 [
-                    "--transfers", "32",
-                    "--checkers", "32",
-                    "--s3-chunk-size", "50M",
-                    "--s3-upload-concurrency", "32",
-                    "--buffer-size", "64M",
-                    "--multi-thread-streams", "8",
+                    "--transfers",
+                    "32",
+                    "--checkers",
+                    "32",
+                    "--s3-chunk-size",
+                    "50M",
+                    "--s3-upload-concurrency",
+                    "32",
+                    "--buffer-size",
+                    "64M",
+                    "--multi-thread-streams",
+                    "8",
                     "--fast-list",
-                    "--retries", "10",
-                    "--low-level-retries", "50",
-                    "--retries-sleep", "2s",
-                    "--stats", "0.1s"
+                    "--retries",
+                    "10",
+                    "--low-level-retries",
+                    "50",
+                    "--retries-sleep",
+                    "2s",
+                    "--stats",
+                    "0.1s",
                 ],
             )
 
             if rel_manifest:
-                _LOG("📤  Uploading dependencies\n")
+                if not _TUI_INSTANCE:
+                    _LOG("📤  Uploading dependencies\n")
                 run_rclone(
                     base_cmd,
                     "copy",
@@ -1015,7 +1244,8 @@ def main() -> None:
             with filelist.open("a", encoding="utf-8") as fp:
                 fp.write(_s3key_clean(main_blend_s3) + "\n")
 
-            _LOG("📤  Uploading dependency manifest\n")
+            if not _TUI_INSTANCE:
+                _LOG("📤  Uploading dependency manifest\n")
             run_rclone(
                 base_cmd,
                 "move",
@@ -1025,28 +1255,41 @@ def main() -> None:
             )
 
         if data.get("packed_addons") and len(data["packed_addons"]) > 0:
-            _LOG("📤  Uploading packed add-ons")
+            if not _TUI_INSTANCE:
+                _LOG("📤  Uploading packed add-ons")
             run_rclone(
                 base_cmd,
                 "moveto",
                 data["packed_addons_path"],
                 f":s3:{bucket}/{job_id}/addons/",
                 [
-                    "--transfers", "32",
-                    "--checkers", "32",
-                    "--s3-chunk-size", "50M",
-                    "--s3-upload-concurrency", "32",
-                    "--buffer-size", "64M",
-                    "--multi-thread-streams", "8",
+                    "--transfers",
+                    "32",
+                    "--checkers",
+                    "32",
+                    "--s3-chunk-size",
+                    "50M",
+                    "--s3-upload-concurrency",
+                    "32",
+                    "--buffer-size",
+                    "64M",
+                    "--multi-thread-streams",
+                    "8",
                     "--fast-list",
-                    "--retries", "10",
-                    "--low-level-retries", "50",
-                    "--retries-sleep", "2s",
-                    "--stats", "0.1s"
+                    "--retries",
+                    "10",
+                    "--low-level-retries",
+                    "50",
+                    "--retries-sleep",
+                    "2s",
+                    "--stats",
+                    "0.1s",
                 ],
             )
 
     except RuntimeError as exc:
+        if _TUI_INSTANCE:
+            _TUI_INSTANCE.finish(success=False, message=f"Upload failed: {exc}")
         warn(f"Upload failed: {exc}", emoji="x", close_window=True)
 
     finally:
@@ -1067,7 +1310,11 @@ def main() -> None:
             "project_id": data["project"]["id"],
             "packed_addons": data["packed_addons"],
             "organization_id": org_id,
-            "main_file": str(Path(blend_path).relative_to(project_root_str)).replace("\\", "/") if not use_project else _s3key_clean(main_blend_s3),
+            "main_file": (
+                str(Path(blend_path).relative_to(project_root_str)).replace("\\", "/")
+                if not use_project
+                else _s3key_clean(main_blend_s3)
+            ),
             "project_path": project_name,
             "name": data["job_name"],
             "status": "queued",
@@ -1087,7 +1334,9 @@ def main() -> None:
             "use_async_upload": data["use_async_upload"],
             "defer_status": data["use_async_upload"],
             "farm_url": data["farm_url"],
-            "tasks": list(range(data["start_frame"], data["end_frame"] + 1, frame_step_val)),
+            "tasks": list(
+                range(data["start_frame"], data["end_frame"] + 1, frame_step_val)
+            ),
         }
     }
 
@@ -1103,7 +1352,9 @@ def main() -> None:
         warn(f"Job registration failed: {exc}", emoji="x", close_window=True)
 
     elapsed = time.perf_counter() - t_start
-    _LOG(f"✅  Job submitted successfully. Total time: {elapsed:.1f}s")
+
+    if _TUI_INSTANCE:
+        _TUI_INSTANCE.upload_done()
 
     try:
         # Best effort: remove the handoff file (only in worker mode)
@@ -1112,13 +1363,26 @@ def main() -> None:
     except Exception:
         pass
 
-    selection = input("\nOpen job in your browser? y/n, or just press ENTER to close...")
-    if selection.lower() == "y":
-        web_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{data['job_id']}"
-        webbrowser.open(web_url)
-        _LOG(f"🌐  Opened {web_url} in your browser.")
-        input("\nPress ENTER to close this window...")
-        sys.exit(1)
+    web_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{data['job_id']}"
+
+    if _TUI_INSTANCE:
+        # Show browser prompt inline with success panel (keeps all panels visible)
+        key = _TUI_INSTANCE.show_browser_prompt(
+            job_name=data["job_name"],
+            elapsed=elapsed,
+        )
+
+        if key == "y":
+            webbrowser.open(web_url)
+            _TUI_INSTANCE.finish(success=True, message=f"Opened {web_url}")
+        else:
+            _TUI_INSTANCE.finish(success=True, message=f"Job submitted in {elapsed:.1f}s")
+    else:
+        _LOG(f"✅  Job submitted successfully. Total time: {elapsed:.1f}s")
+        selection = input("\nOpen in browser? [y/n]: ").strip().lower()
+        if selection in ("y", "yes"):
+            webbrowser.open(web_url)
+            _LOG(f"🌐  Opened {web_url}")
 
 
 # ─── entry ───────────────────────────────────────────────────────
@@ -1127,7 +1391,16 @@ if __name__ == "__main__":
         main()
     except Exception as exc:
         import traceback
+
         traceback.print_exc()
+
+        # Stop TUI if running
+        if _TUI_INSTANCE:
+            try:
+                _TUI_INSTANCE.finish(success=False, message=f"Submission failed: {exc}")
+            except Exception:
+                pass
+
         warn(
             "Submission encountered an unexpected error. "
             f"Details:\n{exc}\n"

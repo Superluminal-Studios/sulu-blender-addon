@@ -9,7 +9,9 @@
       "Bash(powershell -Command \"Get-Content ''C:\\\\Users\\\\jonas\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--dev-blender-scripts-scripts-addons-sulu-blender-addon\\\\tasks\\\\b961290.output''\")",
       "Bash(powershell:*)",
       "Bash(dir:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(pip show:*)",
+      "Bash(pip install:*)"
     ]
   }
 }
