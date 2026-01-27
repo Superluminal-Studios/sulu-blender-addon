@@ -25,7 +25,14 @@ def _is_win_drive_path(p: str) -> bool:
 
 def _drive(path: str) -> str:
     """
-    Return a drive token like 'C:' or 'UNC' (or '' on POSIX normal paths).
+    Return a drive token representing the path's root device for cross-drive checks.
+
+    - Windows letters: "C:", "D:", ...
+    - UNC: "UNC"
+    - macOS volumes: "/Volumes/NAME"
+    - Linux removable/media: "/media/USER/NAME" or "/mnt/NAME"
+    - Otherwise POSIX root "/"
+
     Works correctly even when running on POSIX with Windows-style paths (for testing).
     """
     p = str(path).replace("\\", "/")
@@ -35,7 +42,29 @@ def _drive(path: str) -> str:
         return "UNC"
     if os.name == "nt":
         return os.path.splitdrive(p)[0].upper()
-    return ""
+
+    # macOS volumes
+    if p.startswith("/Volumes/"):
+        parts = p.split("/")
+        if len(parts) >= 3:
+            return "/Volumes/" + parts[2]
+        return "/Volumes"
+
+    # Linux common mounts
+    if p.startswith("/media/"):
+        parts = p.split("/")
+        if len(parts) >= 4:
+            return f"/media/{parts[2]}/{parts[3]}"
+        return "/media"
+
+    if p.startswith("/mnt/"):
+        parts = p.split("/")
+        if len(parts) >= 3:
+            return f"/mnt/{parts[2]}"
+        return "/mnt"
+
+    # Fallback: POSIX root
+    return "/"
 
 
 def _norm_path(path: str) -> str:
@@ -115,9 +144,12 @@ def compute_project_root(
         - same_drive_paths: Dependencies on the same drive as the blend
         - cross_drive_paths: Dependencies on different drives (excluded from project upload)
     """
+    # Use os.path.abspath() consistently (not resolve()) to avoid symlink surprises on Mac.
+    # On macOS, resolve() can turn /Users/... into /System/Volumes/Data/Users/... which
+    # breaks relative path computation when blend_path uses the non-resolved form.
     blend_abs = _norm_path(str(blend_path))
     blend_drive = _drive(blend_abs)
-    blend_dir = Path(blend_path).parent.resolve()
+    blend_dir = Path(os.path.abspath(blend_path)).parent
 
     # Classify dependencies by drive
     same_drive_paths: List[Path] = []
@@ -133,7 +165,7 @@ def compute_project_root(
 
     # If custom project path is provided and valid, use it
     if custom_project_path is not None:
-        custom_abs = Path(custom_project_path).resolve()
+        custom_abs = Path(os.path.abspath(custom_project_path))
         if custom_abs.is_file():
             custom_abs = custom_abs.parent
         if custom_abs.is_dir():
@@ -144,8 +176,8 @@ def compute_project_root(
         # No same-drive dependencies, just use blend's parent directory
         return blend_dir, same_drive_paths, cross_drive_paths
 
-    # Collect all paths to compute common ancestor
-    all_same_drive = [str(blend_path.resolve())] + [str(p.resolve()) for p in same_drive_paths]
+    # Collect all paths to compute common ancestor (use abspath, not resolve, for consistency)
+    all_same_drive = [os.path.abspath(str(blend_path))] + [os.path.abspath(str(p)) for p in same_drive_paths]
 
     try:
         common = os.path.commonpath(all_same_drive)

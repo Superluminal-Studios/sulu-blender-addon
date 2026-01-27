@@ -92,7 +92,15 @@ def _norm_abs_for_detection(path: str) -> str:
 
 
 def _drive(path: str) -> str:
-    """Return a drive token like 'C:' or 'UNC' (or '' on POSIX normal paths)."""
+    """
+    Return a drive token representing the path's root device for cross-drive checks.
+
+    - Windows letters: "C:", "D:", ...
+    - UNC: "UNC"
+    - macOS volumes: "/Volumes/NAME"
+    - Linux removable/media: "/media/USER/NAME" or "/mnt/NAME"
+    - Otherwise POSIX root "/"
+    """
     p = str(path).replace("\\", "/")
     if _is_win_drive_path(p):
         return (p[:2]).upper()  # "C:"
@@ -100,7 +108,29 @@ def _drive(path: str) -> str:
         return "UNC"
     if os.name == "nt":
         return os.path.splitdrive(p)[0].upper()
-    return ""
+
+    # macOS volumes
+    if p.startswith("/Volumes/"):
+        parts = p.split("/")
+        if len(parts) >= 3:
+            return "/Volumes/" + parts[2]
+        return "/Volumes"
+
+    # Linux common mounts
+    if p.startswith("/media/"):
+        parts = p.split("/")
+        if len(parts) >= 4:
+            return f"/media/{parts[2]}/{parts[3]}"
+        return "/media"
+
+    if p.startswith("/mnt/"):
+        parts = p.split("/")
+        if len(parts) >= 3:
+            return f"/mnt/{parts[2]}"
+        return "/mnt"
+
+    # Fallback: POSIX root
+    return "/"
 
 
 def _relpath_safe(child: str, base: str) -> str:
@@ -1037,7 +1067,7 @@ def main() -> None:
             "project_id": data["project"]["id"],
             "packed_addons": data["packed_addons"],
             "organization_id": org_id,
-            "main_file": str(Path(blend_path).relative_to(project_path)).replace("\\", "/") if not use_project else _s3key_clean(main_blend_s3),
+            "main_file": str(Path(blend_path).relative_to(project_root_str)).replace("\\", "/") if not use_project else _s3key_clean(main_blend_s3),
             "project_path": project_name,
             "name": data["job_name"],
             "status": "queued",
