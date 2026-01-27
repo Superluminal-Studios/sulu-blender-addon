@@ -627,7 +627,20 @@ def main() -> None:
 
     try:
         if not use_project:
-            run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/", [])
+            run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/",
+                [
+                    "--transfers", "32",
+                    "--checkers", "32",
+                    "--s3-chunk-size", "50M",
+                    "--s3-upload-concurrency", "32",
+                    "--buffer-size", "64M",
+                    "--multi-thread-streams", "8",
+                    "--fast-list",
+                    "--retries", "10",
+                    "--low-level-retries", "50",
+                    "--retries-sleep", "2s",
+                    "--stats", "0.1s"
+                ],)
         else:
             _LOG("📤  Uploading the main .blend\n")
             move_to_path = _s3key_clean(f"{project_name}/{main_blend_s3}")
@@ -638,11 +651,11 @@ def main() -> None:
                 blend_path,
                 remote_main,
                 [
-                    "--transfers", "4",
+                    "--transfers", "32",
                     "--checkers", "32",
-                    "--s3-chunk-size", "16M",
-                    "--s3-upload-concurrency", "8",
-                    "--buffer-size", "32M",
+                    "--s3-chunk-size", "50M",
+                    "--s3-upload-concurrency", "32",
+                    "--buffer-size", "64M",
                     "--multi-thread-streams", "8",
                     "--fast-list",
                     "--retries", "10",
@@ -682,10 +695,10 @@ def main() -> None:
                 data["packed_addons_path"],
                 f":s3:{bucket}/{job_id}/addons/",
                 [
-                    "--transfers", "4",
+                    "--transfers", "32",
                     "--checkers", "32",
-                    "--s3-chunk-size", "16M",
-                    "--s3-upload-concurrency", "8",
+                    "--s3-chunk-size", "50M",
+                    "--s3-upload-concurrency", "32",
                     "--buffer-size", "64M",
                     "--multi-thread-streams", "8",
                     "--fast-list",
@@ -717,7 +730,7 @@ def main() -> None:
             "project_id": data["project"]["id"],
             "packed_addons": data["packed_addons"],
             "organization_id": org_id,
-            "main_file": Path(blend_path).name if not use_project else _s3key_clean(main_blend_s3),
+            "main_file": str(Path(blend_path).relative_to(project_path)).replace("\\", "/") if not use_project else _s3key_clean(main_blend_s3),
             "project_path": project_name,
             "name": data["job_name"],
             "status": "queued",

@@ -51,6 +51,7 @@ def pack_blend(
       - if return_report=True, returns a dict with missing/unreadable details
     """
     infile_p = Path(infile)
+    print(f"Packing blend: {project_path}")
 
     if method == "PROJECT":
         if project_path is None:
@@ -111,7 +112,7 @@ def pack_blend(
 
     elif method == "ZIP":
         # Keep the existing behavior unless return_report is requested.
-        with zipped.ZipPacker(Path(infile), Path(infile).parent, Path(target)) as packer:
+        with zipped.ZipPacker(Path(infile), Path(infile).replace("\\", "/").anchor, Path(target)) as packer:
             packer.strategise()
             packer.execute()
 
