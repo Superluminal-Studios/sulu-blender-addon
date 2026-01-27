@@ -176,9 +176,30 @@ COMPRESS_ICONS = {
 class ZipPacker(Packer):
     """Creates a zipped BAT Pack instead of a directory."""
 
+    def __init__(
+        self,
+        bfile: pathlib.Path,
+        project: pathlib.Path,
+        target,
+        *,
+        noop: bool = False,
+        compress: bool = False,
+        relative_only: bool = False,
+        rewrite_blendfiles: bool = False,
+        quiet: bool = False,
+    ):
+        super().__init__(
+            bfile, project, target,
+            noop=noop,
+            compress=compress,
+            relative_only=relative_only,
+            rewrite_blendfiles=rewrite_blendfiles,
+        )
+        self._quiet = quiet  # Suppress console output when TUI is handling display
+
     def _create_file_transferer(self) -> transfer.FileTransferer:
         target_path = pathlib.Path(self._target_path)
-        return ZipTransferrer(target_path.absolute())
+        return ZipTransferrer(target_path.absolute(), quiet=self._quiet)
 
 
 class ZipTransferrer(transfer.FileTransferer):
@@ -197,9 +218,10 @@ class ZipTransferrer(transfer.FileTransferer):
     - Optional verbose per-file output via SULU_ZIP_VERBOSE=1.
     """
 
-    def __init__(self, zippath: pathlib.Path) -> None:
+    def __init__(self, zippath: pathlib.Path, quiet: bool = False) -> None:
         super().__init__()
         self.zippath = zippath
+        self.quiet = quiet  # Suppress console output when TUI is handling display
 
     def _choose_compress_type(self, suffix: str, size: int, zipfile_mod) -> int:
         # If user wants maximum speed: store everything.
@@ -231,7 +253,8 @@ class ZipTransferrer(transfer.FileTransferer):
                 items.append((src, dst, act))
         except Exception:
             log.exception("ZIP queue iteration failed")
-            _emit("❌  ZIP: failed to read queued files.")
+            if not self.quiet:
+                _emit("❌  ZIP: failed to read queued files.")
             return
 
         total_files = len(items)
@@ -284,16 +307,17 @@ class ZipTransferrer(transfer.FileTransferer):
         default_compression = zipfile.ZIP_STORED if ZIP_NO_COMPRESS else zipfile.ZIP_DEFLATED
         default_level = None if ZIP_NO_COMPRESS else ZIP_COMPRESSLEVEL
 
-        _emit(f"ℹ️  Creating zip: {zippath}")
-        _emit(
-            f"ℹ️  ZIP settings: "
-            f"{'store-only' if ZIP_NO_COMPRESS else f'deflate level {ZIP_COMPRESSLEVEL}'}; "
-            f"io_buf={_human_bytes(ZIP_IO_BUFSIZE)}; "
-            f"store_big_files={'off' if ZIP_STORE_BIG_FILES_BYTES == 0 else f'>{_store_big_mb}MB'}; "
-            f"verbose={'on' if ZIP_VERBOSE else 'off'}"
-        )
-        if total_files:
-            _emit(f"ℹ️  Files queued: {total_files}  (size est.: {_human_bytes(total_bytes)})\n")
+        if not self.quiet:
+            _emit(f"ℹ️  Creating zip: {zippath}")
+            _emit(
+                f"ℹ️  ZIP settings: "
+                f"{'store-only' if ZIP_NO_COMPRESS else f'deflate level {ZIP_COMPRESSLEVEL}'}; "
+                f"io_buf={_human_bytes(ZIP_IO_BUFSIZE)}; "
+                f"store_big_files={'off' if ZIP_STORE_BIG_FILES_BYTES == 0 else f'>{_store_big_mb}MB'}; "
+                f"verbose={'on' if ZIP_VERBOSE else 'off'}"
+            )
+            if total_files:
+                _emit(f"ℹ️  Files queued: {total_files}  (size est.: {_human_bytes(total_bytes)})\n")
 
         try:
             with zipfile.ZipFile(
@@ -327,7 +351,7 @@ class ZipTransferrer(transfer.FileTransferer):
                     comp_label = "stored" if compress_type == zipfile.ZIP_STORED else "deflated"
 
                     # Optional verbose per-file logging (slower)
-                    if ZIP_VERBOSE:
+                    if ZIP_VERBOSE and not self.quiet:
                         if total_files > 0:
                             _emit(f"ℹ️  [{idx}/{total_files}] Zipping {src} ({_human_bytes(size)}) [{comp_label}]")
                         else:
@@ -378,22 +402,24 @@ class ZipTransferrer(transfer.FileTransferer):
                                         # preserve the file bytes (still Blender-openable for gzip/plain).
                                         if zstd is None:
                                             shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
-                                            if ZIP_VERBOSE:
+                                            if ZIP_VERBOSE and not self.quiet:
                                                 _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files} ⚠️  Zstd not available; stored .blend as-is: {shorten_path(arcname)}")
                                             continue
 
                                         # If the source .blend is already Zstd-compressed, keep it as-is.
                                         if head == _ZSTD_MAGIC:
-
-                                            _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files}✅  Store: {shorten_path(arcname)}")
+                                            if not self.quiet:
+                                                _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files}✅  Store: {shorten_path(arcname)}")
                                             shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
 
                                         else:
-                                            _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files}📦  Zstd: {shorten_path(arcname)}")
+                                            if not self.quiet:
+                                                _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files}📦  Zstd: {shorten_path(arcname)}")
                                             zstd_compressor = zstd.ZstdCompressor(level=1)
                                             zstd_compressor.copy_stream(fp, zf, read_size=ZIP_IO_BUFSIZE)
                                     else:
-                                        _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files}{COMPRESS_ICONS.get(compress_type, '')} {COMPRESSION_LEVELS.get(compress_type, compress_type)}: {shorten_path(arcname)}")
+                                        if not self.quiet:
+                                            _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files}{COMPRESS_ICONS.get(compress_type, '')} {COMPRESSION_LEVELS.get(compress_type, compress_type)}: {shorten_path(arcname)}")
                                         shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
 
                         # Delete source if MOVE
@@ -429,7 +455,8 @@ class ZipTransferrer(transfer.FileTransferer):
                         finish_inline()
 
                         log.exception("Error transferring %s to %s", src, dst_abs)
-                        _emit(f"❌  ZIP error while processing: {src}")
+                        if not self.quiet:
+                            _emit(f"❌  ZIP error while processing: {src}")
 
                         # Requeue this item and all remaining so the main thread can diagnose.
                         try:
@@ -442,14 +469,16 @@ class ZipTransferrer(transfer.FileTransferer):
 
             finish_inline()
             elapsed = time.perf_counter() - t0
-            _emit(
-                f"✅  Zip complete: {zippath} "
-                f"({total_files} file{'s' if total_files != 1 else ''}, {_human_bytes(bytes_done)}, {elapsed:.1f}s)"
-            )
+            if not self.quiet:
+                _emit(
+                    f"✅  Zip complete: {zippath} "
+                    f"({total_files} file{'s' if total_files != 1 else ''}, {_human_bytes(bytes_done)}, {elapsed:.1f}s)"
+                )
 
         except Exception:
             # Make sure progress line is finalized before emitting error
             finish_inline()
             log.exception("ZIP creation failed")
-            _emit("❌  Zip creation failed. See logs above for details.")
+            if not self.quiet:
+                _emit("❌  Zip creation failed. See logs above for details.")
             return

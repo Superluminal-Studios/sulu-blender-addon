@@ -116,8 +116,13 @@ def simulate_pack(tui: SubmitTUI, num_files: int = 50, mode: str = "PROJECT"):
             tui.pack_missing(file_path)
         elif r < 0.05:
             tui.pack_unreadable(file_path, "PermissionError")
+        elif r < 0.10:
+            # Skipped file (already exists)
+            tui.pack_file(file_path, size, method="skip")
         else:
-            tui.pack_file(file_path, size)
+            # Normal pack - method determined by mode
+            pack_method = "compress" if mode == "ZIP" else "map"
+            tui.pack_file(file_path, size, method=pack_method)
 
         # Rewrite a blend file occasionally
         if random.random() < 0.08 and i % 8 == 0:

@@ -58,11 +58,18 @@ def _default_logger(msg: str) -> None:
 
 
 _LOG = _default_logger
+_TUI_QUIET = False  # When True, suppress all _LOG output (TUI handles display)
 
 
 def _set_logger(fn) -> None:
     global _LOG
     _LOG = fn if callable(fn) else _default_logger
+
+
+def _log_if_no_tui(msg: str) -> None:
+    """Only log if TUI is not handling the display."""
+    if not _TUI_QUIET:
+        _LOG(msg)
 
 
 def warn(
@@ -594,6 +601,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     pack_blend = bat_utils.pack_blend
     trace_dependencies = bat_utils.trace_dependencies
     compute_project_root = bat_utils.compute_project_root
+    pack_with_tui = None  # Will be set from tui_trace_module if available
 
     rclone = importlib.import_module(f"{pkg_name}.transfers.rclone")
     run_rclone = rclone.run_rclone
@@ -612,6 +620,11 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         except ImportError as e:
             _LOG(f"TUI modules not available: {e}")
 
+    # Get pack_with_tui from tui_trace_module if available
+    pack_with_tui = None
+    if tui_trace_module:
+        pack_with_tui = getattr(tui_trace_module, "pack_with_tui", None)
+
     return {
         "pkg_name": pkg_name,
         "clear_console": clear_console,
@@ -621,6 +634,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "_build_base": _build_base,
         "CLOUDFLARE_R2_DOMAIN": CLOUDFLARE_R2_DOMAIN,
         "pack_blend": pack_blend,
+        "pack_with_tui": pack_with_tui,
         "trace_dependencies": trace_dependencies,
         "compute_project_root": compute_project_root,
         "run_rclone": run_rclone,
@@ -648,6 +662,7 @@ def main() -> None:
     _build_base = mods["_build_base"]
     CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
     pack_blend = mods["pack_blend"]
+    pack_with_tui = mods.get("pack_with_tui")
     trace_dependencies = mods["trace_dependencies"]
     compute_project_root = mods["compute_project_root"]
     run_rclone = mods["run_rclone"]
@@ -675,6 +690,9 @@ def main() -> None:
                 include_addons=has_packed_addons,
             )
             _TUI_INSTANCE.start()
+            # Suppress regular logging when TUI is active
+            global _TUI_QUIET
+            _TUI_QUIET = True
         except Exception as e:
             _LOG(f"TUI initialization failed: {e}")
             import traceback
@@ -757,7 +775,7 @@ def main() -> None:
     except SystemExit:
         sys.exit(0)
     except Exception:
-        _LOG(
+        _log_if_no_tui(
             "ℹ️  Skipped add-on update check (network not available or rate-limited). Continuing..."
         )
 
@@ -825,7 +843,7 @@ def main() -> None:
     # Pack assets
     if use_project:
         if not _TUI_INSTANCE:
-            _LOG("🔍  Scanning project files, this can take a while…\n")
+            _log_if_no_tui("🔍  Scanning project files, this can take a while…\n")
 
         # 1. Trace dependencies (lightweight, before BAT packing)
         # Note: If TUI is enabled, trace_dependencies was overridden above
@@ -846,7 +864,7 @@ def main() -> None:
             Path(blend_path), dep_paths, custom_root
         )
         common_path = str(project_root).replace("\\", "/")
-        _LOG(f"ℹ️  Using project root: {shorten_path(common_path)}")
+        _log_if_no_tui(f"ℹ️  Using project root: {shorten_path(common_path)}")
 
         # TEST MODE: Show comprehensive info and exit early
         if test_mode:
@@ -927,20 +945,30 @@ def main() -> None:
                 _TUI_INSTANCE.start()  # Resume TUI
 
         # 5. Pack with correct project root (now BAT uses the computed root)
-        if _TUI_INSTANCE:
-            _TUI_INSTANCE.set_phase("pack")
-            _TUI_INSTANCE.pack_start(total_files=len(dep_paths), mode="PROJECT")
+        if _TUI_INSTANCE and pack_with_tui:
+            # Use TUI-aware packing for real-time progress
+            fmap, report = pack_with_tui(
+                blend_path,
+                target="",
+                method="PROJECT",
+                project_path=common_path,
+                tui=_TUI_INSTANCE,
+            )
+        else:
+            if _TUI_INSTANCE:
+                _TUI_INSTANCE.set_phase("pack")
+                _TUI_INSTANCE.pack_start(total_files=len(dep_paths), mode="PROJECT")
 
-        fmap, report = pack_blend(
-            blend_path,
-            target="",
-            method="PROJECT",
-            project_path=common_path,
-            return_report=True,
-        )
+            fmap, report = pack_blend(
+                blend_path,
+                target="",
+                method="PROJECT",
+                project_path=common_path,
+                return_report=True,
+            )
 
-        if _TUI_INSTANCE:
-            _TUI_INSTANCE.pack_done()
+            if _TUI_INSTANCE:
+                _TUI_INSTANCE.pack_done()
 
         # 6. Build manifest from BAT's file_map directly
         abs_blend = _norm_abs_for_detection(blend_path)
@@ -963,7 +991,7 @@ def main() -> None:
             ok, err = _probe_readable_file(src_str)
             if ok:
                 if not _TUI_INSTANCE:
-                    _LOG(f"✅  [{idx + 1}/{total_files}] {shorten_path(src_str)}")
+                    _log_if_no_tui(f"✅  [{idx + 1}/{total_files}] {shorten_path(src_str)}")
                 try:
                     file_size = os.path.getsize(src_str)
                     required_storage += file_size
@@ -979,14 +1007,14 @@ def main() -> None:
             else:
                 if err == "missing":
                     if not _TUI_INSTANCE:
-                        _LOG(
+                        _log_if_no_tui(
                             f"⚠️  [{idx + 1}/{total_files}] {shorten_path(src_str)} — not found"
                         )
                     else:
                         _TUI_INSTANCE.pack_missing(src_str)
                 else:
                     if not _TUI_INSTANCE:
-                        _LOG(
+                        _log_if_no_tui(
                             f"❌  [{idx + 1}/{total_files}] {shorten_path(src_str)} — unreadable"
                         )
                     else:
@@ -1008,14 +1036,14 @@ def main() -> None:
         main_blend_s3 = _s3key_clean(blend_rel) or os.path.basename(abs_blend)
 
         if not _TUI_INSTANCE:
-            _LOG(
+            _log_if_no_tui(
                 f"\n📄  [Summary] to upload: {len(rel_manifest)} dependencies (+ main .blend), "
                 f"excluded (other drives): {len(cross_drive_deps)}, missing on disk: {len(missing_files_list)}, unreadable: {len(unreadable_files_list)}"
             )
 
     else:  # ZIP mode
         if not _TUI_INSTANCE:
-            _LOG(
+            _log_if_no_tui(
                 "📦  Creating a single zip with all dependencies, this can take a while…"
             )
 
@@ -1028,7 +1056,7 @@ def main() -> None:
             Path(blend_path), dep_paths
         )
         project_root_str = str(project_root).replace("\\", "/")
-        _LOG(f"ℹ️  Using project root for zip: {shorten_path(project_root_str)}")
+        _log_if_no_tui(f"ℹ️  Using project root for zip: {shorten_path(project_root_str)}")
 
         # TEST MODE: Show comprehensive info and exit early
         if test_mode:
@@ -1048,21 +1076,32 @@ def main() -> None:
             sys.exit(0)
 
         # 3. Pack with computed project root (not drive root)
-        if _TUI_INSTANCE:
-            _TUI_INSTANCE.set_phase("pack")
-            _TUI_INSTANCE.pack_start(total_files=len(dep_paths), mode="ZIP")
-
         abs_blend_norm = _norm_abs_for_detection(blend_path)
-        zip_report = pack_blend(
-            abs_blend_norm,
-            str(zip_file),
-            method="ZIP",
-            project_path=project_root_str,
-            return_report=True,
-        )
 
-        if _TUI_INSTANCE:
-            _TUI_INSTANCE.pack_done()
+        if _TUI_INSTANCE and pack_with_tui:
+            # Use TUI-aware packing for real-time progress
+            _, zip_report = pack_with_tui(
+                abs_blend_norm,
+                str(zip_file),
+                method="ZIP",
+                project_path=project_root_str,
+                tui=_TUI_INSTANCE,
+            )
+        else:
+            if _TUI_INSTANCE:
+                _TUI_INSTANCE.set_phase("pack")
+                _TUI_INSTANCE.pack_start(total_files=len(dep_paths), mode="ZIP")
+
+            zip_report = pack_blend(
+                abs_blend_norm,
+                str(zip_file),
+                method="ZIP",
+                project_path=project_root_str,
+                return_report=True,
+            )
+
+            if _TUI_INSTANCE:
+                _TUI_INSTANCE.pack_done()
 
         if not zip_file.exists():
             warn("Zip file does not exist", emoji="x", close_window=True)
@@ -1108,7 +1147,7 @@ def main() -> None:
         rel_manifest = []
         common_path = ""
         main_blend_s3 = ""
-        _LOG(f"ℹ️  Zip size estimate: {required_storage / 1_048_576:.1f} MiB")
+        _log_if_no_tui(f"ℹ️  Zip size estimate: {required_storage / 1_048_576:.1f} MiB")
 
     # NO_SUBMIT MODE: Skip upload and job registration
     if no_submit:
@@ -1139,7 +1178,7 @@ def main() -> None:
         sys.exit(0)
 
     # R2 credentials
-    _LOG("\n🔑  Fetching temporary storage credentials...")
+    _log_if_no_tui("\n🔑  Fetching temporary storage credentials...")
     try:
         s3_response = session.get(
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
@@ -1162,7 +1201,7 @@ def main() -> None:
     if _TUI_INSTANCE:
         _TUI_INSTANCE.set_phase("upload")
     else:
-        _LOG("🚀  Uploading\n")
+        _log_if_no_tui("🚀  Uploading\n")
 
     try:
         if not use_project:
@@ -1197,7 +1236,7 @@ def main() -> None:
             )
         else:
             if not _TUI_INSTANCE:
-                _LOG("📤  Uploading the main .blend\n")
+                _log_if_no_tui("📤  Uploading the main .blend\n")
             move_to_path = _s3key_clean(f"{project_name}/{main_blend_s3}")
             remote_main = f":s3:{bucket}/{move_to_path}"
             run_rclone(
@@ -1232,7 +1271,7 @@ def main() -> None:
 
             if rel_manifest:
                 if not _TUI_INSTANCE:
-                    _LOG("📤  Uploading dependencies\n")
+                    _log_if_no_tui("📤  Uploading dependencies\n")
                 run_rclone(
                     base_cmd,
                     "copy",
@@ -1245,7 +1284,7 @@ def main() -> None:
                 fp.write(_s3key_clean(main_blend_s3) + "\n")
 
             if not _TUI_INSTANCE:
-                _LOG("📤  Uploading dependency manifest\n")
+                _log_if_no_tui("📤  Uploading dependency manifest\n")
             run_rclone(
                 base_cmd,
                 "move",
@@ -1256,7 +1295,7 @@ def main() -> None:
 
         if data.get("packed_addons") and len(data["packed_addons"]) > 0:
             if not _TUI_INSTANCE:
-                _LOG("📤  Uploading packed add-ons")
+                _log_if_no_tui("📤  Uploading packed add-ons")
             run_rclone(
                 base_cmd,
                 "moveto",
@@ -1291,6 +1330,15 @@ def main() -> None:
         if _TUI_INSTANCE:
             _TUI_INSTANCE.finish(success=False, message=f"Upload failed: {exc}")
         warn(f"Upload failed: {exc}", emoji="x", close_window=True)
+
+    except Exception as exc:
+        # Handle cancellation from TUI
+        if "cancelled" in str(exc).lower() or "cancel" in str(exc).lower():
+            if _TUI_INSTANCE:
+                _TUI_INSTANCE.finish(success=False, message="Cancelled by user")
+            _LOG("\n❌  Upload cancelled.")
+            sys.exit(1)
+        raise
 
     finally:
         try:
@@ -1378,11 +1426,11 @@ def main() -> None:
         else:
             _TUI_INSTANCE.finish(success=True, message=f"Job submitted in {elapsed:.1f}s")
     else:
-        _LOG(f"✅  Job submitted successfully. Total time: {elapsed:.1f}s")
+        _log_if_no_tui(f"✅  Job submitted successfully. Total time: {elapsed:.1f}s")
         selection = input("\nOpen in browser? [y/n]: ").strip().lower()
         if selection in ("y", "yes"):
             webbrowser.open(web_url)
-            _LOG(f"🌐  Opened {web_url}")
+            _log_if_no_tui(f"🌐  Opened {web_url}")
 
 
 # ─── entry ───────────────────────────────────────────────────────

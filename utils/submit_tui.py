@@ -247,13 +247,15 @@ SYM_ARROW = "→"     # Transfer / mapping
 # ---------------------------------------------------------------------------
 @dataclass
 class FileEntry:
-    """A file with its status."""
+    """A file with its status and optional pack method."""
     path: str
-    status: str = "ok"  # "ok", "missing", "unreadable", "rewrite", "active"
+    status: str = "ok"  # "ok", "missing", "unreadable", "rewrite", "active", "copy", "compress"
+    method: str = ""  # "", "copy", "compress", "rewrite", "skip"
 
     def styled(self, max_len: int = 45) -> "Text":
         """Return styled text for this file entry."""
         t = Text()
+        # Status/method icon
         if self.status == "ok":
             t.append(f"{SYM_OK} ", style=STYLE_SUCCESS)
         elif self.status == "missing":
@@ -264,8 +266,26 @@ class FileEntry:
             t.append(f"{SYM_REWRITE} ", style=STYLE_ACCENT)
         elif self.status == "active":
             t.append(f"{SYM_ARROW} ", style=STYLE_ACCENT)
+        elif self.status == "copy":
+            t.append("◇ ", style=STYLE_ACCENT)  # Copy/map
+        elif self.status == "compress":
+            t.append("▣ ", style=STYLE_ACCENT)  # Compress/zip
         else:
             t.append("  ", style=STYLE_DIM)
+
+        # Method indicator for pack phase
+        if self.method:
+            method_icons = {
+                "copy": "→",      # File copied
+                "compress": "⊞",  # File compressed into zip
+                "rewrite": "↻",   # Blend rewritten
+                "skip": "⊘",      # Skipped (already exists)
+                "map": "⊕",       # Path mapped (PROJECT mode)
+            }
+            icon = method_icons.get(self.method, "")
+            if icon:
+                t.append(f"{icon} ", style=STYLE_MUTED)
+
         t.append(_shorten(self.path, max_len), style=STYLE_MUTED if self.status == "ok" else None)
         return t
 
@@ -296,6 +316,7 @@ class PackState:
     files_processed: int = 0
     files_packed: deque = field(default_factory=lambda: deque(maxlen=30))  # List of FileEntry
     current_file: str = ""
+    current_method: str = ""  # "copy", "compress", "rewrite", "map"
     bytes_total: int = 0
     bytes_processed: int = 0
     mode: str = ""  # "PROJECT" or "ZIP", set when pack_start is called
@@ -305,6 +326,7 @@ class PackState:
     start_time: float = 0.0
     elapsed_time: float = 0.0  # Frozen when done
     done: bool = False
+    show_completed_bar: bool = True  # Keep showing progress bar when done
 
 
 @dataclass
@@ -601,6 +623,7 @@ class RichSubmitTUI:
         else:
             packed_header = f"{action_word} Files"
 
+        # Stats with icons: rewrites, missing, unreadable
         stats_parts = []
         if s.rewritten_blends:
             stats_parts.append(f"{SYM_REWRITE}{len(s.rewritten_blends)}")
@@ -609,16 +632,25 @@ class RichSubmitTUI:
         if s.unreadable_files:
             stats_parts.append(f"{SYM_WARN}{len(s.unreadable_files)}")
 
+        # Add method legend for active pack
+        if is_active:
+            if mode == "ZIP":
+                stats_parts.append("▣=zip")
+            else:
+                stats_parts.append("⊕=map")
+
         stats_header = "  ".join(stats_parts) if stats_parts else ""
 
         table.add_column(packed_header, style=STYLE_MUTED if is_active else STYLE_DIM, no_wrap=True, ratio=3)
         table.add_column(stats_header, style=STYLE_MUTED if is_active else STYLE_DIM, no_wrap=True, ratio=1, justify="right")
 
-        # Show recent files being packed
+        # Show recent files being packed with method indicators
         files = list(s.files_packed)[-4:]
         for entry in files:
             if isinstance(entry, FileEntry):
-                table.add_row(entry.styled(50), Text(""))
+                # Show the file with method icon
+                file_text = entry.styled(50)
+                table.add_row(file_text, Text(""))
             else:
                 table.add_row(Text(str(entry), style=STYLE_MUTED), Text(""))
 
@@ -628,21 +660,25 @@ class RichSubmitTUI:
 
         # Progress bar / status at bottom - use frozen elapsed_time if done
         status_text = Text()
+        bar_width = 30
         if is_done:
             elapsed = s.elapsed_time if s.elapsed_time > 0 else 0
-            status_text.append(f"{SYM_OK} Complete", style=STYLE_SUCCESS)
-            status_text.append(f"  {s.files_processed} files  {elapsed:.1f}s", style=STYLE_DIM)
+            # Show completed progress bar (full green)
+            status_text.append(f"[100%] ", style=STYLE_SUCCESS)
+            status_text.append("█" * bar_width, style=STYLE_SUCCESS)
+            status_text.append(f"  {SYM_OK} {s.files_processed} files  {elapsed:.1f}s", style=STYLE_DIM)
         elif is_active:
             pct = int(100 * s.files_processed / s.files_total) if s.files_total > 0 else 0
             elapsed = time.time() - s.start_time if s.start_time else 0
             status_text.append(f"[{pct:3d}%] ", style=STYLE_ACCENT)
-            bar_width = 30
             filled = int(bar_width * s.files_processed / s.files_total) if s.files_total > 0 else 0
             status_text.append("█" * filled, style=STYLE_ACCENT)
             status_text.append("░" * (bar_width - filled), style=STYLE_DIM)
             status_text.append(f"  {elapsed:.1f}s", style=STYLE_DIM)
         else:
-            status_text.append(f"{SYM_PENDING} Waiting...", style=STYLE_DIM)
+            status_text.append(f"[  0%] ", style=STYLE_DIM)
+            status_text.append("░" * bar_width, style=STYLE_DIM)
+            status_text.append(f"  {SYM_PENDING} Waiting...", style=STYLE_DIM)
 
         # Title and border style based on state
         display_mode = s.mode if s.mode else self.state.upload_type
@@ -748,6 +784,7 @@ class RichSubmitTUI:
         elif is_active:
             elapsed = time.time() - s.start_time if s.start_time else 0
             status_text.append(f"Uploading...  {elapsed:.1f}s", style=STYLE_MUTED)
+            status_text.append("  [ESC to cancel]", style=STYLE_DIM)
         else:
             status_text.append(f"{SYM_PENDING} Waiting...", style=STYLE_DIM)
         parts.append(status_text)
@@ -905,6 +942,8 @@ class RichSubmitTUI:
 
     def start(self) -> None:
         """Start the live display."""
+        # Clear console before starting to prevent any flash from previous output
+        self.console.clear()
         # Note: TTY check is done in SubmitTUI.__init__ - if we get here, we should render
         self._live = Live(
             self._render(),
@@ -1009,6 +1048,9 @@ class TUIProgressCallback:
         """Called for every rewritten blendfile."""
         name = _shorten(str(orig_filename), 50)
         self.state.pack.rewritten_blends.append(name)
+        # Add to files packed with rewrite method
+        entry = FileEntry(_shorten(str(orig_filename), 45), "rewrite", method="rewrite")
+        self.state.pack.files_packed.append(entry)
         self._maybe_update()
 
     def transfer_file(self, src: Path, dst: Path) -> None:
@@ -1016,22 +1058,32 @@ class TUIProgressCallback:
         name = _shorten(str(src), 50)
         self.state.pack.current_file = name
         self.state.pack.files_processed += 1
+        # Determine method from mode
+        mode = self.state.pack.mode or self.state.upload_type
+        method = "compress" if mode == "ZIP" else "map"
+        entry = FileEntry(_shorten(str(src), 45), method, method=method)
+        self.state.pack.files_packed.append(entry)
         self._maybe_update()
 
     def transfer_file_skipped(self, src: Path, dst: Path) -> None:
         """Called when a file is skipped because it already exists."""
         self.state.pack.files_processed += 1
+        entry = FileEntry(_shorten(str(src), 45), "ok", method="skip")
+        self.state.pack.files_packed.append(entry)
         self._maybe_update()
 
     def transfer_progress(self, total_bytes: int, transferred_bytes: int) -> None:
         """Called during file transfer, with per-pack info."""
         self.state.pack.bytes_total = total_bytes
         self.state.pack.bytes_processed = transferred_bytes
-        self._maybe_update()
+        # Force update for byte-level progress
+        self.update_fn()
 
     def missing_file(self, filename: Path) -> None:
         """Called for every asset that does not exist on the filesystem."""
         self.state.pack.missing_files.append(str(filename))
+        entry = FileEntry(_shorten(str(filename), 45), "missing", method="")
+        self.state.pack.files_packed.append(entry)
         self._maybe_update()
 
 
@@ -1179,6 +1231,7 @@ class SubmitTUI:
         self._force_tui = force_tui
         self._ui: Any = None
         self._lock = threading.Lock()
+        self._cancelled = False  # Track if user pressed ESC
 
     def start(self) -> None:
         """Start the TUI display."""
@@ -1186,7 +1239,36 @@ class SubmitTUI:
             self._ui = PlainTextUI(self.state)
         else:
             self._ui = RichSubmitTUI(self.state, force=self._force_tui)
-            self._ui.start()
+            self._ui.start()  # RichSubmitTUI.start() clears console
+
+    @property
+    def cancelled(self) -> bool:
+        """Check if user has cancelled via ESC."""
+        return self._cancelled
+
+    def check_cancel(self) -> bool:
+        """Non-blocking check if ESC was pressed. Returns True if cancelled."""
+        if self._cancelled:
+            return True
+        # Non-blocking key check
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+                if msvcrt.kbhit():
+                    ch = msvcrt.getch()
+                    if ch == b'\x1b':  # ESC
+                        self._cancelled = True
+                        return True
+            else:
+                import select
+                if select.select([sys.stdin], [], [], 0)[0]:
+                    ch = sys.stdin.read(1)
+                    if ch == '\x1b':
+                        self._cancelled = True
+                        return True
+        except Exception:
+            pass
+        return False
 
     def update(self) -> None:
         """Update the display."""
@@ -1274,17 +1356,24 @@ class SubmitTUI:
         self.state.pack.start_time = time.time()
         self.update()
 
-    def pack_file(self, path: str, size: int = 0, status: str = "ok") -> None:
+    def pack_file(self, path: str, size: int = 0, status: str = "ok", method: str = "") -> None:
         """Called when a file is being packed.
 
         Args:
             path: File path
             size: File size in bytes
-            status: "ok", "missing", "unreadable", or "rewrite"
+            status: "ok", "missing", "unreadable", "rewrite", "copy", or "compress"
+            method: Pack method - "copy", "compress", "rewrite", "map", "skip"
         """
-        entry = FileEntry(_shorten(path, 45), status)
+        # Auto-detect method from mode if not specified
+        if not method and self.state.pack.mode:
+            method = "compress" if self.state.pack.mode == "ZIP" else "map"
+        # Use method as status if status is generic "ok"
+        display_status = method if method and status == "ok" else status
+        entry = FileEntry(_shorten(path, 45), display_status, method)
         self.state.pack.files_packed.append(entry)
         self.state.pack.current_file = _shorten(path, 50)
+        self.state.pack.current_method = method
         self.state.pack.files_processed += 1
         self.state.pack.bytes_processed += size
         if self.state.pack.files_processed % 3 == 0:
@@ -1293,21 +1382,21 @@ class SubmitTUI:
     def pack_rewrite(self, path: str) -> None:
         """Called when a blendfile is rewritten."""
         self.state.pack.rewritten_blends.append(_shorten(path, 50))
-        entry = FileEntry(_shorten(path, 45), "rewrite")
+        entry = FileEntry(_shorten(path, 45), "rewrite", method="rewrite")
         self.state.pack.files_packed.append(entry)
         self.update()
 
     def pack_missing(self, path: str) -> None:
         """Called when a file is missing."""
         self.state.pack.missing_files.append(path)
-        entry = FileEntry(_shorten(path, 45), "missing")
+        entry = FileEntry(_shorten(path, 45), "missing", method="")
         self.state.pack.files_packed.append(entry)
         self.update()
 
     def pack_unreadable(self, path: str, error: str) -> None:
         """Called when a file is unreadable."""
         self.state.pack.unreadable_files[path] = error
-        entry = FileEntry(_shorten(path, 45), "unreadable")
+        entry = FileEntry(_shorten(path, 45), "unreadable", method="")
         self.state.pack.files_packed.append(entry)
         self.update()
 
@@ -1445,10 +1534,7 @@ class SubmitTUI:
             hotkeys: List of hotkeys (e.g., ["y", "n"]). Defaults to ["y", "n"] for 2 options.
             selected: Index of initially selected option (default 0)
         """
-        # Clear screen first
-        if self._ui and hasattr(self._ui, "console"):
-            self._ui.console.clear()
-
+        # Update state first
         self.state.current_phase = "question"
         self.state.question_title = title
         self.state.question_text = text
@@ -1461,20 +1547,34 @@ class SubmitTUI:
                 hotkeys = [str(i + 1) for i in range(len(options))]
         self.state.question_hotkeys = hotkeys
         self.state.question_selected = selected
-        self.update()
+
+        # Stop current display, clear, restart with new content
+        if self._ui and hasattr(self._ui, "_live") and self._ui._live:
+            self._ui.stop()
+            if hasattr(self._ui, "console"):
+                self._ui.console.clear()
+            self._ui.start()
+        elif self._ui:
+            self.update()
 
     def clear_question(self) -> None:
         """Clear the question prompt and return to main progress view."""
+        # Update state first
         self.state.current_phase = "init"
         self.state.question_title = ""
         self.state.question_text = ""
         self.state.question_options = []
         self.state.question_hotkeys = []
         self.state.question_selected = 0
-        # Clear and redraw
-        if self._ui and hasattr(self._ui, "console"):
-            self._ui.console.clear()
-        self.update()
+
+        # Stop current display, clear, restart with new content
+        if self._ui and hasattr(self._ui, "_live") and self._ui._live:
+            self._ui.stop()
+            if hasattr(self._ui, "console"):
+                self._ui.console.clear()
+            self._ui.start()
+        elif self._ui:
+            self.update()
 
     def clear_screen(self) -> None:
         """Clear the terminal screen."""
@@ -1539,7 +1639,6 @@ class SubmitTUI:
 
         Returns: 'y' for update, 'n' for skip, 'ESC' for cancel
         """
-        self.clear_screen()
         self.show_question(
             title="Update Available",
             text=f"A new version of Superluminal is available!\n\n"
@@ -1549,7 +1648,7 @@ class SubmitTUI:
             hotkeys=["y", "n"],
         )
         key = self.wait_for_key(["y", "n"])
-        self.clear_screen()
+        self.clear_question()
         return key
 
     def show_browser_prompt(self, job_name: str = "", elapsed: float = 0) -> str:
@@ -1561,7 +1660,11 @@ class SubmitTUI:
         """
         message = f"Job submitted in {elapsed:.1f}s" if elapsed else "Job submitted!"
         self.state.current_phase = "done"
+        # Force immediate UI update before waiting for key
         self.show_inline_prompt(message, "Open in browser [y]  Close [n]")
+        # Ensure display is refreshed before blocking on key input
+        if self._ui and hasattr(self._ui, "update"):
+            self._ui.update()
         key = self.wait_for_key(["y", "n"])
         self.clear_inline_prompt()
         return key

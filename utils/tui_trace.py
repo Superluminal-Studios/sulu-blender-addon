@@ -134,11 +134,15 @@ def pack_with_tui(
 
     # Create TUI-feeding callback
     class TUIPackCallback(pack_progress.Callback):
+        def __init__(self):
+            self._file_count = 0
+
         def pack_start(self) -> None:
             pass  # We set phase before calling
 
         def pack_done(self, output_blendfile, missing_files) -> None:
-            tui.pack_done()
+            # Don't call tui.pack_done() here - we do it after packer closes
+            pass
 
         def pack_aborted(self, reason: str) -> None:
             tui.set_error(f"Pack aborted: {reason}")
@@ -153,18 +157,30 @@ def pack_with_tui(
             tui.pack_rewrite(str(orig_filename))
 
         def transfer_file(self, src: Path, dst) -> None:
+            self._file_count += 1
             try:
                 size = src.stat().st_size if src.exists() else 0
             except Exception:
                 size = 0
-            tui.pack_file(str(src), size)
+            # Determine method based on mode and dst type
+            if method == "ZIP":
+                pack_method = "compress"
+            else:
+                pack_method = "map"
+            tui.pack_file(str(src), size, method=pack_method)
+            # Force update every file for ZIP mode to show progress
+            if method == "ZIP":
+                tui.update()
 
         def transfer_file_skipped(self, src: Path, dst) -> None:
-            tui.pack_file(str(src), 0)
+            self._file_count += 1
+            tui.pack_file(str(src), 0, method="skip")
 
         def transfer_progress(self, total_bytes: int, transferred_bytes: int) -> None:
-            # Update TUI progress
-            pass
+            # Update byte-level progress for ZIP compression
+            tui.state.pack.bytes_total = total_bytes
+            tui.state.pack.bytes_processed = transferred_bytes
+            tui.update()
 
         def missing_file(self, filename: Path) -> None:
             tui.pack_missing(str(filename))
@@ -251,7 +267,7 @@ def pack_with_tui(
         # Start pack with estimated file count
         tui.pack_start(total_files=100, mode="ZIP")
 
-        with zipped.ZipPacker(infile_p, project_p, Path(target)) as packer:
+        with zipped.ZipPacker(infile_p, project_p, Path(target), quiet=True) as packer:
             packer.progress_cb = callback
             packer.strategise()
 

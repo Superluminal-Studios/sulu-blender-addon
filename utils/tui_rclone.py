@@ -15,6 +15,11 @@ if TYPE_CHECKING:
     from .submit_tui import SubmitTUI
 
 
+class CancelledError(Exception):
+    """Raised when user cancels via ESC."""
+    pass
+
+
 def run_rclone_with_tui(
     base: List[str],
     verb: str,
@@ -42,6 +47,7 @@ def run_rclone_with_tui(
 
     Raises:
         RuntimeError: If rclone fails
+        CancelledError: If user presses ESC
     """
     import os
     import re
@@ -161,6 +167,15 @@ def run_rclone_with_tui(
         real_total = initial_size
 
         for raw in proc.stdout:
+            # Check for cancellation
+            if tui.check_cancel():
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except:
+                    proc.kill()
+                raise CancelledError("Upload cancelled by user")
+
             fragments = raw.rstrip("\n").split("\r")
             for frag in fragments:
                 line = frag.strip()

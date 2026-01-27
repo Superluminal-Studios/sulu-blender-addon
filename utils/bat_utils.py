@@ -240,7 +240,6 @@ def pack_blend(
       - if return_report=True, returns a dict with missing/unreadable details
     """
     infile_p = Path(infile)
-    print(f"Packing blend: {project_path}")
 
     if method == "PROJECT":
         if project_path is None:
