@@ -30,11 +30,17 @@ import shutil
 import tempfile
 import time
 import types
+import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import webbrowser
 
 import requests
+
+
+def _nfc(s: str) -> str:
+    """Normalize string to NFC form (matches BAT's archive path normalization)."""
+    return unicodedata.normalize("NFC", str(s))
 
 
 # ─── Lightweight logger fallback ──────────────────────────────────
@@ -792,6 +798,7 @@ def main() -> None:
         abs_blend = _norm_abs_for_detection(blend_path)
         rel_manifest: List[str] = []
         required_storage = 0
+        blend_rel_from_bat: Optional[str] = None  # Track BAT's computed path for main blend
 
         # Iterate over file_map entries: src_path -> packed_path (relative to target)
         total_files = len(fmap)
@@ -801,8 +808,8 @@ def main() -> None:
 
             # Skip the main blend file (uploaded separately)
             if _samepath(src_str, abs_blend):
-                # Capture main blend's relative path for upload
-                blend_rel = dst_str
+                # Capture main blend's relative path from BAT's file_map
+                blend_rel_from_bat = dst_str
                 continue
 
             # Probe readability and accumulate size
@@ -813,8 +820,8 @@ def main() -> None:
                     required_storage += os.path.getsize(src_str)
                 except Exception:
                     pass
-                # Use BAT's computed destination path for manifest
-                rel = _s3key_clean(dst_str)
+                # Use BAT's computed destination path for manifest (NFC to match BAT archive)
+                rel = _nfc(_s3key_clean(dst_str))
                 if rel:
                     rel_manifest.append(rel)
             else:
@@ -834,9 +841,14 @@ def main() -> None:
             for rel in rel_manifest:
                 fp.write(f"{rel}\n")
 
-        # Compute main blend's S3 key from BAT's file_map or fallback
-        blend_rel = _relpath_safe(abs_blend, common_path)
-        main_blend_s3 = _s3key_clean(blend_rel) or os.path.basename(abs_blend)
+        # Compute main blend's S3 key: prefer BAT's file_map, fallback to manual computation
+        if blend_rel_from_bat:
+            # Use BAT's computed destination path (handles _outside_project correctly)
+            blend_rel = blend_rel_from_bat
+        else:
+            # Fallback if blend wasn't in file_map (shouldn't happen, but be defensive)
+            blend_rel = _relpath_safe(abs_blend, common_path)
+        main_blend_s3 = _nfc(_s3key_clean(blend_rel) or os.path.basename(abs_blend))
 
         _LOG(
             f"\n📄  [Summary] to upload: {len(rel_manifest)} dependencies (+ main .blend), "
@@ -980,7 +992,7 @@ def main() -> None:
                 ],)
         else:
             _LOG("📤  Uploading the main .blend\n")
-            move_to_path = _s3key_clean(f"{project_name}/{main_blend_s3}")
+            move_to_path = _nfc(_s3key_clean(f"{project_name}/{main_blend_s3}"))
             remote_main = f":s3:{bucket}/{move_to_path}"
             run_rclone(
                 base_cmd,
@@ -1026,7 +1038,7 @@ def main() -> None:
                 )
 
             with filelist.open("a", encoding="utf-8") as fp:
-                fp.write(_s3key_clean(main_blend_s3) + "\n")
+                fp.write(_nfc(_s3key_clean(main_blend_s3)) + "\n")
 
             _LOG("📤  Uploading dependency manifest\n")
             run_rclone(
@@ -1080,7 +1092,7 @@ def main() -> None:
             "project_id": data["project"]["id"],
             "packed_addons": data["packed_addons"],
             "organization_id": org_id,
-            "main_file": str(Path(blend_path).relative_to(project_root_str)).replace("\\", "/") if not use_project else _s3key_clean(main_blend_s3),
+            "main_file": _nfc(str(Path(blend_path).relative_to(project_root_str)).replace("\\", "/")) if not use_project else _nfc(_s3key_clean(main_blend_s3)),
             "project_path": project_name,
             "name": data["job_name"],
             "status": "queued",
