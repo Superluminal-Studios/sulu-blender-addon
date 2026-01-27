@@ -177,3 +177,10 @@ cython_debug/
 rclone/
 
 session.json
+
+# Dev config (contains local paths)
+dev_config.json
+
+# Submission reports (keep directory, ignore contents)
+reports/*
+!reports/.gitkeep

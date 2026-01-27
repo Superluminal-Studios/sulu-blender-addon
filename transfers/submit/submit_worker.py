@@ -256,6 +256,249 @@ def _should_moveto_local_file(local_path: str, original_blend_path: str) -> bool
     return False
 
 
+# ─── Report generation helpers ─────────────────────────────────────
+
+
+def _format_size(size_bytes: int) -> str:
+    """Format bytes as human readable."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+def _generate_report(
+    blend_path: str,
+    dep_paths: List[Path],
+    missing_set: set,
+    unreadable_dict: dict,
+    project_root: Path,
+    same_drive_deps: List[Path],
+    cross_drive_deps: List[Path],
+    upload_type: str,
+    addon_dir: Optional[str] = None,
+    job_id: Optional[str] = None,
+    mode: str = "test",
+) -> Tuple[dict, Optional[Path]]:
+    """
+    Generate a diagnostic report and save it to the reports directory.
+
+    Returns: (report_dict, report_path) where report_path is None if saving failed.
+    """
+    from datetime import datetime
+
+    # Build report data
+    blend_size = 0
+    try:
+        blend_size = os.path.getsize(blend_path)
+    except:
+        pass
+
+    # Classify by extension
+    by_ext: Dict[str, int] = {}
+    total_size = 0
+    for dep in dep_paths:
+        ext = dep.suffix.lower() if dep.suffix else "(no ext)"
+        by_ext[ext] = by_ext.get(ext, 0) + 1
+        if dep.exists() and dep.is_file():
+            try:
+                total_size += dep.stat().st_size
+            except:
+                pass
+
+    report = {
+        "report_version": "1.0",
+        "generated_at": datetime.now().isoformat(),
+        "mode": mode,
+        "upload_type": upload_type,
+        "blend_file": {
+            "path": str(blend_path),
+            "name": os.path.basename(blend_path),
+            "size_bytes": blend_size,
+            "size_human": _format_size(blend_size),
+        },
+        "project_root": str(project_root),
+        "dependencies": {
+            "total_count": len(dep_paths),
+            "total_size_bytes": total_size,
+            "total_size_human": _format_size(total_size),
+            "by_extension": dict(sorted(by_ext.items(), key=lambda x: -x[1])),
+            "same_drive_count": len(same_drive_deps),
+            "cross_drive_count": len(cross_drive_deps),
+        },
+        "issues": {
+            "missing_count": len(missing_set),
+            "missing_files": [str(p) for p in sorted(missing_set)],
+            "unreadable_count": len(unreadable_dict),
+            "unreadable_files": {str(k): v for k, v in sorted(unreadable_dict.items())},
+            "cross_drive_count": len(cross_drive_deps),
+            "cross_drive_files": [str(p) for p in sorted(cross_drive_deps)],
+        },
+        "all_dependencies": [str(p) for p in sorted(dep_paths)],
+    }
+
+    # Add job_id if available
+    if job_id:
+        report["job_id"] = job_id
+
+    # Save report to file
+    report_path = None
+    try:
+        # Determine reports directory
+        if addon_dir:
+            reports_dir = Path(addon_dir) / "reports"
+        else:
+            # Fallback: try to find addon dir from this file's location
+            reports_dir = Path(__file__).parent.parent.parent / "reports"
+
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate filename: submit_report_YYYYMMDD_HHMMSS_<blend_name>.json
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        blend_name = Path(blend_path).stem[:30]  # Truncate long names
+        # Sanitize blend name for filename
+        blend_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in blend_name)
+        filename = f"submit_report_{timestamp}_{blend_name}.json"
+
+        report_path = reports_dir / filename
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, default=str)
+
+    except Exception as e:
+        _LOG(f"Warning: Could not save report: {e}")
+        report_path = None
+
+    return report, report_path
+
+
+def _run_test_mode(
+    blend_path: str,
+    dep_paths: List[Path],
+    missing_set: set,
+    unreadable_dict: dict,
+    project_root: Path,
+    same_drive_deps: List[Path],
+    cross_drive_deps: List[Path],
+    upload_type: str,
+    shorten_path_fn,
+    addon_dir: Optional[str] = None,
+) -> None:
+    """
+    Run in test mode: display comprehensive dependency information without submitting.
+    Also generates a diagnostic report.
+    """
+    _LOG("\n" + "=" * 70)
+    _LOG(f"  SUBMISSION TEST MODE - {upload_type}")
+    _LOG("=" * 70)
+
+    _LOG(f"\n[1/6] Blend file: {blend_path}")
+    try:
+        _LOG(f"      Size: {_format_size(os.path.getsize(blend_path))}")
+    except:
+        pass
+
+    _LOG(f"\n[2/6] Dependencies traced: {len(dep_paths)}")
+
+    _LOG(f"\n[3/6] Project root: {project_root}")
+    _LOG(f"      Same-drive deps: {len(same_drive_deps)}")
+    _LOG(f"      Cross-drive deps: {len(cross_drive_deps)}")
+
+    # Classify by extension
+    by_ext: Dict[str, List[Path]] = {}
+    total_size = 0
+    for dep in dep_paths:
+        ext = dep.suffix.lower() if dep.suffix else "(no ext)"
+        by_ext.setdefault(ext, []).append(dep)
+        if dep.exists() and dep.is_file():
+            try:
+                total_size += dep.stat().st_size
+            except:
+                pass
+
+    _LOG(f"\n[4/6] Dependency breakdown:")
+    _LOG(f"      By extension:")
+    for ext, paths in sorted(by_ext.items(), key=lambda x: -len(x[1])):
+        _LOG(f"        {ext:12} : {len(paths):4} files")
+    _LOG(f"\n      Total size: {_format_size(total_size)}")
+
+    # Issues
+    _LOG(f"\n[5/6] Issues:")
+
+    if missing_set:
+        _LOG(f"\n      MISSING ({len(missing_set)}):")
+        for p in sorted(missing_set)[:15]:
+            _LOG(f"        - {shorten_path_fn(str(p))}")
+        if len(missing_set) > 15:
+            _LOG(f"        ... and {len(missing_set) - 15} more")
+    else:
+        _LOG(f"      No missing files")
+
+    if unreadable_dict:
+        _LOG(f"\n      UNREADABLE ({len(unreadable_dict)}):")
+        for p, err in sorted(unreadable_dict.items())[:10]:
+            _LOG(f"        - {shorten_path_fn(str(p))}")
+            _LOG(f"          {err}")
+        if len(unreadable_dict) > 10:
+            _LOG(f"        ... and {len(unreadable_dict) - 10} more")
+    else:
+        _LOG(f"      No unreadable files")
+
+    if cross_drive_deps:
+        _LOG(f"\n      CROSS-DRIVE ({len(cross_drive_deps)}):")
+        for p in cross_drive_deps[:15]:
+            _LOG(f"        - {shorten_path_fn(str(p))}")
+        if len(cross_drive_deps) > 15:
+            _LOG(f"        ... and {len(cross_drive_deps) - 15} more")
+    else:
+        _LOG(f"      No cross-drive files")
+
+    # Generate report
+    _LOG(f"\n[6/6] Generating report...")
+    report, report_path = _generate_report(
+        blend_path=blend_path,
+        dep_paths=dep_paths,
+        missing_set=missing_set,
+        unreadable_dict=unreadable_dict,
+        project_root=project_root,
+        same_drive_deps=same_drive_deps,
+        cross_drive_deps=cross_drive_deps,
+        upload_type=upload_type,
+        addon_dir=addon_dir,
+        mode="test",
+    )
+
+    if report_path:
+        _LOG(f"      Report saved: {report_path}")
+    else:
+        _LOG(f"      Report could not be saved to file")
+
+    # Summary
+    _LOG("\n" + "=" * 70)
+    _LOG("  SUMMARY")
+    _LOG("=" * 70)
+
+    issues = len(missing_set) + len(unreadable_dict) + len(cross_drive_deps)
+    if issues == 0:
+        _LOG("\n  [OK] No issues detected. Ready for submission.")
+    else:
+        _LOG(f"\n  [INFO] {issues} issue(s) to review:")
+        if missing_set:
+            _LOG(f"    - {len(missing_set)} missing file(s)")
+        if unreadable_dict:
+            _LOG(f"    - {len(unreadable_dict)} unreadable file(s)")
+        if cross_drive_deps and upload_type == "PROJECT":
+            _LOG(f"    - {len(cross_drive_deps)} cross-drive file(s) (excluded in PROJECT mode)")
+
+    _LOG("\n  [TEST MODE] No actual submission performed.")
+    if report_path:
+        _LOG(f"  [REPORT] Full details saved to: {report_path}")
+    _LOG("=" * 70 + "\n")
+
+
 # ─── Worker bootstrap (safe to import) ────────────────────────────
 
 def _load_handoff_from_argv(argv: List[str]) -> Dict[str, object]:
@@ -296,6 +539,8 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
 
     bat_utils = importlib.import_module(f"{pkg_name}.utils.bat_utils")
     pack_blend = bat_utils.pack_blend
+    trace_dependencies = bat_utils.trace_dependencies
+    compute_project_root = bat_utils.compute_project_root
 
     rclone = importlib.import_module(f"{pkg_name}.transfers.rclone")
     run_rclone = rclone.run_rclone
@@ -310,6 +555,8 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "_build_base": _build_base,
         "CLOUDFLARE_R2_DOMAIN": CLOUDFLARE_R2_DOMAIN,
         "pack_blend": pack_blend,
+        "trace_dependencies": trace_dependencies,
+        "compute_project_root": compute_project_root,
         "run_rclone": run_rclone,
         "ensure_rclone": ensure_rclone,
     }
@@ -330,6 +577,8 @@ def main() -> None:
     _build_base = mods["_build_base"]
     CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
     pack_blend = mods["pack_blend"]
+    trace_dependencies = mods["trace_dependencies"]
+    compute_project_root = mods["compute_project_root"]
     run_rclone = mods["run_rclone"]
     ensure_rclone = mods["ensure_rclone"]
 
@@ -405,13 +654,16 @@ def main() -> None:
 
     # Local paths / settings
     blend_path: str = data["blend_path"]
-    project_path = (blend_path.replace("\\", "/").split("/")[0] + "/")  # drive root (Windows) or '/' (POSIX)
 
     use_project: bool = bool(data["use_project_upload"])
     automatic_project_path: bool = bool(data["automatic_project_path"])
-    custom_project_path: str = data["custom_project_path"]
+    custom_project_path_str: str = data["custom_project_path"]
     job_id: str = data["job_id"]
     tmp_blend: str = data["temp_blend_path"]
+
+    # Test mode flags (optional in handoff)
+    test_mode: bool = bool(data.get("test_mode", False))
+    no_submit: bool = bool(data.get("no_submit", False))
 
     zip_file = Path(tempfile.gettempdir()) / f"{job_id}.zip"
     filelist = Path(tempfile.gettempdir()) / f"{job_id}.txt"
@@ -426,64 +678,49 @@ def main() -> None:
     # Pack assets
     if use_project:
         _LOG("🔍  Scanning project files, this can take a while…\n")
-        fmap = pack_blend(
-            blend_path,
-            target="",
-            method="PROJECT",
-            project_path=project_path,
+
+        # 1. Trace dependencies (lightweight, before BAT packing)
+        dep_paths, missing_set, unreadable_dict = trace_dependencies(Path(blend_path))
+
+        # 2. Compute project root BEFORE calling BAT
+        custom_root = None
+        if not automatic_project_path:
+            if not custom_project_path_str or not str(custom_project_path_str).strip():
+                warn(
+                    "Custom Project Path is empty. Either enable Automatic Project Path or set a valid folder.",
+                    emoji="w",
+                    close_window=True,
+                )
+            custom_root = Path(custom_project_path_str)
+
+        project_root, same_drive_deps, cross_drive_deps = compute_project_root(
+            Path(blend_path), dep_paths, custom_root
         )
+        common_path = str(project_root).replace("\\", "/")
+        _LOG(f"ℹ️  Using project root: {shorten_path(common_path)}")
 
-        # Normalize all dependency paths to absolute (OS-agnostic)
-        abs_blend = _norm_abs_for_detection(blend_path)
-        blend_drive = _drive(abs_blend)
+        # TEST MODE: Show comprehensive info and exit early
+        if test_mode:
+            _run_test_mode(
+                blend_path=blend_path,
+                dep_paths=dep_paths,
+                missing_set=missing_set,
+                unreadable_dict=unreadable_dict,
+                project_root=project_root,
+                same_drive_deps=same_drive_deps,
+                cross_drive_deps=cross_drive_deps,
+                upload_type="PROJECT",
+                shorten_path_fn=shorten_path,
+                addon_dir=str(data["addon_dir"]),
+            )
+            input("\nPress ENTER to close this window...")
+            sys.exit(0)
 
-        abs_files_all: List[str] = []
-        for f in fmap.keys():
-            raw = str(f).replace("\\", "/")
-            if _is_win_drive_path(raw) or raw.startswith("//") or raw.startswith("\\\\"):
-                f_abs = raw
-            elif os.path.isabs(raw):
-                f_abs = _norm_abs_for_detection(raw)
-            else:
-                f_abs = _norm_abs_for_detection(os.path.join(os.path.dirname(abs_blend), raw))
-            abs_files_all.append(f_abs)
-
-        if abs_blend not in abs_files_all:
-            abs_files_all.insert(0, abs_blend)
-
-        # Classify files: ok / missing / unreadable
-        ok_files: List[str] = []
-        missing_files: List[str] = []
-        unreadable_files: List[Tuple[str, str]] = []
-
-        required_storage = 0
-        for idx, p in enumerate(abs_files_all):
-            # We intentionally test readability, not just existence.
-            ok, err = _probe_readable_file(p)
-            if ok:
-                ok_files.append(p)
-                _LOG(f"✅  [{idx + 1}/{len(abs_files_all)}] {shorten_path(p)}")
-                try:
-                    required_storage += os.path.getsize(p)
-                except Exception:
-                    pass
-            else:
-                if err == "missing":
-                    missing_files.append(p)
-                    _LOG(f"⚠️  [{idx + 1}/{len(abs_files_all)}] {shorten_path(p)} — not found")
-                else:
-                    unreadable_files.append((p, err or "unreadable"))
-                    _LOG(f"❌  [{idx + 1}/{len(abs_files_all)}] {shorten_path(p)} — unreadable")
-
-        # Split ok files by drive/root
-        on_drive_ok = [p for p in ok_files if _drive(p) == blend_drive]
-        off_drive_ok = [p for p in ok_files if _drive(p) != blend_drive]
-
-        # Warn for cross-drive (as before)
-        if off_drive_ok:
+        # 3. Warn about cross-drive dependencies
+        if cross_drive_deps:
             warn(
-                f"{len(off_drive_ok)} file(s) are on a different drive/root. "
-                "They may not upload reliably with Project upload. Consider Zip upload.",
+                f"{len(cross_drive_deps)} file(s) are on a different drive/root. "
+                "They will be excluded from Project upload. Consider Zip upload.",
                 emoji="w",
                 close_window=False,
                 new_line=True,
@@ -493,13 +730,15 @@ def main() -> None:
             if answer.lower() != "y":
                 sys.exit(1)
 
-        # Warn for missing/unreadable (new)
+        # 4. Warn about missing/unreadable
+        missing_files_list = [str(p) for p in sorted(missing_set)]
+        unreadable_files_list = [(str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))]
         _print_missing_unreadable_summary(
-            missing_files,
-            unreadable_files,
+            missing_files_list,
+            unreadable_files_list,
             header="Project upload dependency check",
         )
-        if missing_files or unreadable_files:
+        if missing_files_list or unreadable_files_list:
             warn(
                 "Some dependencies are missing or unreadable. This can cause missing textures/linked data on the farm.",
                 emoji="w",
@@ -510,67 +749,107 @@ def main() -> None:
             if answer.lower() != "y":
                 sys.exit(1)
 
-        # Determine common_path only from on-drive OK files (reduces false roots)
-        if on_drive_ok:
-            try:
-                common_path = os.path.commonpath(on_drive_ok).replace("\\", "/")
-            except ValueError:
-                common_path = os.path.dirname(abs_blend)
-        else:
-            common_path = os.path.dirname(abs_blend)
+        # 5. Pack with correct project root (now BAT uses the computed root)
+        fmap, report = pack_blend(
+            blend_path,
+            target="",
+            method="PROJECT",
+            project_path=common_path,
+            return_report=True,
+        )
 
-        if os.path.isfile(common_path) or _samepath(common_path, abs_blend):
-            common_path = os.path.dirname(abs_blend)
-            _LOG(f"ℹ️  Using the .blend's folder as the Project Path: {shorten_path(common_path)}")
-
-        if not automatic_project_path:
-            if not custom_project_path or not str(custom_project_path).strip():
-                warn(
-                    "Custom Project Path is empty. Either enable Automatic Project Path or set a valid folder.",
-                    emoji="w",
-                    close_window=True,
-                )
-            custom_base = _norm_abs_for_detection(custom_project_path)
-            if os.path.isfile(custom_base):
-                custom_base = os.path.dirname(custom_base)
-                _LOG(f"ℹ️  The chosen Project Path points to a file. Using its folder: {shorten_path(custom_base)}")
-            common_path = custom_base
-
-        # Build manifest from on-drive, OK, non-main-blend files
+        # 6. Build manifest from BAT's file_map directly
+        abs_blend = _norm_abs_for_detection(blend_path)
         rel_manifest: List[str] = []
-        for p in on_drive_ok:
-            if _samepath(_norm_abs_for_detection(p), abs_blend):
+        required_storage = 0
+
+        # Iterate over file_map entries: src_path -> packed_path (relative to target)
+        total_files = len(fmap)
+        for idx, (src_path, dst_path) in enumerate(fmap.items()):
+            src_str = str(src_path).replace("\\", "/")
+            dst_str = str(dst_path).replace("\\", "/")
+
+            # Skip the main blend file (uploaded separately)
+            if _samepath(src_str, abs_blend):
+                # Capture main blend's relative path for upload
+                blend_rel = dst_str
                 continue
-            try:
-                rel = _relpath_safe(p, common_path)
-                rel = _s3key_clean(rel)
+
+            # Probe readability and accumulate size
+            ok, err = _probe_readable_file(src_str)
+            if ok:
+                _LOG(f"✅  [{idx + 1}/{total_files}] {shorten_path(src_str)}")
+                try:
+                    required_storage += os.path.getsize(src_str)
+                except Exception:
+                    pass
+                # Use BAT's computed destination path for manifest
+                rel = _s3key_clean(dst_str)
                 if rel:
                     rel_manifest.append(rel)
-            except Exception:
-                _LOG(
-                    f"⚠️  Couldn't compute a relative path under the project root for: {shorten_path(p)}. "
-                    "Consider switching to Zip or choosing a higher-level Project Path."
-                )
+            else:
+                if err == "missing":
+                    _LOG(f"⚠️  [{idx + 1}/{total_files}] {shorten_path(src_str)} — not found")
+                else:
+                    _LOG(f"❌  [{idx + 1}/{total_files}] {shorten_path(src_str)} — unreadable")
 
-        # Write ALL dependencies (do NOT drop the last entry)
+        # Include main blend in storage calculation
+        try:
+            required_storage += os.path.getsize(blend_path)
+        except Exception:
+            pass
+
+        # Write manifest file
         with filelist.open("w", encoding="utf-8") as fp:
             for rel in rel_manifest:
                 fp.write(f"{rel}\n")
 
+        # Compute main blend's S3 key from BAT's file_map or fallback
         blend_rel = _relpath_safe(abs_blend, common_path)
         main_blend_s3 = _s3key_clean(blend_rel) or os.path.basename(abs_blend)
 
         _LOG(
             f"\n📄  [Summary] to upload: {len(rel_manifest)} dependencies (+ main .blend), "
-            f"excluded (other drives): {len(off_drive_ok)}, missing on disk: {len(missing_files)}, unreadable: {len(unreadable_files)}"
+            f"excluded (other drives): {len(cross_drive_deps)}, missing on disk: {len(missing_files_list)}, unreadable: {len(unreadable_files_list)}"
         )
 
-    else:
+    else:  # ZIP mode
         _LOG("📦  Creating a single zip with all dependencies, this can take a while…")
-        abs_blend_norm = _norm_abs_for_detection(blend_path)
 
-        # NEW: request a report so we can print missing/unreadable info from packer
-        zip_report = pack_blend(abs_blend_norm, str(zip_file), method="ZIP", return_report=True)
+        # 1. Trace dependencies (lightweight, before BAT packing)
+        dep_paths, missing_set, unreadable_dict = trace_dependencies(Path(blend_path))
+
+        # 2. Compute project root for cleaner zip structure
+        project_root, same_drive_deps, cross_drive_deps = compute_project_root(Path(blend_path), dep_paths)
+        project_root_str = str(project_root).replace("\\", "/")
+        _LOG(f"ℹ️  Using project root for zip: {shorten_path(project_root_str)}")
+
+        # TEST MODE: Show comprehensive info and exit early
+        if test_mode:
+            _run_test_mode(
+                blend_path=blend_path,
+                dep_paths=dep_paths,
+                missing_set=missing_set,
+                unreadable_dict=unreadable_dict,
+                project_root=project_root,
+                same_drive_deps=same_drive_deps,
+                cross_drive_deps=cross_drive_deps,
+                upload_type="ZIP",
+                shorten_path_fn=shorten_path,
+                addon_dir=str(data["addon_dir"]),
+            )
+            input("\nPress ENTER to close this window...")
+            sys.exit(0)
+
+        # 3. Pack with computed project root (not drive root)
+        abs_blend_norm = _norm_abs_for_detection(blend_path)
+        zip_report = pack_blend(
+            abs_blend_norm,
+            str(zip_file),
+            method="ZIP",
+            project_path=project_root_str,
+            return_report=True,
+        )
 
         if not zip_file.exists():
             warn("Zip file does not exist", emoji="x", close_window=True)
@@ -606,6 +885,34 @@ def main() -> None:
         common_path = ""
         main_blend_s3 = ""
         _LOG(f"ℹ️  Zip size estimate: {required_storage / 1_048_576:.1f} MiB")
+
+    # NO_SUBMIT MODE: Skip upload and job registration
+    if no_submit:
+        _LOG("\n" + "=" * 70)
+        _LOG("  NO-SUBMIT MODE")
+        _LOG("=" * 70)
+        _LOG("\n  Packing completed successfully.")
+        _LOG(f"  Upload type: {'PROJECT' if use_project else 'ZIP'}")
+        if use_project:
+            _LOG(f"  Project root: {common_path}")
+            _LOG(f"  Dependencies: {len(rel_manifest)}")
+            _LOG(f"  Main blend S3 key: {main_blend_s3}")
+        else:
+            _LOG(f"  Zip file: {zip_file}")
+            if zip_file.exists():
+                _LOG(f"  Zip size: {_format_size(zip_file.stat().st_size)}")
+        _LOG(f"\n  Storage estimate: {_format_size(required_storage)}")
+        _LOG("\n  [NO-SUBMIT] Skipping upload and job registration.")
+        _LOG("=" * 70)
+        # Clean up temp zip if created
+        if not use_project and zip_file.exists():
+            try:
+                zip_file.unlink()
+                _LOG(f"\n  Cleaned up temp zip: {zip_file}")
+            except:
+                pass
+        input("\nPress ENTER to close this window...")
+        sys.exit(0)
 
     # R2 credentials
     _LOG("\n🔑  Fetching temporary storage credentials...")

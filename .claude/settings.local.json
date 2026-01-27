@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Skill(sulu)",
-      "Skill(bat)"
+      "Skill(bat)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python:*)",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(powershell -Command \"Get-Content ''C:\\\\Users\\\\jonas\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--dev-blender-scripts-scripts-addons-sulu-blender-addon\\\\tasks\\\\b961290.output''\")",
+      "Bash(powershell:*)",
+      "Bash(dir:*)"
     ]
   }
 }

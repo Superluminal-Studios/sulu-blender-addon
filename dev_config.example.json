@@ -1,0 +1,13 @@
+{
+    "_comment": "Copy this to dev_config.json and fill in your local paths. dev_config.json is gitignored.",
+
+    "blender_path": "C:/Program Files/Blender Foundation/Blender 4.2/blender.exe",
+    "test_blend_path": "C:/Users/YourName/Projects/test_project/test.blend",
+
+    "no_submit": true,
+    "dry_run": true,
+
+    "upload_type": "PROJECT",
+    "automatic_project_path": true,
+    "custom_project_path": ""
+}

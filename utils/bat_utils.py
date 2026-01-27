@@ -1,13 +1,170 @@
 from __future__ import annotations
 
+import os
+import re
 import shutil
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Dict, List, Optional, Any, Set, Tuple
 
+from ..blender_asset_tracer import trace
 from ..blender_asset_tracer.pack import Packer
 from ..blender_asset_tracer.pack import zipped
+
+
+# ─── Drive detection helpers (OS-agnostic) ───────────────────────────────────
+
+_WIN_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]+")
+
+
+def _is_win_drive_path(p: str) -> bool:
+    """Check if path looks like a Windows drive path (C:/ or C:\\)."""
+    return bool(_WIN_DRIVE_RE.match(str(p)))
+
+
+def _drive(path: str) -> str:
+    """
+    Return a drive token like 'C:' or 'UNC' (or '' on POSIX normal paths).
+    Works correctly even when running on POSIX with Windows-style paths (for testing).
+    """
+    p = str(path).replace("\\", "/")
+    if _is_win_drive_path(p):
+        return (p[:2]).upper()  # "C:"
+    if p.startswith("//") or p.startswith("\\\\"):
+        return "UNC"
+    if os.name == "nt":
+        return os.path.splitdrive(p)[0].upper()
+    return ""
+
+
+def _norm_path(path: str) -> str:
+    """Normalize path for comparison, preserving Windows-style paths on POSIX."""
+    p = str(path).replace("\\", "/")
+    if _is_win_drive_path(p) or p.startswith("//") or p.startswith("\\\\"):
+        return p
+    return os.path.normpath(os.path.abspath(p)).replace("\\", "/")
+
+
+# ─── Lightweight dependency tracing ──────────────────────────────────────────
+
+
+def trace_dependencies(blend_path: Path) -> Tuple[List[Path], Set[Path], Dict[Path, str]]:
+    """
+    Lightweight dependency trace using BAT's trace.deps().
+
+    Returns:
+        (dependency_paths, missing_files, unreadable_files)
+
+    Where:
+        - dependency_paths: List of absolute paths to all dependencies
+        - missing_files: Set of paths that don't exist on disk
+        - unreadable_files: Dict of path -> error message for files that exist but can't be read
+    """
+    deps: List[Path] = []
+    missing: Set[Path] = set()
+    unreadable: Dict[Path, str] = {}
+
+    for usage in trace.deps(blend_path):
+        abs_path = usage.abspath
+        deps.append(abs_path)
+
+        if not abs_path.exists():
+            missing.add(abs_path)
+        else:
+            # Check readability
+            try:
+                if abs_path.is_file():
+                    with abs_path.open("rb") as f:
+                        f.read(1)
+            except (PermissionError, OSError) as e:
+                unreadable[abs_path] = str(e)
+            except Exception as e:
+                unreadable[abs_path] = f"{type(e).__name__}: {e}"
+
+    return deps, missing, unreadable
+
+
+# ─── Project root computation ────────────────────────────────────────────────
+
+
+def compute_project_root(
+    blend_path: Path,
+    dependency_paths: List[Path],
+    custom_project_path: Optional[Path] = None,
+) -> Tuple[Path, List[Path], List[Path]]:
+    """
+    Compute optimal project root from blend file and its dependencies.
+
+    Algorithm:
+    1. If custom_project_path is provided and valid, use it
+    2. Otherwise, compute lowest common ancestor of blend + same-drive deps
+    3. Filter out cross-drive dependencies (return separately for warning)
+    4. Ensure result is a directory
+
+    Args:
+        blend_path: Path to the main .blend file
+        dependency_paths: List of dependency paths from trace_dependencies()
+        custom_project_path: Optional user-specified project root
+
+    Returns:
+        (project_root, same_drive_paths, cross_drive_paths)
+
+    Where:
+        - project_root: The computed project root directory
+        - same_drive_paths: Dependencies on the same drive as the blend
+        - cross_drive_paths: Dependencies on different drives (excluded from project upload)
+    """
+    blend_abs = _norm_path(str(blend_path))
+    blend_drive = _drive(blend_abs)
+    blend_dir = Path(blend_path).parent.resolve()
+
+    # Classify dependencies by drive
+    same_drive_paths: List[Path] = []
+    cross_drive_paths: List[Path] = []
+
+    for dep in dependency_paths:
+        dep_norm = _norm_path(str(dep))
+        dep_drive = _drive(dep_norm)
+        if dep_drive == blend_drive:
+            same_drive_paths.append(dep)
+        else:
+            cross_drive_paths.append(dep)
+
+    # If custom project path is provided and valid, use it
+    if custom_project_path is not None:
+        custom_abs = Path(custom_project_path).resolve()
+        if custom_abs.is_file():
+            custom_abs = custom_abs.parent
+        if custom_abs.is_dir():
+            return custom_abs, same_drive_paths, cross_drive_paths
+
+    # Compute common path from blend + same-drive dependencies
+    if not same_drive_paths:
+        # No same-drive dependencies, just use blend's parent directory
+        return blend_dir, same_drive_paths, cross_drive_paths
+
+    # Collect all paths to compute common ancestor
+    all_same_drive = [str(blend_path.resolve())] + [str(p.resolve()) for p in same_drive_paths]
+
+    try:
+        common = os.path.commonpath(all_same_drive)
+        common_path = Path(common)
+
+        # Ensure it's a directory
+        if common_path.is_file():
+            common_path = common_path.parent
+
+        # Verify it's actually a directory that exists
+        if common_path.is_dir():
+            return common_path, same_drive_paths, cross_drive_paths
+    except (ValueError, OSError):
+        # commonpath can fail if paths are on different drives (shouldn't happen
+        # since we filtered, but be defensive) or if paths are empty
+        pass
+
+    # Fallback to blend's parent directory
+    return blend_dir, same_drive_paths, cross_drive_paths
 
 
 def create_packer(
@@ -111,8 +268,9 @@ def pack_blend(
         return (file_map, report) if return_report else file_map
 
     elif method == "ZIP":
-        # Keep the existing behavior unless return_report is requested.
-        with zipped.ZipPacker(Path(infile), Path(infile).replace("\\", "/").anchor, Path(target)) as packer:
+        # Use provided project_path for meaningful zip structure, fallback to blend's parent
+        project_p = Path(project_path) if project_path else Path(infile).parent
+        with zipped.ZipPacker(Path(infile), project_p, Path(target)) as packer:
             packer.strategise()
             packer.execute()
 
