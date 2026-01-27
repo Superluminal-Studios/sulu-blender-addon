@@ -152,10 +152,15 @@ def _expand_generic_idprops(block: blendfile.BlendFileBlock):
 
 
 def _expand_generic_nodetree_id(block: blendfile.BlendFileBlock):
+    # In Blender 5.0+, the Scene compositing node tree was renamed to
+    # 'compositing_node_group' (commit bd61e69be5a7c96f1e5da1c86aafc17b839e049f).
+    # However, other node tree types (Material, World, Lamp) still use 'nodetree'.
+    # We try 'compositing_node_group' first (for Scene blocks in 5.0+), then
+    # fall back to 'nodetree' for other block types or older Blender versions.
+    block_ntree = None
     if block.bfile.header.version >= 500 and block.bfile.file_subversion >= 4:
-        # Introduced in Blender 5.0, commit bd61e69be5a7c96f1e5da1c86aafc17b839e049f
         block_ntree = block.get_pointer(b"compositing_node_group", None)
-    else:
+    if block_ntree is None:
         block_ntree = block.get_pointer(b"nodetree", None)
     if block_ntree is not None:
         yield from _expand_generic_nodetree(block_ntree)

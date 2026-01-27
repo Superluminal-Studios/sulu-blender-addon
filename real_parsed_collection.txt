@@ -1,0 +1,756 @@
+Asja_Asset (OVERRIDDEN COLLECTION)
+└─ source
+   └─ //..\char\sh050_anim_container.blend
+
+├─ collections
+│  ├─ Asja_Asset [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Base [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Base_Belt [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Base_Body [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Base_Body_Hands [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Base_Eyes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Base_Head [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Base_Legs [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Base_Tunic [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Droplets [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Face_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Face_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Global_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Hunt_Addons [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Hunt_Knife [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Hunt_Pouch [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Hunt_Quiver [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Addons [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Backpack [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Bag [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Cape [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Cape_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Cape_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Coat [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Coat_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Coat_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Hand_Corruption [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Hood [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Hood_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Hood_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Journey_Staff [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_LegWraps_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_LegWraps_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Shoes_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Asja_Shoes_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Backpack_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Backpack_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Droplets Animated [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Droplets Static [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Hands_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Hands_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Staff_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Staff_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  ├─ Tunic_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│  └─ Tunic_Brushtrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+
+├─ objects
+│  ├─ Asja_Face_Droplets_Animated [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Face_Droplets_Static [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_AsjaHand_L [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_HandsCorrupted_grp/Asja_Rig_SH000_v005_Asja_Rig_AsjaHand_L
+│  ├─ Asja_Rig_AsjaHand_R [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_HandsCorrupted_grp/Asja_Rig_SH000_v005_Asja_Rig_AsjaHand_R
+│  ├─ Asja_Rig_AsjaHand_R.001 [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_AsjaHands [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_AsjaHands
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_AsjaHands
+│  ├─ Asja_Rig_AsjaHands - Brushstrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_AsjaHands - Brushstrokes-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_New_armTie [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_armTie
+│  ├─ Asja_Rig_New_belt [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_belt
+│  ├─ Asja_Rig_New_beltBuckle [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_beltBuckle
+│  ├─ Asja_Rig_New_body [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd
+│  ├─ Asja_Rig_New_eyeBalls [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_eyeBalls
+│  ├─ Asja_Rig_New_eyePupils [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_eyePupils
+│  ├─ Asja_Rig_New_eyewet [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_eyewet
+│  ├─ Asja_Rig_New_knifeHandle [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_knifeHandle
+│  ├─ Asja_Rig_New_knifeMetal [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_knifeMetal
+│  ├─ Asja_Rig_New_knifeSheaf [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_knifeSheaf
+│  ├─ Asja_Rig_New_knifeSheafCord [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_knifeSheafCord
+│  ├─ Asja_Rig_New_knifeSheafLoops [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_knifeSheafLoops
+│  ├─ Asja_Rig_New_legTies [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_legTies
+│  ├─ Asja_Rig_New_legWraps [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_New_legWraps
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_legWraps
+│  ├─ Asja_Rig_New_legWraps - Brushstrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_New_legWraps - Brushstrokes-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_New_pants [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_pants
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\cfx\sh050_cfx_v012.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_New_pants
+│  ├─ Asja_Rig_New_pouch [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_pouch
+│  ├─ Asja_Rig_New_quiver [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_Quiver_grp/Asja_Rig_SH000_v005_Asja_Rig_New_quiver
+│  ├─ Asja_Rig_New_quiverStraps [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_Quiver_grp/Asja_Rig_SH000_v005_Asja_Rig_New_quiverStraps
+│  ├─ Asja_Rig_New_quiverStrapsBuckles [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_Quiver_grp/Asja_Rig_SH000_v005_Asja_Rig_New_quiverStrapsBuckles
+│  ├─ Asja_Rig_New_shoeLaces [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_shoeLaces
+│  ├─ Asja_Rig_New_shoes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_New_shoes
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_New_shoes
+│  ├─ Asja_Rig_New_shoes - Brushstrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_New_shoes - Brushstrokes-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_New_strapMetal [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_Quiver_grp/Asja_Rig_SH000_v005_Asja_Rig_New_strapMetal
+│  ├─ Asja_Rig_bag [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_NewCloth_grp/Asja_Rig_SH000_v005_Asja_Rig_bag
+│  ├─ Asja_Rig_bp_KnifeStrap01_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_KnifeStrap01_low
+│  ├─ Asja_Rig_bp_LeftStrap_low4 [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_LeftStrap_low4
+│     │  └─ MeshSequenceCache.002 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\cfx\sh050_cfx_v012.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_BackPackStructure01_grp/Asja_Rig_bp_LeftStrap_low4
+│  ├─ Asja_Rig_bp_LeftStrap_low6 [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_LeftStrap_low6
+│     │  └─ MeshSequenceCache.002 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\cfx\sh050_cfx_v012.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_BackPackStructure01_grp/Asja_Rig_bp_LeftStrap_low6
+│  ├─ Asja_Rig_bp_WaterStrap01_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_WaterStrap01_low
+│  ├─ Asja_Rig_bp_WaterStrap02_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_WaterStrap02_low
+│  ├─ Asja_Rig_bp_WaterStrap03_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_WaterStrap03_low
+│  ├─ Asja_Rig_bp_Wolf_blanketStraps_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_Wolf_blanketStraps_low
+│  ├─ Asja_Rig_bp_Wolf_blanket_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_Wolf_blanket_low
+│  ├─ Asja_Rig_bp_blanket01_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.003 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_BackPackStructure01_grp/Asja_Rig_bp_blanket01_low
+│     │  ├─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_blanket01_low
+│     │  └─ MeshSequenceCache.002 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\cfx\sh050_cfx_v012.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_BackPackStructure01_grp/Asja_Rig_bp_blanket01_low
+│  ├─ Asja_Rig_bp_blanket01_low - Brushstrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_bp_blanket01_low - Brushstrokes-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_bp_blanket02_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_blanket02_low
+│  ├─ Asja_Rig_bp_blanket03_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_blanket03_low
+│  ├─ Asja_Rig_bp_blanket04_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_blanket04_low
+│  ├─ Asja_Rig_bp_blanketStraps01_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_blanketStraps01_low
+│  ├─ Asja_Rig_bp_blanketStraps02_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_blanketStraps02_low
+│  ├─ Asja_Rig_bp_blanketStraps03_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_blanketStraps03_low
+│  ├─ Asja_Rig_bp_blanketStraps04_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_blanketStraps04_low
+│  ├─ Asja_Rig_bp_knifeSheath_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_knifeSheath_low
+│  ├─ Asja_Rig_bp_knifeStrap02_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_knifeStrap02_low
+│  ├─ Asja_Rig_bp_knife_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_knife_low
+│  ├─ Asja_Rig_bp_rope02_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_rope02_low
+│  ├─ Asja_Rig_bp_rope03_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_rope03_low
+│  ├─ Asja_Rig_bp_rope04_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_rope04_low
+│  ├─ Asja_Rig_bp_rope05_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_rope05_low
+│  ├─ Asja_Rig_bp_rope06_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_rope06_low
+│  ├─ Asja_Rig_bp_structure01_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_structure01_low
+│  ├─ Asja_Rig_bp_structure02_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_structure02_low
+│  ├─ Asja_Rig_bp_structure03_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_structure03_low
+│  ├─ Asja_Rig_bp_structure04_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_structure04_low
+│  ├─ Asja_Rig_bp_structureCloth01_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_structureCloth01_low
+│  ├─ Asja_Rig_bp_structureCloth02_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_structureCloth02_low
+│  ├─ Asja_Rig_bp_waterBottleTip_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_waterBottleTip_low
+│  ├─ Asja_Rig_bp_waterBottle_low [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_BackPackStructure01_grp/Asja_Rig_SH000_v005_Asja_Rig_bp_waterBottle_low
+│  ├─ Asja_Rig_buttonString [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_NewCloth_grp/Asja_Rig_SH000_v005_Asja_Rig_buttonString
+│  ├─ Asja_Rig_cape [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.003 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_NewCloth_grp/Asja_Rig_hood_grp/Asja_Rig_cape
+│     │  ├─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_NewCloth_grp/Asja_Rig_SH000_v005_Asja_Rig_hood_grp/Asja_Rig_SH000_v005_Asja_Rig_cape
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\cfx\sh050_cfx_v012.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_NewCloth_grp/Asja_Rig_hood_grp/Asja_Rig_cape
+│  ├─ Asja_Rig_coat [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.002 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_NewCloth_grp/Asja_Rig_coat
+│     │  ├─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_NewCloth_grp/Asja_Rig_SH000_v005_Asja_Rig_coat
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\cfx\sh050_cfx_v012.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_NewCloth_grp/Asja_Rig_coat
+│  ├─ Asja_Rig_coat - Brushstrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_coat - Brushstrokes-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_coat - Droplets [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_coat - Droplets-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_coatButton [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_NewCloth_grp/Asja_Rig_SH000_v005_Asja_Rig_coatButton
+│  ├─ Asja_Rig_coatFlap [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_NewCloth_grp/Asja_Rig_SH000_v005_Asja_Rig_coatFlap
+│  ├─ Asja_Rig_hair [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_head_lod0_mesh [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_head_grp/Asja_Rig_geometry_grp/Asja_Rig_head_lod0_grp/Asja_Rig_head_lod0_mesh
+│     │  ├─ MeshSequenceCache.002 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_head_grp/Asja_Rig_geometry_grp/Asja_Rig_head_lod0_grp/Asja_Rig_head_lod0_mesh
+│     │  ├─ MeshSequenceCache.003 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_head_grp/Asja_Rig_geometry_grp/Asja_Rig_head_lod0_grp/Asja_Rig_head_lod0_mesh
+│     │  ├─ MeshSequenceCache.004 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_head_grp/Asja_Rig_SH000_v005_Asja_Rig_geometry_grp/Asja_Rig_SH000_v005_Asja_Rig_head_lod0_grp/Asja_Rig_SH000_v005_Asja_Rig_head_lod0_mesh
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_head_grp/Asja_Rig_SH000_v005_Asja_Rig_geometry_grp/Asja_Rig_SH000_v005_Asja_Rig_head_lod0_grp/Asja_Rig_SH000_v005_Asja_Rig_head_lod0_mesh
+│  ├─ Asja_Rig_head_lod0_mesh - Brushstrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_head_lod0_mesh - Brushstrokes-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_hood [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.002 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_NewCloth_grp/Asja_Rig_hood_grp/Asja_Rig_hood
+│     │  ├─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_NewCloth_grp/Asja_Rig_SH000_v005_Asja_Rig_hood_grp/Asja_Rig_SH000_v005_Asja_Rig_hood
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\cfx\sh050_cfx_v012.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_NewCloth_grp/Asja_Rig_hood_grp/Asja_Rig_hood
+│  ├─ Asja_Rig_hoodString [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_NewCloth_grp/Asja_Rig_SH000_v005_Asja_Rig_hood_grp/Asja_Rig_SH000_v005_Asja_Rig_hoodString
+│  ├─ Asja_Rig_pin [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_NewCloth_grp/Asja_Rig_SH000_v005_Asja_Rig_hood_grp/Asja_Rig_SH000_v005_Asja_Rig_pin
+│  ├─ Asja_Rig_pinString [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_NewCloth_grp/Asja_Rig_SH000_v005_Asja_Rig_hood_grp/Asja_Rig_SH000_v005_Asja_Rig_pinString
+│  ├─ Asja_Rig_staff [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_staff
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_staff
+│  ├─ Asja_Rig_staff - Brushstrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_staff - Brushstrokes-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_tearduct [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_tearduct
+│  ├─ Asja_Rig_teeth_lod0_mesh [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_head_grp/Asja_Rig_geometry_grp/Asja_Rig_head_lod0_grp/Asja_Rig_teeth_lod0_mesh
+│     │  └─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_head_grp/Asja_Rig_SH000_v005_Asja_Rig_geometry_grp/Asja_Rig_SH000_v005_Asja_Rig_head_lod0_grp/Asja_Rig_SH000_v005_Asja_Rig_teeth_lod0_mesh
+│  ├─ Asja_Rig_teeth_lod0_mesh - Brushstrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_teeth_lod0_mesh - Brushstrokes-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_tunic [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_tunic
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\cfx\sh050_cfx_v012.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_tunic
+│  ├─ Asja_Rig_underTunicShirt [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache.002 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_underTunicShirt
+│     │  ├─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_underTunicShirt
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\cfx\sh050_cfx_v012.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_underTunicShirt
+│  ├─ Asja_Rig_underTunicShirt - Brushstrokes [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_underTunicShirt - Brushstrokes-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_underTunicShirt - Brushstrokes-FLOW.001 [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_underTunicShirt - Brushstrokes-FLOW.002 [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_underTunicShirt - Brushstrokes.001 [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_underTunicShirt - Brushstrokes.002 [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Asja_Rig_undertunic [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     ├─ mesh_cache_modifiers
+│     │  ├─ MeshSequenceCache (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\asja\Asja_Rig_SH000_v006.usd :: /Asja_Rig_SH000_v005_Asja_Rig_Asja_grp/Asja_Rig_SH000_v005_Asja_Rig_GEO1/Asja_Rig_SH000_v005_Asja_Rig_undertunic
+│     │  └─ MeshSequenceCache.001 (MESH_SEQUENCE_CACHE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\cache\cfx\sh050_cfx_v012.usd :: /Asja_Rig_Asja_grp/Asja_Rig_GEO1/Asja_Rig_undertunic
+│  ├─ BézierCurve [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Cape_Droplets [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Cape_Droplets-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Cape_Droplets-FLOW.002 [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Cape_Droplets.002 [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Cape_Frizz [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Cape_Frizz-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Cape_Overpaint [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Hood_Frizz [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Hood_Overpaint [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Hood_Overpaint-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  ├─ Hood_Rain [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+│  └─ Hood_Rain-FLOW [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+│     └─ mesh_cache_modifiers: (none)
+
+├─ materials
+│  └─ 44 total
+
+├─ materials_without_image_nodes
+│  ├─ Asja_Mat_Cloth_v2 [LINKED]
+│  ├─ Asja_Mat_Face_Clean_v4 [LINKED]
+│  ├─ Asja_Mat_Face_Mixer [LOCAL]
+│  ├─ Asja_Mat_Journey_Fabric_v1 [LINKED]
+│  ├─ Asja_Mat_Leather_v1 [LINKED]
+│  ├─ Asja_Mat_Quiver_v1 [LINKED]
+│  ├─ Asja_Mat_Tunic_v1 [LINKED]
+│  ├─ Asja_Mat_Tunic_v1_NewUV [LINKED]
+│  ├─ Brush Material.001 [LINKED]
+│  ├─ Brush Material.002 [LINKED]
+│  └─ DropletMat.001 [LINKED]
+
+└─ images_by_material
+   ├─ Asja_Mat_EyeWet_v1 [LINKED]
+   │  ├─ Asja_Eyes_Bump_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Bump_<UDIM>.png
+   │  ├─ Asja_Eyes_Opacity_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Opac_<UDIM>.png
+   │  └─ Asja_Eyes_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Normal_<UDIM>.png
+   ├─ Asja_Mat_Eyeball_Weathered_v1 [LINKED]
+   │  ├─ Asja_Eyes_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Alb_<UDIM>.png
+   │  └─ Asja_Eyes_Opacity_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Opac_<UDIM>.png
+   ├─ Asja_Mat_Hand_Corrupted_Sigil_v1 [LINKED]
+   │  ├─ Asja_Hand_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Alb_<UDIM>.png
+   │  ├─ Asja_Hand_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Normal_<UDIM>.tif
+   │  ├─ Asja_Hand_Spec_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Spec_<UDIM>.png
+   │  ├─ Asja_Hand_Rough_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Rough_<UDIM>.png
+   │  ├─ Asja_Hand_SSS_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_SSS_<UDIM>.png
+   │  ├─ Asja_Hand_Emmison_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Emm_<UDIM>.png
+   │  └─ frame_001.mp4 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption_anim\Hand Corruption v1\frame_001.mp4
+   ├─ Asja_Mat_Hand_Corrupted_v1 [LINKED]
+   │  ├─ Asja_Hand_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Alb_<UDIM>.png
+   │  ├─ Asja_Hand_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Normal_<UDIM>.tif
+   │  ├─ Asja_Hand_Spec_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Spec_<UDIM>.png
+   │  ├─ Asja_Hand_Rough_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Rough_<UDIM>.png
+   │  ├─ Asja_Hand_SSS_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_SSS_<UDIM>.png
+   │  └─ frame_001.mp4 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption_anim\Hand Corruption v1\frame_001.mp4
+   ├─ Asja_Mat_Journey_Cape_v1_NewUV [OVERRIDDEN] (ref: //..\char\sh050_anim_container.blend)
+   │  └─ Asja_Fabric_Opacity_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\fabric_Opac_<UDIM>.png
+   ├─ Asja_Mat_Journey_Fabric_v1_NewUV_Fuzz [LINKED]
+   │  ├─ Asja_Fabric_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\fabric_Normal_<UDIM>.png
+   │  ├─ asja_texture_herringbone_tiles_normal.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\asja_texture_herringbone_tiles_normal.png
+   │  ├─ fabric_0008_normal_opengl_1k.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\fabric_0008_normal_opengl_1k.png
+   │  └─ General_Strokes_Alpha.jpg [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\systems\grass_system\tests\system_test_04\Brushtrokes\General_Strokes_Alpha.jpg
+   ├─ Asja_Mat_Journey_Hood_v1_NewUV [LINKED]
+   │  └─ asja_texture_herringbone_tiles_normal.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\asja_texture_herringbone_tiles_normal.png
+   ├─ Asja_Mat_Leather_Bag_v1 [LINKED]
+   │  ├─ Asja_Leather_Albedo_Tex [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_leather_clean\asja_texture_leather_clean_4K\leather_Alb_<UDIM>.png
+   │  ├─ Asja_Leather_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_leather_clean\asja_texture_leather_clean_4K\leather_Normal_<UDIM>.png
+   │  ├─ Asja_Leather_Roughness_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_leather_clean\asja_texture_leather_clean_4K\leather_Rough_<UDIM>.png
+   │  └─ Asja_Leather_Spec_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_leather_clean\asja_texture_leather_clean_4K\leather_Spec_<UDIM>.png
+   ├─ Asja_Mat_Mouth_v1.001 [LINKED]
+   │  ├─ Asja_Mouth_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_mouth_clean\asja_texture_mouth_clean_2K\mouth_Alb_1009.png
+   │  ├─ Asja_Mouth_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_mouth_clean\asja_texture_mouth_clean_2K\mouth_Normal_1009.png
+   │  └─ Asja_Mouth_Rough_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_mouth_clean\asja_texture_mouth_clean_2K\mouth_Rough_1009.png
+   ├─ Asja_Mat_Pin_v1 [LINKED]
+   │  ├─ Asja_Metal_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_metal_clean\asja_texture_metal_clean_2K\metal_Alb_<UDIM>.png
+   │  ├─ Asja_Metal_Metalness_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_metal_clean\asja_texture_metal_clean_2K\metal_Met_<UDIM>.png
+   │  ├─ Asja_Metal_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_metal_clean\asja_texture_metal_clean_2K\metal_Normal_<UDIM>.png
+   │  └─ Asja_Metal_Roughness_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_metal_clean\asja_texture_metal_clean_2K\metal_Rough_<UDIM>.png
+   ├─ Asja_Mat_Pupil_Clean_v1 [LINKED]
+   │  ├─ Asja_Eyes_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Alb_<UDIM>.png
+   │  ├─ Asja_Eyes_Rough_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Rough_<UDIM>.png
+   │  └─ Asja_Eyes_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Normal_<UDIM>.png
+   ├─ Asja_Mat_Rope_v1 [LINKED]
+   │  ├─ Asja_Rope_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_rope_clean\asja_texture_rope_clean_1K\rope_Alb_<UDIM>.png
+   │  ├─ Asja_Rope_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_rope_clean\asja_texture_rope_clean_1K\rope_Normal_<UDIM>.png
+   │  ├─ Asja_Rope_Rough_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_rope_clean\asja_texture_rope_clean_1K\rope_Rough_<UDIM>.png
+   │  └─ Asja_Rope_Spec_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_rope_clean\asja_texture_rope_clean_1K\rope_Spec_<UDIM>.png
+   ├─ Asja_Mat_Staff_v2 [LINKED]
+   │  ├─ wood_Alb_<UDIM>.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\staff\texture\wip2\wood_Alb_1061.png
+   │  ├─ wood_Rough_<UDIM>.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\staff\texture\wip2\wood_Rough_1061.png
+   │  ├─ wood_Spec_<UDIM>.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\staff\texture\wip2\wood_Spec_1061.png
+   │  ├─ staff_Normal_1061.tif [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\staff\texture\wip2\staff_Normal_1061.tif
+   │  └─ staff_Displ_1061.tif [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\staff\texture\wip2\staff_Displ_1061.tif
+   ├─ Asja_Mat_Tearduct_v1 [LINKED]
+   │  ├─ Asja_Eyes_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Alb_<UDIM>.png
+   │  └─ Asja_Eyes_Opacity_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Opac_<UDIM>.png
+   ├─ Backpack_Fabric [LINKED]
+   │  ├─ fabric_Alb_1001.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\fabric_Alb_<UDIM>.png
+   │  ├─ fabric_Normal_1001.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\fabric_Normal_<UDIM>.png
+   │  ├─ fabric_Rough_1001.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\fabric_Rough_<UDIM>.png
+   │  ├─ fabric_Alb_1001.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\fabric_Alb_<UDIM>.png
+   │  ├─ fabric_Rough_1001.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\fabric_Rough_<UDIM>.png
+   │  └─ fabric_Normal_1002.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\fabric_Normal_<UDIM>.png
+   ├─ Backpack_Fabric_Cloak [LINKED]
+   │  ├─ fabric_Alb_1001.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\fabric_Alb_<UDIM>.png
+   │  └─ fabric_Alb_1001.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\fabric_Alb_<UDIM>.png
+   ├─ Backpack_Leather [LINKED]
+   │  ├─ leather_Alb_1002.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\leather_Alb_<UDIM>.png
+   │  ├─ leather_Rough_1002.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\leather_Rough_<UDIM>.png
+   │  ├─ leather_Normal_1002.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\leather_Normal_<UDIM>.png
+   │  ├─ leather_Alb_1002.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\leather_Alb_<UDIM>.png
+   │  ├─ leather_Rough_1002.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\leather_Rough_<UDIM>.png
+   │  └─ leather_Normal_1002.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\leather_Normal_1002.png
+   ├─ Backpack_Rope [LINKED]
+   │  ├─ rope_Alb_1003.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\rope_Alb_<UDIM>.png
+   │  └─ rope_Normal_1003.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\rope_Normal_<UDIM>.png
+   ├─ Backpack_Wood [LINKED]
+   │  ├─ wood_Alb_1003.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\wood_Alb_<UDIM>.png
+   │  ├─ wood_Normal_1003.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\wood_Normal_<UDIM>.png
+   │  ├─ wood_Rough_1003.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\wood_Rough_<UDIM>.png
+   │  ├─ wood_Alb_1003.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\wood_Alb_<UDIM>.png
+   │  ├─ wood_Rough_1003.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\wood_Rough_<UDIM>.png
+   │  └─ wood_Normal_1003.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\wood_Normal_<UDIM>.png
+   ├─ Brushstroke_Backpack_Overpaint [LINKED]
+   │  ├─ oil_paint-dry_loaded.exr [LINKED] (PACKED) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\oil_paint-dry_loaded.exr
+   │  └─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ Brushstroke_Cape_Droplets [LINKED]
+   │  ├─ oil_paint-dry_loaded.exr [LINKED] (PACKED) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\oil_paint-dry_loaded.exr
+   │  └─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ Brushstroke_Cape_Droplets.001 [LINKED]
+   │  ├─ oil_paint-dry_loaded.exr [LINKED] (PACKED) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\oil_paint-dry_loaded.exr
+   │  └─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ Brushstroke_Cape_Overpaint [LINKED]
+   │  ├─ oil_paint-dry_loaded.exr [LINKED] (PACKED) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\oil_paint-dry_loaded.exr
+   │  └─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ Brushstroke_Face_Overpaint [LINKED]
+   │  ├─ oil_paint-dry_loaded.exr [LINKED] (PACKED) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\oil_paint-dry_loaded.exr
+   │  └─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ Brushstroke_Hands_Overpaint [LINKED]
+   │  ├─ oil_paint-dry_loaded.exr [LINKED] (PACKED) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\oil_paint-dry_loaded.exr
+   │  └─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ Brushstroke_Legwraps [LINKED]
+   │  ├─ oil_paint-dry_loaded.exr [LINKED] (PACKED) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\oil_paint-dry_loaded.exr
+   │  └─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ Brushstroke_Shoes [LINKED]
+   │  ├─ oil_paint-dry_loaded.exr [LINKED] (PACKED) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\oil_paint-dry_loaded.exr
+   │  └─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ Brushstroke_Teeth_Overpaint [LINKED]
+   │  ├─ oil_paint-dry_loaded.exr [LINKED] (PACKED) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\oil_paint-dry_loaded.exr
+   │  └─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ Brushtroke_Cape_Frizz [LINKED]
+   │  └─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ Brushtroke_Coat [LINKED]
+   │  ├─ oil_paint-dry_loaded.exr [LINKED] (PACKED) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\oil_paint-dry_loaded.exr
+   │  └─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ Brushtroke_Staff [LINKED]
+   │  ├─ oil_paint-dry_loaded.exr [LINKED] (PACKED) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\oil_paint-dry_loaded.exr
+   │  └─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ Hood_Frizz [LINKED]
+   │  ├─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   │  └─ fabric_Alb_1064.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1064.png
+   └─ Hood_Overpaint [LINKED]
+   │  ├─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   │  └─ fabric_Alb_1064.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1064.png
+
+(all_images)
+└─ 60 total
+   ├─ Asja_Eyes_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Alb_<UDIM>.png
+   ├─ Asja_Eyes_Bump_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Bump_<UDIM>.png
+   ├─ Asja_Eyes_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Normal_<UDIM>.png
+   ├─ Asja_Eyes_Opacity_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Opac_<UDIM>.png
+   ├─ Asja_Eyes_Rough_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_eyes_clean\asja_texture_eyes_clean_2K\eyes_Rough_<UDIM>.png
+   ├─ Asja_Fabric_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\fabric_Normal_<UDIM>.png
+   ├─ Asja_Fabric_Opacity_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\fabric_Opac_<UDIM>.png
+   ├─ Asja_Hand_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Alb_<UDIM>.png
+   ├─ Asja_Hand_Emmison_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Emm_<UDIM>.png
+   ├─ Asja_Hand_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Normal_<UDIM>.tif
+   ├─ Asja_Hand_Rough_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Rough_<UDIM>.png
+   ├─ Asja_Hand_SSS_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_SSS_<UDIM>.png
+   ├─ Asja_Hand_Spec_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption\asja_texture_hand_corruption_8K\bodyHand_Spec_<UDIM>.png
+   ├─ Asja_Leather_Albedo_Tex [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_leather_clean\asja_texture_leather_clean_4K\leather_Alb_<UDIM>.png
+   ├─ Asja_Leather_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_leather_clean\asja_texture_leather_clean_4K\leather_Normal_<UDIM>.png
+   ├─ Asja_Leather_Roughness_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_leather_clean\asja_texture_leather_clean_4K\leather_Rough_<UDIM>.png
+   ├─ Asja_Leather_Spec_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_leather_clean\asja_texture_leather_clean_4K\leather_Spec_<UDIM>.png
+   ├─ Asja_Metal_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_metal_clean\asja_texture_metal_clean_2K\metal_Alb_<UDIM>.png
+   ├─ Asja_Metal_Metalness_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_metal_clean\asja_texture_metal_clean_2K\metal_Met_<UDIM>.png
+   ├─ Asja_Metal_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_metal_clean\asja_texture_metal_clean_2K\metal_Normal_<UDIM>.png
+   ├─ Asja_Metal_Roughness_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_metal_clean\asja_texture_metal_clean_2K\metal_Rough_<UDIM>.png
+   ├─ Asja_Mouth_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_mouth_clean\asja_texture_mouth_clean_2K\mouth_Alb_1009.png
+   ├─ Asja_Mouth_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_mouth_clean\asja_texture_mouth_clean_2K\mouth_Normal_1009.png
+   ├─ Asja_Mouth_Rough_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_mouth_clean\asja_texture_mouth_clean_2K\mouth_Rough_1009.png
+   ├─ Asja_Rope_Albedo_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_rope_clean\asja_texture_rope_clean_1K\rope_Alb_<UDIM>.png
+   ├─ Asja_Rope_Normal_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_rope_clean\asja_texture_rope_clean_1K\rope_Normal_<UDIM>.png
+   ├─ Asja_Rope_Rough_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_rope_clean\asja_texture_rope_clean_1K\rope_Rough_<UDIM>.png
+   ├─ Asja_Rope_Spec_Tex_Clean [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_rope_clean\asja_texture_rope_clean_1K\rope_Spec_<UDIM>.png
+   ├─ General_Strokes_Alpha.jpg [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\systems\grass_system\tests\system_test_04\Brushtrokes\General_Strokes_Alpha.jpg
+   ├─ asja_texture_herringbone_tiles_normal.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\asja_texture_herringbone_tiles_normal.png
+   ├─ fabric_0008_normal_opengl_1k.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\fabric_0008_normal_opengl_1k.png
+   ├─ fabric_Alb_1001.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\fabric_Alb_<UDIM>.png
+   ├─ fabric_Alb_1001.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\fabric_Alb_<UDIM>.png
+   ├─ fabric_Alb_1064.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1064.png
+   ├─ fabric_Alb_1067.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_fabric_clean\asja_texture_fabric_clean_8K\brushstroke_color_source\fabric_Alb_1067.png
+   ├─ fabric_Normal_1001.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\fabric_Normal_<UDIM>.png
+   ├─ fabric_Normal_1002.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\fabric_Normal_<UDIM>.png
+   ├─ fabric_Rough_1001.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\fabric_Rough_<UDIM>.png
+   ├─ fabric_Rough_1001.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\fabric_Rough_<UDIM>.png
+   ├─ frame_001.mp4 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\asja_texture_hand_corruption_anim\Hand Corruption v1\frame_001.mp4
+   ├─ leather_Alb_1002.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\leather_Alb_<UDIM>.png
+   ├─ leather_Alb_1002.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\leather_Alb_<UDIM>.png
+   ├─ leather_Normal_1002.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\leather_Normal_<UDIM>.png
+   ├─ leather_Normal_1002.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\leather_Normal_1002.png
+   ├─ leather_Rough_1002.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\leather_Rough_<UDIM>.png
+   ├─ leather_Rough_1002.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\leather_Rough_<UDIM>.png
+   ├─ oil_paint-dry_loaded.exr [LINKED] (PACKED) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\textures\oil_paint-dry_loaded.exr
+   ├─ rope_Alb_1003.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\rope_Alb_<UDIM>.png
+   ├─ rope_Normal_1003.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\rope_Normal_<UDIM>.png
+   ├─ staff_Displ_1061.tif [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\staff\texture\wip2\staff_Displ_1061.tif
+   ├─ staff_Normal_1061.tif [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\staff\texture\wip2\staff_Normal_1061.tif
+   ├─ wood_Alb_1003.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\wood_Alb_<UDIM>.png
+   ├─ wood_Alb_1003.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\wood_Alb_<UDIM>.png
+   ├─ wood_Alb_<UDIM>.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\staff\texture\wip2\wood_Alb_1061.png
+   ├─ wood_Normal_1003.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\wood_Normal_<UDIM>.png
+   ├─ wood_Normal_1003.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\wood_Normal_<UDIM>.png
+   ├─ wood_Rough_1003.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002\wood_Rough_<UDIM>.png
+   ├─ wood_Rough_1003.png.001 [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\backpack\texture\wip\002_2K\wood_Rough_<UDIM>.png
+   ├─ wood_Rough_<UDIM>.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\staff\texture\wip2\wood_Rough_1061.png
+   └─ wood_Spec_<UDIM>.png [LINKED] (FILE) -> G:\Shared drives\SOLACE Production\shots\teaser\SH050-asja-reveal\lighting\..\..\..\..\prop\staff\texture\wip2\wood_Spec_1061.png
+
+(overrides_summary)
+└─ 161 overridden IDs
+   ├─ Collection: Asja_Asset
+   ├─ Collection: Asja_Base
+   ├─ Collection: Asja_Base_Belt
+   ├─ Collection: Asja_Base_Body
+   ├─ Collection: Asja_Base_Body_Hands
+   ├─ Collection: Asja_Base_Eyes
+   ├─ Collection: Asja_Base_Head
+   ├─ Collection: Asja_Base_Legs
+   ├─ Collection: Asja_Base_Tunic
+   ├─ Collection: Asja_Droplets
+   ├─ Collection: Asja_Face_Brushtrokes
+   ├─ Collection: Asja_Face_Brushtrokes
+   ├─ Collection: Asja_Global_Brushtrokes
+   ├─ Collection: Asja_Hunt_Addons
+   ├─ Collection: Asja_Hunt_Knife
+   ├─ Collection: Asja_Hunt_Pouch
+   ├─ Collection: Asja_Hunt_Quiver
+   ├─ Collection: Asja_Journey_Addons
+   ├─ Collection: Asja_Journey_Backpack
+   ├─ Collection: Asja_Journey_Bag
+   ├─ Collection: Asja_Journey_Cape
+   ├─ Collection: Asja_Journey_Cape_Brushtrokes
+   ├─ Collection: Asja_Journey_Cape_Brushtrokes
+   ├─ Collection: Asja_Journey_Coat
+   ├─ Collection: Asja_Journey_Coat_Brushtrokes
+   ├─ Collection: Asja_Journey_Coat_Brushtrokes
+   ├─ Collection: Asja_Journey_Hand_Corruption
+   ├─ Collection: Asja_Journey_Hood
+   ├─ Collection: Asja_Journey_Hood_Brushtrokes
+   ├─ Collection: Asja_Journey_Hood_Brushtrokes
+   ├─ Collection: Asja_Journey_Staff
+   ├─ Collection: Asja_LegWraps_Brushtrokes
+   ├─ Collection: Asja_LegWraps_Brushtrokes
+   ├─ Collection: Asja_Shoes_Brushtrokes
+   ├─ Collection: Asja_Shoes_Brushtrokes
+   ├─ Collection: Backpack_Brushtrokes
+   ├─ Collection: Backpack_Brushtrokes
+   ├─ Collection: Droplets Animated
+   ├─ Collection: Droplets Static
+   ├─ Collection: Hands_Brushtrokes
+   ├─ Collection: Hands_Brushtrokes
+   ├─ Collection: Staff_Brushtrokes
+   ├─ Collection: Staff_Brushtrokes
+   ├─ Collection: Tunic_Brushtrokes
+   ├─ Collection: Tunic_Brushtrokes
+   ├─ Material: Asja_Mat_Journey_Cape_v1_NewUV
+   ├─ Object: Asja_Face_Droplets_Animated
+   ├─ Object: Asja_Face_Droplets_Static
+   ├─ Object: Asja_Rig_AsjaHand_L
+   ├─ Object: Asja_Rig_AsjaHand_R
+   ├─ Object: Asja_Rig_AsjaHand_R.001
+   ├─ Object: Asja_Rig_AsjaHands
+   ├─ Object: Asja_Rig_AsjaHands - Brushstrokes
+   ├─ Object: Asja_Rig_AsjaHands - Brushstrokes-FLOW
+   ├─ Object: Asja_Rig_New_armTie
+   ├─ Object: Asja_Rig_New_belt
+   ├─ Object: Asja_Rig_New_beltBuckle
+   ├─ Object: Asja_Rig_New_body
+   ├─ Object: Asja_Rig_New_eyeBalls
+   ├─ Object: Asja_Rig_New_eyePupils
+   ├─ Object: Asja_Rig_New_eyewet
+   ├─ Object: Asja_Rig_New_knifeHandle
+   ├─ Object: Asja_Rig_New_knifeMetal
+   ├─ Object: Asja_Rig_New_knifeSheaf
+   ├─ Object: Asja_Rig_New_knifeSheafCord
+   ├─ Object: Asja_Rig_New_knifeSheafLoops
+   ├─ Object: Asja_Rig_New_legTies
+   ├─ Object: Asja_Rig_New_legWraps
+   ├─ Object: Asja_Rig_New_legWraps - Brushstrokes
+   ├─ Object: Asja_Rig_New_legWraps - Brushstrokes-FLOW
+   ├─ Object: Asja_Rig_New_pants
+   ├─ Object: Asja_Rig_New_pouch
+   ├─ Object: Asja_Rig_New_quiver
+   ├─ Object: Asja_Rig_New_quiverStraps
+   ├─ Object: Asja_Rig_New_quiverStrapsBuckles
+   ├─ Object: Asja_Rig_New_shoeLaces
+   ├─ Object: Asja_Rig_New_shoes
+   ├─ Object: Asja_Rig_New_shoes - Brushstrokes
+   ├─ Object: Asja_Rig_New_shoes - Brushstrokes-FLOW
+   ├─ Object: Asja_Rig_New_strapMetal
+   ├─ Object: Asja_Rig_bag
+   ├─ Object: Asja_Rig_bp_KnifeStrap01_low
+   ├─ Object: Asja_Rig_bp_LeftStrap_low4
+   ├─ Object: Asja_Rig_bp_LeftStrap_low6
+   ├─ Object: Asja_Rig_bp_WaterStrap01_low
+   ├─ Object: Asja_Rig_bp_WaterStrap02_low
+   ├─ Object: Asja_Rig_bp_WaterStrap03_low
+   ├─ Object: Asja_Rig_bp_Wolf_blanketStraps_low
+   ├─ Object: Asja_Rig_bp_Wolf_blanket_low
+   ├─ Object: Asja_Rig_bp_blanket01_low
+   ├─ Object: Asja_Rig_bp_blanket01_low - Brushstrokes
+   ├─ Object: Asja_Rig_bp_blanket01_low - Brushstrokes-FLOW
+   ├─ Object: Asja_Rig_bp_blanket02_low
+   ├─ Object: Asja_Rig_bp_blanket03_low
+   ├─ Object: Asja_Rig_bp_blanket04_low
+   ├─ Object: Asja_Rig_bp_blanketStraps01_low
+   ├─ Object: Asja_Rig_bp_blanketStraps02_low
+   ├─ Object: Asja_Rig_bp_blanketStraps03_low
+   ├─ Object: Asja_Rig_bp_blanketStraps04_low
+   ├─ Object: Asja_Rig_bp_knifeSheath_low
+   ├─ Object: Asja_Rig_bp_knifeStrap02_low
+   ├─ Object: Asja_Rig_bp_knife_low
+   ├─ Object: Asja_Rig_bp_rope02_low
+   ├─ Object: Asja_Rig_bp_rope03_low
+   ├─ Object: Asja_Rig_bp_rope04_low
+   ├─ Object: Asja_Rig_bp_rope05_low
+   ├─ Object: Asja_Rig_bp_rope06_low
+   ├─ Object: Asja_Rig_bp_structure01_low
+   ├─ Object: Asja_Rig_bp_structure02_low
+   ├─ Object: Asja_Rig_bp_structure03_low
+   ├─ Object: Asja_Rig_bp_structure04_low
+   ├─ Object: Asja_Rig_bp_structureCloth01_low
+   ├─ Object: Asja_Rig_bp_structureCloth02_low
+   ├─ Object: Asja_Rig_bp_waterBottleTip_low
+   ├─ Object: Asja_Rig_bp_waterBottle_low
+   ├─ Object: Asja_Rig_buttonString
+   ├─ Object: Asja_Rig_cape
+   ├─ Object: Asja_Rig_coat
+   ├─ Object: Asja_Rig_coat - Brushstrokes
+   ├─ Object: Asja_Rig_coat - Brushstrokes-FLOW
+   ├─ Object: Asja_Rig_coat - Droplets
+   ├─ Object: Asja_Rig_coat - Droplets-FLOW
+   ├─ Object: Asja_Rig_coatButton
+   ├─ Object: Asja_Rig_coatFlap
+   ├─ Object: Asja_Rig_hair
+   ├─ Object: Asja_Rig_head_lod0_mesh
+   ├─ Object: Asja_Rig_head_lod0_mesh - Brushstrokes
+   ├─ Object: Asja_Rig_head_lod0_mesh - Brushstrokes-FLOW
+   ├─ Object: Asja_Rig_hood
+   ├─ Object: Asja_Rig_hoodString
+   ├─ Object: Asja_Rig_pin
+   ├─ Object: Asja_Rig_pinString
+   ├─ Object: Asja_Rig_staff
+   ├─ Object: Asja_Rig_staff - Brushstrokes
+   ├─ Object: Asja_Rig_staff - Brushstrokes-FLOW
+   ├─ Object: Asja_Rig_tearduct
+   ├─ Object: Asja_Rig_teeth_lod0_mesh
+   ├─ Object: Asja_Rig_teeth_lod0_mesh - Brushstrokes
+   ├─ Object: Asja_Rig_teeth_lod0_mesh - Brushstrokes-FLOW
+   ├─ Object: Asja_Rig_tunic
+   ├─ Object: Asja_Rig_underTunicShirt
+   ├─ Object: Asja_Rig_underTunicShirt - Brushstrokes
+   ├─ Object: Asja_Rig_underTunicShirt - Brushstrokes-FLOW
+   ├─ Object: Asja_Rig_underTunicShirt - Brushstrokes-FLOW.001
+   ├─ Object: Asja_Rig_underTunicShirt - Brushstrokes-FLOW.002
+   ├─ Object: Asja_Rig_underTunicShirt - Brushstrokes.001
+   ├─ Object: Asja_Rig_underTunicShirt - Brushstrokes.002
+   ├─ Object: Asja_Rig_undertunic
+   ├─ Object: BézierCurve
+   ├─ Object: Cape_Droplets
+   ├─ Object: Cape_Droplets-FLOW
+   ├─ Object: Cape_Droplets-FLOW.002
+   ├─ Object: Cape_Droplets.002
+   ├─ Object: Cape_Frizz
+   ├─ Object: Cape_Frizz-FLOW
+   ├─ Object: Cape_Overpaint
+   ├─ Object: Hood_Frizz
+   ├─ Object: Hood_Overpaint
+   ├─ Object: Hood_Overpaint-FLOW
+   ├─ Object: Hood_Rain
+   └─ Object: Hood_Rain-FLOW
