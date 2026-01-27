@@ -171,14 +171,39 @@ def _is_macos() -> bool:
 
 
 def _looks_like_cloud_storage(p: pathlib.Path) -> bool:
-    s = str(p).replace("\\", "/")
+    s = str(p).replace("\\", "/").lower()
     return (
-        "/Library/CloudStorage/" in s
-        or "/Dropbox" in s
-        or "/OneDrive" in s
-        or "/iCloud" in s
-        or "/Mobile Documents/" in s
+        "/library/cloudstorage/" in s
+        or "/dropbox" in s
+        or "/onedrive" in s
+        or "/icloud" in s
+        or "/mobile documents/" in s
+        or "/google drive/" in s
+        or "googledrive" in s
+        or "/my drive/" in s
     )
+
+
+def _is_cloud_placeholder(p: pathlib.Path) -> bool:
+    """Check if a file is a cloud placeholder (not downloaded locally).
+
+    Cloud storage services often show files that aren't actually downloaded.
+    These appear to exist but cannot be read or have size 0.
+    """
+    if not p.exists():
+        return False
+    try:
+        # Check if the file can actually be opened
+        with p.open("rb") as f:
+            # Try to read just 1 byte
+            data = f.read(1)
+            # If we can read but size appears very small for an image, might be placeholder
+            return False
+    except (PermissionError, OSError, IOError):
+        # File exists but cannot be read - likely a cloud placeholder
+        return True
+    except Exception:
+        return True
 
 
 def _macos_permission_hint(path: pathlib.Path, err: str) -> str:
@@ -474,8 +499,11 @@ class Packer:
           - filenames containing a 4-digit token >= 1001 (uses the last token)
 
         Returns [] if this doesn't look like a UDIM tileset or no tiles exist.
+
+        For cloud storage paths, uses fallback directory listing if glob fails.
         """
         name = asset_path.name
+        is_cloud = _looks_like_cloud_storage(asset_path)
 
         # Case A: <UDIM> placeholder
         if _UDIM_MARKER in name:
@@ -486,10 +514,17 @@ class Packer:
                 return list(cached)
 
             glob_path = asset_path.with_name(glob_name)
+            tiles = []
+
+            # Try glob first
             try:
                 tiles = [p for p in file_sequence.expand_sequence(glob_path) if p.is_file()]
             except Exception:
                 tiles = []
+
+            # Fallback for cloud storage: use directory listing with regex matching
+            if not tiles and is_cloud:
+                tiles = self._find_udim_tiles_via_listdir(asset_path.parent, glob_name)
 
             tiles = sorted(set(tiles))
             self._udim_tiles_cache[key] = tiles
@@ -523,15 +558,61 @@ class Packer:
         except Exception:
             tiles = []
 
+        # Fallback for cloud storage: use directory listing with regex matching
+        if not tiles and is_cloud:
+            tiles = self._find_udim_tiles_via_listdir(asset_path.parent, glob_name)
+            # Filter to valid UDIM tiles
+            valid_tiles = []
+            for cand in tiles:
+                cand_tpl = _udim_template_from_name(cand.name)
+                if cand_tpl and cand_tpl[0] == glob_name and cand_tpl[1] >= 1001:
+                    valid_tiles.append(cand)
+            tiles = valid_tiles
+
         tiles = sorted(set(tiles))
 
-        # Only treat as a “tileset” if it’s clearly multi-file.
+        # Only treat as a "tileset" if it's clearly multi-file.
         if len(tiles) >= 2:
             self._udim_tiles_cache[key] = tiles
             return list(tiles)
 
         self._udim_tiles_cache[key] = []
         return []
+
+    def _find_udim_tiles_via_listdir(
+        self, directory: pathlib.Path, glob_pattern: str
+    ) -> typing.List[pathlib.Path]:
+        """Fallback UDIM tile discovery using os.listdir + fnmatch.
+
+        This is more robust for cloud storage where glob() may fail.
+        """
+        import fnmatch
+
+        tiles = []
+        try:
+            if not directory.exists() or not directory.is_dir():
+                return []
+
+            for entry in os.listdir(directory):
+                if fnmatch.fnmatch(entry, glob_pattern):
+                    full_path = directory / entry
+                    # Check if it's actually a file and not a cloud placeholder
+                    try:
+                        if full_path.is_file():
+                            # Quick readability check for cloud files
+                            if _looks_like_cloud_storage(full_path):
+                                if not _is_cloud_placeholder(full_path):
+                                    tiles.append(full_path)
+                            else:
+                                tiles.append(full_path)
+                    except (PermissionError, OSError):
+                        # If we can't even check is_file, it's probably inaccessible
+                        log.debug("Cannot access potential UDIM tile: %s", full_path)
+                        continue
+        except (PermissionError, OSError) as e:
+            log.debug("Cannot list directory for UDIM tiles: %s (%s)", directory, e)
+
+        return tiles
 
     def strategise(self) -> None:
         """Determine what to do with the assets.
