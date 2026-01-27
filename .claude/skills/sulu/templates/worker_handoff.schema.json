@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Superluminal submit/download worker handoff",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "addon_dir": { "type": "string" },
+    "job_id": { "type": "string" },
+    "job_name": { "type": "string" },
+
+    "pocketbase_url": { "type": "string" },
+    "user_token": { "type": "string" },
+
+    "project": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": { "id": { "type": "string" } },
+      "required": ["id"]
+    },
+
+    "use_project_upload": { "type": "boolean" },
+    "automatic_project_path": { "type": "boolean" },
+    "custom_project_path": { "type": "string" },
+
+    "blend_path": { "type": "string" },
+    "temp_blend_path": { "type": "string" },
+
+    "start_frame": { "type": "integer" },
+    "end_frame": { "type": "integer" },
+    "frame_stepping_size": { "type": "integer" },
+
+    "image_format": { "type": "string" },
+    "render_engine": { "type": "string" },
+    "blender_version": { "type": "string" },
+
+    "ignore_errors": { "type": "boolean" },
+    "use_bserver": { "type": "boolean" },
+    "use_async_upload": { "type": "boolean" },
+
+    "download_path": { "type": "string" },
+    "sarfis_url": { "type": "string" },
+    "sarfis_token": { "type": "string" }
+  },
+  "required": ["addon_dir", "pocketbase_url", "user_token", "project"]
+}
