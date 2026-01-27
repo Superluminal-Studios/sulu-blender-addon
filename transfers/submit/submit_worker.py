@@ -966,16 +966,16 @@ def main() -> None:
         if not use_project:
             run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/",
                 [
-                    "--transfers", "32",
-                    "--checkers", "32",
-                    "--s3-chunk-size", "50M",
-                    "--s3-upload-concurrency", "32",
-                    "--buffer-size", "64M",
-                    "--multi-thread-streams", "8",
-                    "--fast-list",
+                    "--transfers", "1",           # single file, no parallelism needed
+                    "--checkers", "1",
+                    "--s3-chunk-size", "64M",     # larger chunks = fewer requests
+                    "--s3-upload-concurrency", "2",  # very conservative for cloud drives
+                    "--buffer-size", "16M",       # smaller buffer - don't outpace source
+                    "--multi-thread-streams", "0",   # disable; doesn't help S3 multipart
                     "--retries", "10",
-                    "--low-level-retries", "50",
-                    "--retries-sleep", "2s",
+                    "--low-level-retries", "20",
+                    "--retries-sleep", "5s",
+                    "--timeout", "5m",            # longer timeout for slow cloud drives
                     "--stats", "0.1s"
                 ],)
         else:
@@ -988,16 +988,16 @@ def main() -> None:
                 blend_path,
                 remote_main,
                 [
-                    "--transfers", "32",
-                    "--checkers", "32",
-                    "--s3-chunk-size", "50M",
-                    "--s3-upload-concurrency", "32",
-                    "--buffer-size", "64M",
-                    "--multi-thread-streams", "8",
-                    "--fast-list",
+                    "--transfers", "1",
+                    "--checkers", "1",
+                    "--s3-chunk-size", "64M",
+                    "--s3-upload-concurrency", "2",
+                    "--buffer-size", "16M",
+                    "--multi-thread-streams", "0",
                     "--retries", "10",
-                    "--low-level-retries", "50",
-                    "--retries-sleep", "2s",
+                    "--low-level-retries", "20",
+                    "--retries-sleep", "5s",
+                    "--timeout", "5m",
                     "--stats", "0.1s"
                 ],
             )
@@ -1009,7 +1009,20 @@ def main() -> None:
                     "copy",
                     str(common_path),
                     f":s3:{bucket}/{project_name}/",
-                    ["--files-from", str(filelist), "--checksum", "--stats", "0.1s"],
+                    [
+                        "--files-from", str(filelist),
+                        "--checksum",
+                        "--transfers", "2",
+                        "--checkers", "2",
+                        "--s3-chunk-size", "64M",
+                        "--s3-upload-concurrency", "2",
+                        "--buffer-size", "16M",
+                        "--retries", "10",
+                        "--low-level-retries", "20",
+                        "--retries-sleep", "5s",
+                        "--timeout", "5m",
+                        "--stats", "0.1s"
+                    ],
                 )
 
             with filelist.open("a", encoding="utf-8") as fp:
@@ -1032,16 +1045,16 @@ def main() -> None:
                 data["packed_addons_path"],
                 f":s3:{bucket}/{job_id}/addons/",
                 [
-                    "--transfers", "32",
-                    "--checkers", "32",
-                    "--s3-chunk-size", "50M",
-                    "--s3-upload-concurrency", "32",
-                    "--buffer-size", "64M",
-                    "--multi-thread-streams", "8",
-                    "--fast-list",
+                    "--transfers", "2",
+                    "--checkers", "2",
+                    "--s3-chunk-size", "64M",
+                    "--s3-upload-concurrency", "2",
+                    "--buffer-size", "16M",
+                    "--multi-thread-streams", "0",
                     "--retries", "10",
-                    "--low-level-retries", "50",
-                    "--retries-sleep", "2s",
+                    "--low-level-retries", "20",
+                    "--retries-sleep", "5s",
+                    "--timeout", "5m",
                     "--stats", "0.1s"
                 ],
             )

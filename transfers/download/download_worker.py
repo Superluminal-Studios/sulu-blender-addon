@@ -127,9 +127,12 @@ def _rclone_copy_output(dest_dir: str) -> bool:
     # - size-only to avoid Cloudflare multipart etag pitfalls
     rclone_args = [
         "--exclude", "thumbnails/**",
-        "--transfers", "16",
-        "--checkers", "16",
+        "--transfers", "8",
+        "--checkers", "8",
         "--size-only",
+        "--retries", "10",
+        "--low-level-retries", "20",
+        "--retries-sleep", "5s",
     ]
 
     remote = f":s3:{bucket}/{job_id}/output/"

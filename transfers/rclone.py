@@ -523,13 +523,41 @@ def _classify_failure(verb: str, src: str, dst: str, exit_code: int, tail_lines:
             f"Technical: {_pick_technical_line(tail_lines) or 'disk full'}"
         )
 
+    # ---- Network / connection errors (check BEFORE quota to avoid false positives) ----
+    network_markers = (
+        "broken pipe",
+        "use of closed network connection",
+        "connection reset",
+        "connection refused",
+        "connection timed out",
+        "no route to host",
+        "network is unreachable",
+        "i/o timeout",
+        "context deadline exceeded",
+        "tls handshake timeout",
+        "eof",
+    )
+    if any(m in low for m in network_markers):
+        return (
+            "network_error",
+            "Transfer failed due to a network connection issue.\n"
+            "\n"
+            "Fix:\n"
+            "  • Check your internet connection\n"
+            "  • If on WiFi, try moving closer to router or use ethernet\n"
+            "  • Retry the upload — large files sometimes need multiple attempts\n"
+            "\n"
+            f"Technical: {_pick_technical_line(tail_lines) or 'network error'}"
+        )
+
     # ---- Remote quota / storage exhausted ----
     remote_space_markers = (
         "insufficient storage",
         "insufficientstorage",
         "quota exceeded",
         "storagequotaexceeded",
-        "507",
+        "statuscode: 507",
+        "statuscode:507",
         "notentitled",  # common R2-style entitlement/billing signal
     )
     if any(m in low for m in remote_space_markers):
