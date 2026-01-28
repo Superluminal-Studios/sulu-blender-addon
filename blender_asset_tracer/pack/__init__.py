@@ -608,7 +608,6 @@ class Packer:
         assert usage.is_sequence
 
         def handle_missing_file():
-            log.warning("Missing file: %s", asset_path)
             self._record_missing(asset_path)
 
         try:
@@ -647,7 +646,6 @@ class Packer:
                     len(udim_tiles),
                 )
             else:
-                log.warning("Missing file: %s", asset_path)
                 self._record_missing(asset_path)
                 return
 

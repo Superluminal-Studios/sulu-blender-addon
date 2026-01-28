@@ -79,28 +79,6 @@ def _set_logger(fn) -> None:
     _LOG = fn if callable(fn) else _default_logger
 
 
-def warn(
-    message: str,
-    emoji: str = "x",
-    close_window: bool = True,
-    new_line: bool = False,
-) -> None:
-    emojis = {
-        "x": "❌",  # error / stop
-        "w": "⚠️",  # warning
-        "c": "✅",  # success/ok
-        "i": "ℹ️",  # info
-    }
-    new_line_str = "\n" if new_line else ""
-    _LOG(f"{new_line_str}{emojis.get(emoji, '❌')}  {message}")
-    if close_window:
-        try:
-            _safe_input("\nPress ENTER to close this window…", "")
-        except Exception:
-            pass
-        sys.exit(1)
-
-
 # ─── Path helpers (OS-agnostic drive detection + S3 key cleaning) ────────────
 
 _WIN_DRIVE = re.compile(r"^[A-Za-z]:[\\/]+")
@@ -205,15 +183,15 @@ def _mac_permission_help(path: str, err: str) -> str:
         "macOS blocked access to a file we need to upload/pack.",
         "",
         "Fix:",
-        "  • System Settings → Privacy & Security → Full Disk Access",
-        "  • Enable the app running this upload (Terminal/iTerm if you see this console; otherwise Blender).",
+        "  - System Settings -> Privacy & Security -> Full Disk Access",
+        "  - Enable the app running this upload (Terminal/iTerm if you see this console; otherwise Blender).",
     ]
     if _looks_like_cloud_storage_path(path):
         lines += [
             "",
             "Cloud storage note:",
-            "  • This file is in a cloud-synced folder.",
-            "  • Make sure it’s downloaded / available offline, then retry.",
+            "  - This file is in a cloud-synced folder.",
+            "  - Make sure it's downloaded / available offline, then retry.",
         ]
     lines += ["", f"Technical: {err}"]
     return "\n".join(lines)
@@ -241,37 +219,6 @@ def _probe_readable_file(p: str) -> Tuple[bool, Optional[str]]:
         return (False, f"OSError: {exc}")
     except Exception as exc:
         return (False, f"{type(exc).__name__}: {exc}")
-
-
-def _print_missing_unreadable_summary(
-    missing: List[str],
-    unreadable: List[Tuple[str, str]],
-    *,
-    header: str = "Dependency check",
-) -> None:
-    if not missing and not unreadable:
-        return
-
-    _LOG(f"\n⚠️  {header}: issues detected\n")
-
-    if missing:
-        _LOG(f"⚠️  Missing files: {len(missing)}")
-        for p in missing:
-            _LOG(f"    - {p}")
-
-    if unreadable:
-        _LOG(f"\n❌  Unreadable files: {len(unreadable)}")
-        for p, err in unreadable:
-            _LOG(f"    - {p}")
-            _LOG(f"      {err}")
-        # macOS help block once
-        if _IS_MAC:
-            # If *any* unreadable looks like permission, show help.
-            for p, err in unreadable:
-                low = err.lower()
-                if "permission" in low or "operation not permitted" in low or "not permitted" in low:
-                    _LOG("\n" + _mac_permission_help(p, err) + "\n")
-                    break
 
 
 def _should_moveto_local_file(local_path: str, original_blend_path: str) -> bool:
@@ -428,124 +375,6 @@ def _generate_report(
     return report, report_path
 
 
-def _run_test_mode(
-    blend_path: str,
-    dep_paths: List[Path],
-    missing_set: set,
-    unreadable_dict: dict,
-    project_root: Path,
-    same_drive_deps: List[Path],
-    cross_drive_deps: List[Path],
-    upload_type: str,
-    shorten_path_fn,
-    addon_dir: Optional[str] = None,
-) -> None:
-    """
-    Run in test mode: display comprehensive dependency information without submitting.
-    Also generates a diagnostic report.
-    """
-    _LOG("\n" + "=" * 70)
-    _LOG(f"  SUBMISSION TEST MODE - {upload_type}")
-    _LOG("=" * 70)
-
-    _LOG(f"\n[1/6] Blend file: {blend_path}")
-    try:
-        _LOG(f"      Size: {_format_size(os.path.getsize(blend_path))}")
-    except:
-        pass
-
-    _LOG(f"\n[2/6] Dependencies traced: {len(dep_paths)}")
-
-    _LOG(f"\n[3/6] Project root: {project_root}")
-    _LOG(f"      Same-drive deps: {len(same_drive_deps)}")
-    _LOG(f"      Cross-drive deps: {len(cross_drive_deps)}")
-
-    # Classify by extension
-    by_ext: Dict[str, List[Path]] = {}
-    total_size = 0
-    for dep in dep_paths:
-        ext = dep.suffix.lower() if dep.suffix else "(no ext)"
-        by_ext.setdefault(ext, []).append(dep)
-        if dep.exists() and dep.is_file():
-            try:
-                total_size += dep.stat().st_size
-            except:
-                pass
-
-    _LOG(f"\n[4/6] Dependency breakdown:")
-    _LOG(f"      By extension:")
-    for ext, paths in sorted(by_ext.items(), key=lambda x: -len(x[1])):
-        _LOG(f"        {ext:12} : {len(paths):4} files")
-    _LOG(f"\n      Total size: {_format_size(total_size)}")
-
-    # Issues
-    _LOG(f"\n[5/6] Issues:")
-
-    if missing_set:
-        _LOG(f"\n      MISSING ({len(missing_set)}):")
-        for p in sorted(missing_set):
-            _LOG(f"        - {shorten_path_fn(str(p))}")
-    else:
-        _LOG(f"      No missing files")
-
-    if unreadable_dict:
-        _LOG(f"\n      UNREADABLE ({len(unreadable_dict)}):")
-        for p, err in sorted(unreadable_dict.items()):
-            _LOG(f"        - {shorten_path_fn(str(p))}")
-            _LOG(f"          {err}")
-    else:
-        _LOG(f"      No unreadable files")
-
-    if cross_drive_deps:
-        _LOG(f"\n      CROSS-DRIVE ({len(cross_drive_deps)}):")
-        for p in cross_drive_deps:
-            _LOG(f"        - {shorten_path_fn(str(p))}")
-    else:
-        _LOG(f"      No cross-drive files")
-
-    # Generate report
-    _LOG(f"\n[6/6] Generating report...")
-    report, report_path = _generate_report(
-        blend_path=blend_path,
-        dep_paths=dep_paths,
-        missing_set=missing_set,
-        unreadable_dict=unreadable_dict,
-        project_root=project_root,
-        same_drive_deps=same_drive_deps,
-        cross_drive_deps=cross_drive_deps,
-        upload_type=upload_type,
-        addon_dir=addon_dir,
-        mode="test",
-    )
-
-    if report_path:
-        _LOG(f"      Report saved: {report_path}")
-    else:
-        _LOG(f"      Report could not be saved to file")
-
-    # Summary
-    _LOG("\n" + "=" * 70)
-    _LOG("  SUMMARY")
-    _LOG("=" * 70)
-
-    issues = len(missing_set) + len(unreadable_dict) + len(cross_drive_deps)
-    if issues == 0:
-        _LOG("\n  [OK] No issues detected. Ready for submission.")
-    else:
-        _LOG(f"\n  [INFO] {issues} issue(s) to review:")
-        if missing_set:
-            _LOG(f"    - {len(missing_set)} missing file(s)")
-        if unreadable_dict:
-            _LOG(f"    - {len(unreadable_dict)} unreadable file(s)")
-        if cross_drive_deps and upload_type == "PROJECT":
-            _LOG(f"    - {len(cross_drive_deps)} cross-drive file(s) (excluded in PROJECT mode)")
-
-    _LOG("\n  [TEST MODE] No actual submission performed.")
-    if report_path:
-        _LOG(f"  [REPORT] Full details saved to: {report_path}")
-    _LOG("=" * 70 + "\n")
-
-
 # ─── Worker bootstrap (safe to import) ────────────────────────────
 
 def _load_handoff_from_argv(argv: List[str]) -> Dict[str, object]:
@@ -639,7 +468,7 @@ def main() -> None:
     clear_console()
 
     # Create rich logger for beautiful output
-    logger = create_logger(_LOG)
+    logger = create_logger(_LOG, input_fn=_safe_input)
 
     # Single resilient session for *all* HTTP traffic
     session = requests_retry_session()
@@ -654,27 +483,23 @@ def main() -> None:
             if latest_version:
                 latest_version = tuple(int(i) for i in latest_version.split("."))
                 if latest_version > tuple(data["addon_version"]):
-                    answer = _safe_input(
-                        "A new version of the Superluminal Render Farm addon is available, would you like to update? (y/n) ",
-                        "n"
+                    logger.version_update(
+                        "https://superlumin.al/blender-addon",
+                        [
+                            "Download the latest addon zip from the link above.",
+                            "Uninstall the current version in Blender.",
+                            "Install the latest version in Blender.",
+                            "Restart Blender.",
+                        ],
                     )
+                    answer = logger.prompt("Would you like to update now? (y/n) ", "n")
                     if answer.lower() == "y":
                         webbrowser.open("https://superlumin.al/blender-addon")
-                        print("\nhttps://superlumin.al/blender-addon")
-                        warn(
-                            "To update:\n"
-                            "  • Download the latest addon zip from the link above.\n"
-                            "  • Uninstall the current version in Blender.\n"
-                            "  • Install the latest version in Blender.\n"
-                            "  • Close this window and restart Blender.",
-                            emoji="i",
-                            close_window=True,
-                            new_line=True,
-                        )
+                        logger.fatal("Please complete the update and restart Blender.")
     except SystemExit:
         sys.exit(0)
     except Exception:
-        _LOG("ℹ️  Skipped add-on update check (network not available or rate-limited). Continuing...")
+        logger.info("Skipped add-on update check (network not available or rate-limited). Continuing...")
 
     headers = {"Authorization": data["user_token"]}
 
@@ -682,7 +507,7 @@ def main() -> None:
     try:
         rclone_bin = ensure_rclone(logger=_LOG)
     except Exception as e:
-        warn(f"Couldn't prepare the uploader (rclone): {e}", emoji="x", close_window=True)
+        logger.fatal(f"Couldn't prepare the uploader (rclone): {e}")
 
     # Verify farm availability (nice error if org misconfigured)
     try:
@@ -692,20 +517,18 @@ def main() -> None:
             timeout=30,
         )
         if farm_status.status_code != 200:
-            warn(f"Farm status check failed: {farm_status.json()}", emoji="x", close_window=False)
-            warn(
+            logger.error(f"Farm status check failed: {farm_status.json()}")
+            logger.fatal(
                 "Please verify that you are logged in and a project is selected. "
-                "If the issue persists, try logging out and back in.",
-                emoji="w",
-                close_window=True,
+                "If the issue persists, try logging out and back in."
             )
+    except SystemExit:
+        raise
     except Exception as exc:
-        warn(f"Farm status check failed: {exc}", emoji="x", close_window=False)
-        warn(
+        logger.error(f"Farm status check failed: {exc}")
+        logger.fatal(
             "Please verify that you are logged in and a project is selected. "
-            "If the issue persists, try logging out and back in.",
-            emoji="w",
-            close_window=True,
+            "If the issue persists, try logging out and back in."
         )
 
     # Local paths / settings
@@ -734,7 +557,14 @@ def main() -> None:
     # ═══════════════════════════════════════════════════════════════════════════
     # STAGE 1: TRACING - Discover all dependencies
     # ═══════════════════════════════════════════════════════════════════════════
-    logger.stage_header(1, "TRACING DEPENDENCIES", "Scanning blend file for external references")
+    logger.stage_header(
+        1, "TRACING DEPENDENCIES",
+        "Scanning blend file for external references",
+        details=[
+            f"Main file: {Path(blend_path).name}",
+            "Scanning for dependencies...",
+        ],
+    )
     logger.trace_start(blend_path)
 
     # Pack assets
@@ -749,10 +579,8 @@ def main() -> None:
         custom_root = None
         if not automatic_project_path:
             if not custom_project_path_str or not str(custom_project_path_str).strip():
-                warn(
-                    "Custom Project Path is empty. Either enable Automatic Project Path or set a valid folder.",
-                    emoji="w",
-                    close_window=True,
+                logger.fatal(
+                    "Custom Project Path is empty. Either enable Automatic Project Path or set a valid folder."
                 )
             custom_root = Path(custom_project_path_str)
 
@@ -761,18 +589,63 @@ def main() -> None:
         )
         common_path = str(project_root).replace("\\", "/")
 
-        # Show trace summary
+        # 3. Build warning text for issues (shown inside trace summary panel)
+        missing_files_list = [str(p) for p in sorted(missing_set)]
+        unreadable_files_list = [(str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))]
+        has_issues = bool(cross_drive_deps or missing_files_list or unreadable_files_list)
+
+        warning_text = None
+        if has_issues:
+            parts: List[str] = []
+            if cross_drive_deps:
+                parts.append(
+                    f"{len(cross_drive_deps)} file(s) on a different drive (excluded from Project upload)"
+                )
+            if missing_files_list:
+                parts.append(f"{len(missing_files_list)} missing file(s)")
+            if unreadable_files_list:
+                parts.append(f"{len(unreadable_files_list)} unreadable file(s)")
+
+            # macOS permission help if relevant
+            mac_extra = ""
+            if _IS_MAC and unreadable_files_list:
+                for p, err in unreadable_files_list:
+                    low = err.lower()
+                    if "permission" in low or "operation not permitted" in low or "not permitted" in low:
+                        mac_extra = "\n" + _mac_permission_help(p, err)
+                        break
+
+            warning_text = (
+                "\n".join(f"  - {p}" for p in parts)
+                + "\nThis may cause missing textures or linked data on the farm."
+                + mac_extra
+            )
+
+        # Show trace summary (with warnings inline)
         logger.trace_summary(
             total=len(dep_paths),
             missing=len(missing_set),
             unreadable=len(unreadable_dict),
             project_root=shorten_path(common_path),
             cross_drive=len(cross_drive_deps),
+            warning_text=warning_text,
         )
 
         # TEST MODE: Show comprehensive info and exit early
         if test_mode:
-            _run_test_mode(
+            # Build by_ext counts
+            by_ext: Dict[str, int] = {}
+            total_size = 0
+            for dep in dep_paths:
+                ext = dep.suffix.lower() if dep.suffix else "(no ext)"
+                by_ext[ext] = by_ext.get(ext, 0) + 1
+                if dep.exists() and dep.is_file():
+                    try:
+                        total_size += dep.stat().st_size
+                    except:
+                        pass
+
+            report, report_path = _generate_report(
                 blend_path=blend_path,
                 dep_paths=dep_paths,
                 missing_set=missing_set,
@@ -781,50 +654,36 @@ def main() -> None:
                 same_drive_deps=same_drive_deps,
                 cross_drive_deps=cross_drive_deps,
                 upload_type="PROJECT",
-                shorten_path_fn=shorten_path,
                 addon_dir=str(data["addon_dir"]),
+                mode="test",
+            )
+            logger.test_report(
+                blend_path=blend_path,
+                dep_count=len(dep_paths),
+                project_root=str(project_root),
+                same_drive=len(same_drive_deps),
+                cross_drive=len(cross_drive_deps),
+                by_ext=by_ext,
+                total_size=total_size,
+                missing=[str(p) for p in sorted(missing_set)],
+                unreadable=[(str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))],
+                cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
+                upload_type="PROJECT",
+                report_path=str(report_path) if report_path else None,
+                shorten_fn=shorten_path,
             )
             _safe_input("\nPress ENTER to close this window...", "")
             sys.exit(0)
 
-        # 3. Warn about cross-drive dependencies
-        if cross_drive_deps:
-            warn(
-                f"{len(cross_drive_deps)} file(s) are on a different drive/root. "
-                "They will be excluded from Project upload. Consider Zip upload.",
-                emoji="w",
-                close_window=False,
-                new_line=True,
-            )
-            warn("Would you like to continue submission?", emoji="w", close_window=False)
-            answer = _safe_input("y/n: ", "y")  # Auto-continue in non-interactive mode
-            if answer.lower() != "y":
-                sys.exit(1)
-
-        # 4. Warn about missing/unreadable
-        missing_files_list = [str(p) for p in sorted(missing_set)]
-        unreadable_files_list = [(str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))]
-        _print_missing_unreadable_summary(
-            missing_files_list,
-            unreadable_files_list,
-            header="Project upload dependency check",
-        )
-        if missing_files_list or unreadable_files_list:
-            warn(
-                "Some dependencies are missing or unreadable. This can cause missing textures/linked data on the farm.",
-                emoji="w",
-                close_window=False,
-            )
-            warn("Continue submission anyway?", emoji="w", close_window=False)
-            answer = _safe_input("y/n: ", "y")  # Auto-continue in non-interactive mode
+        # Prompt if there are issues
+        if has_issues:
+            answer = logger.prompt("Continue submission anyway? y/n: ", "y")
             if answer.lower() != "y":
                 sys.exit(1)
 
         # ═══════════════════════════════════════════════════════════════════════
         # STAGE 2: PACKING - Build file manifest
         # ═══════════════════════════════════════════════════════════════════════
-        logger.stage_header(2, "PACKING (PROJECT)", "Building file manifest for incremental upload")
-
         # 5. Pack with correct project root (now BAT uses the computed root)
         # Pass raw_usages to avoid redundant trace.deps() call inside packer
         fmap, report = pack_blend(
@@ -841,14 +700,17 @@ def main() -> None:
         rel_manifest: List[str] = []
         required_storage = 0
 
-        # Iterate over file_map entries: src_path -> packed_path
-        # We use src_path to compute relative paths from common_path (project root)
         total_files = len(fmap)
-        logger.info(f"Processing {total_files} files for manifest:")
-        logger.log("")
+        logger.stage_header(
+            2, "WRITING MANIFEST",
+            "Building file manifest for incremental upload",
+            details=[f"{total_files} files to process"],
+        )
+        logger.pack_start()
 
         ok_count = 0
         skip_count = 0
+        pack_idx = 0
         for idx, (src_path, dst_path) in enumerate(fmap.items()):
             src_str = str(src_path).replace("\\", "/")
 
@@ -859,23 +721,24 @@ def main() -> None:
 
             # Probe readability and accumulate size
             ok, err = _probe_readable_file(src_str)
-            if ok:
-                ok_count += 1
-                size = 0
-                try:
-                    size = os.path.getsize(src_str)
-                    required_storage += size
-                except Exception:
-                    pass
-                logger.pack_file(idx + 1, total_files, src_str, size=size, status="ok")
-                # Compute relative path from project root for manifest
-                rel = _relpath_safe(src_str, common_path)
-                rel = _s3key_clean(rel)
-                if rel:
-                    rel_manifest.append(rel)
-            else:
-                status = "missing" if err == "missing" else "unreadable"
-                logger.pack_file(idx + 1, total_files, src_str, status=status)
+            if not ok:
+                # Already warned about missing/unreadable in stage 1 - skip silently
+                continue
+
+            pack_idx += 1
+            ok_count += 1
+            size = 0
+            try:
+                size = os.path.getsize(src_str)
+                required_storage += size
+            except Exception:
+                pass
+            logger.pack_entry(pack_idx, src_str, size=size, status="ok")
+            # Compute relative path from project root for manifest
+            rel = _relpath_safe(src_str, common_path)
+            rel = _s3key_clean(rel)
+            if rel:
+                rel_manifest.append(rel)
 
         # Include main blend in storage calculation
         try:
@@ -892,12 +755,10 @@ def main() -> None:
         blend_rel = _relpath_safe(abs_blend, common_path)
         main_blend_s3 = _nfc(_s3key_clean(blend_rel) or os.path.basename(abs_blend))
 
-        logger.pack_summary(
+        logger.pack_end(
             ok_count=ok_count,
-            missing_count=len(missing_files_list),
-            unreadable_count=len(unreadable_files_list),
-            cross_drive_count=len(cross_drive_deps),
             total_size=required_storage,
+            title="Manifest Complete",
         )
 
     else:  # ZIP mode
@@ -911,18 +772,52 @@ def main() -> None:
         project_root, same_drive_deps, cross_drive_deps = compute_project_root(Path(blend_path), dep_paths)
         project_root_str = str(project_root).replace("\\", "/")
 
-        # Show trace summary
+        # Build warning text for issues
+        missing_files_list = [str(p) for p in sorted(missing_set)]
+        unreadable_files_list = [(str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))]
+        has_zip_issues = bool(missing_files_list or unreadable_files_list)
+
+        zip_warning_text = None
+        if has_zip_issues:
+            parts_z: List[str] = []
+            if missing_files_list:
+                parts_z.append(f"{len(missing_files_list)} missing file(s)")
+            if unreadable_files_list:
+                parts_z.append(f"{len(unreadable_files_list)} unreadable file(s)")
+            zip_warning_text = (
+                "\n".join(f"  - {p}" for p in parts_z)
+                + "\nThe zip may be incomplete."
+            )
+
+        # Show trace summary (with warnings inline)
         logger.trace_summary(
             total=len(dep_paths),
             missing=len(missing_set),
             unreadable=len(unreadable_dict),
             project_root=shorten_path(project_root_str),
             cross_drive=len(cross_drive_deps),
+            warning_text=zip_warning_text,
         )
+
+        if has_zip_issues:
+            answer = logger.prompt("Continue submission anyway? y/n: ", "y")
+            if answer.lower() != "y":
+                sys.exit(1)
 
         # TEST MODE: Show comprehensive info and exit early
         if test_mode:
-            _run_test_mode(
+            by_ext: Dict[str, int] = {}
+            total_size = 0
+            for dep in dep_paths:
+                ext = dep.suffix.lower() if dep.suffix else "(no ext)"
+                by_ext[ext] = by_ext.get(ext, 0) + 1
+                if dep.exists() and dep.is_file():
+                    try:
+                        total_size += dep.stat().st_size
+                    except:
+                        pass
+
+            report, report_path = _generate_report(
                 blend_path=blend_path,
                 dep_paths=dep_paths,
                 missing_set=missing_set,
@@ -931,8 +826,23 @@ def main() -> None:
                 same_drive_deps=same_drive_deps,
                 cross_drive_deps=cross_drive_deps,
                 upload_type="ZIP",
-                shorten_path_fn=shorten_path,
                 addon_dir=str(data["addon_dir"]),
+                mode="test",
+            )
+            logger.test_report(
+                blend_path=blend_path,
+                dep_count=len(dep_paths),
+                project_root=str(project_root),
+                same_drive=len(same_drive_deps),
+                cross_drive=len(cross_drive_deps),
+                by_ext=by_ext,
+                total_size=total_size,
+                missing=[str(p) for p in sorted(missing_set)],
+                unreadable=[(str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))],
+                cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
+                upload_type="ZIP",
+                report_path=str(report_path) if report_path else None,
+                shorten_fn=shorten_path,
             )
             _safe_input("\nPress ENTER to close this window...", "")
             sys.exit(0)
@@ -940,13 +850,33 @@ def main() -> None:
         # ═══════════════════════════════════════════════════════════════════════
         # STAGE 2: PACKING (ZIP MODE)
         # ═══════════════════════════════════════════════════════════════════════
-        logger.stage_header(2, "PACKING (ZIP)", "Creating compressed archive with all dependencies")
-        logger.info("Compression: .blend → Zstd, others → Deflate/Store")
-        logger.log("")
+        logger.stage_header(
+            2, "PACKING",
+            "Creating compressed archive with all dependencies",
+        )
 
         # 3. Pack with computed project root (not drive root)
         # Pass raw_usages to avoid redundant trace.deps() call inside packer
         abs_blend_norm = _norm_abs_for_detection(blend_path)
+
+        # Track whether zip_start has been emitted (first entry triggers it)
+        _zip_started = False
+
+        def _on_zip_entry(idx, total, arcname, size, method):
+            nonlocal _zip_started
+            if not _zip_started:
+                logger.zip_start(total, 0)
+                _zip_started = True
+            logger.zip_entry(idx, total, arcname, size, method)
+
+        def _on_zip_done(zippath, total_files, total_bytes, elapsed):
+            logger.zip_done(zippath, total_files, total_bytes, elapsed)
+
+        # Suppress raw _emit output; use a no-op so BAT header/verbose lines
+        # don't leak to stdout (our structured callbacks handle the UI).
+        def _noop_emit(msg):
+            pass
+
         zip_report = pack_blend(
             abs_blend_norm,
             str(zip_file),
@@ -954,68 +884,38 @@ def main() -> None:
             project_path=project_root_str,
             return_report=True,
             pre_traced_deps=raw_usages,
+            zip_emit_fn=_noop_emit,
+            zip_entry_cb=_on_zip_entry,
+            zip_done_cb=_on_zip_done,
         )
 
         if not zip_file.exists():
-            warn("Zip file does not exist", emoji="x", close_window=True)
-
-        # Report issues from packer
-        missing = []
-        unreadable = []
-        if isinstance(zip_report, dict):
-            missing = list(zip_report.get("missing_files") or [])
-            u = zip_report.get("unreadable_files") or {}
-            if isinstance(u, dict):
-                unreadable = [(k, str(v)) for k, v in u.items()]
-
-        if missing or unreadable:
-            logger.log("")
-            if missing:
-                logger.warning(f"{len(missing)} missing file(s)")
-            if unreadable:
-                logger.error(f"{len(unreadable)} unreadable file(s)")
-            warn(
-                "Some files were missing or unreadable during packing. The zip may be incomplete.",
-                emoji="w",
-                close_window=False,
-            )
-            warn("Continue submission anyway?", emoji="w", close_window=False)
-            answer = _safe_input("y/n: ", "y")  # Auto-continue in non-interactive mode
-            if answer.lower() != "y":
-                sys.exit(1)
+            logger.fatal("Zip file does not exist")
 
         required_storage = zip_file.stat().st_size
         rel_manifest = []
         common_path = ""
         main_blend_s3 = ""
 
-        logger.log("")
-        logger.success(f"Zip created: {zip_file.name}")
-        logger.info(f"Size: {_format_size(required_storage)}")
-
     # NO_SUBMIT MODE: Skip upload and job registration
     if no_submit:
-        _LOG("\n" + "=" * 70)
-        _LOG("  NO-SUBMIT MODE")
-        _LOG("=" * 70)
-        _LOG("\n  Packing completed successfully.")
-        _LOG(f"  Upload type: {'PROJECT' if use_project else 'ZIP'}")
-        if use_project:
-            _LOG(f"  Project root: {common_path}")
-            _LOG(f"  Dependencies: {len(rel_manifest)}")
-            _LOG(f"  Main blend S3 key: {main_blend_s3}")
-        else:
-            _LOG(f"  Zip file: {zip_file}")
-            if zip_file.exists():
-                _LOG(f"  Zip size: {_format_size(zip_file.stat().st_size)}")
-        _LOG(f"\n  Storage estimate: {_format_size(required_storage)}")
-        _LOG("\n  [NO-SUBMIT] Skipping upload and job registration.")
-        _LOG("=" * 70)
+        zip_size = 0
+        if not use_project and zip_file.exists():
+            zip_size = zip_file.stat().st_size
+        logger.no_submit_report(
+            upload_type="PROJECT" if use_project else "ZIP",
+            common_path=common_path if use_project else "",
+            rel_manifest_count=len(rel_manifest) if use_project else 0,
+            main_blend_s3=main_blend_s3 if use_project else "",
+            zip_file=str(zip_file) if not use_project else "",
+            zip_size=zip_size,
+            required_storage=required_storage,
+        )
         # Clean up temp zip if created
         if not use_project and zip_file.exists():
             try:
                 zip_file.unlink()
-                _LOG(f"\n  Cleaned up temp zip: {zip_file}")
+                logger.info(f"Cleaned up temp zip: {zip_file}")
             except:
                 pass
         _safe_input("\nPress ENTER to close this window...", "")
@@ -1027,7 +927,7 @@ def main() -> None:
     logger.stage_header(3, "UPLOADING", "Transferring files to render farm storage")
 
     # R2 credentials
-    logger.info("Fetching storage credentials...")
+    logger.storage_connect("connecting")
     try:
         s3_response = session.get(
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
@@ -1038,9 +938,9 @@ def main() -> None:
         s3_response.raise_for_status()
         s3info = s3_response.json()["items"][0]
         bucket = s3info["bucket_name"]
-        logger.upload_complete("Credentials obtained")
+        logger.storage_connect("connected")
     except Exception as exc:
-        warn(f"Could not obtain storage credentials: {exc}", emoji="x", close_window=True)
+        logger.fatal(f"Could not obtain storage credentials: {exc}")
 
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
 
@@ -1065,6 +965,7 @@ def main() -> None:
             # ZIP MODE UPLOAD
             total_steps = 2 if has_addons else 1
             step = 1
+            logger.upload_start(total_steps)
 
             logger.upload_step(step, total_steps, "Uploading zip archive", f"{zip_file.name} ({_format_size(required_storage)})")
             run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/", rclone_settings)
@@ -1088,6 +989,7 @@ def main() -> None:
             if has_addons:
                 total_steps += 1
             step = 1
+            logger.upload_start(total_steps)
 
             blend_size = 0
             try:
@@ -1141,7 +1043,7 @@ def main() -> None:
                 logger.upload_complete("Add-ons uploaded")
 
     except RuntimeError as exc:
-        warn(f"Upload failed: {exc}", emoji="x", close_window=True)
+        logger.fatal(f"Upload failed: {exc}")
 
     finally:
         try:
@@ -1194,7 +1096,7 @@ def main() -> None:
         )
         post_resp.raise_for_status()
     except requests.RequestException as exc:
-        warn(f"Job registration failed: {exc}", emoji="x", close_window=True)
+        logger.fatal(f"Job registration failed: {exc}")
 
     elapsed = time.perf_counter() - t_start
     logger.log("")
@@ -1207,11 +1109,11 @@ def main() -> None:
     except Exception:
         pass
 
-    selection = _safe_input("\nOpen job in your browser? y/n, or just press ENTER to close...", "n")
+    selection = logger.prompt("\nOpen job in your browser? y/n, or just press ENTER to close...", "n")
     if selection.lower() == "y":
         web_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{data['job_id']}"
         webbrowser.open(web_url)
-        _LOG(f"🌐  Opened {web_url} in your browser.")
+        logger.job_complete(web_url)
         _safe_input("\nPress ENTER to close this window...", "")
         sys.exit(1)
 
@@ -1220,13 +1122,18 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
+    except SystemExit:
+        raise
     except Exception as exc:
         import traceback
         traceback.print_exc()
-        warn(
-            "Submission encountered an unexpected error. "
-            f"Details:\n{exc}\n"
-            "Tip: try switching to Zip upload or choose a higher level Project Path, then submit again.",
-            emoji="x",
-            close_window=True,
+        # Logger may not be initialized yet, fall back to print
+        print(
+            f"\n{exc}\n"
+            "Tip: try switching to Zip upload or choose a higher level Project Path, then submit again."
         )
+        try:
+            _safe_input("\nPress ENTER to close this window...", "")
+        except Exception:
+            pass
+        sys.exit(1)

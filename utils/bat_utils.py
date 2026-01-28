@@ -297,6 +297,9 @@ def pack_blend(
     rewrite_blendfiles: bool = False,
     return_report: bool = False,
     pre_traced_deps: Optional[List[Any]] = None,
+    zip_emit_fn=None,
+    zip_entry_cb=None,
+    zip_done_cb=None,
 ):
     """Pack a blend.
 
@@ -374,21 +377,40 @@ def pack_blend(
         return (file_map, report) if return_report else file_map
 
     elif method == "ZIP":
+        import logging as _logging
+
         # Use provided project_path for meaningful zip structure, fallback to blend's parent
         project_p = Path(project_path) if project_path else Path(infile).parent
-        with zipped.ZipPacker(
-            Path(infile), project_p, Path(target), pre_traced_deps=pre_traced_deps
-        ) as packer:
-            packer.strategise()
-            packer.execute()
 
-            if return_report:
-                return {
-                    "zip_path": str(Path(target)),
-                    "output_path": str(packer.output_path),
-                    "missing_files": [str(p) for p in sorted(getattr(packer, "missing_files", set()))],
-                    "unreadable_files": {str(k): v for k, v in sorted(getattr(packer, "unreadable_files", {}).items(), key=lambda kv: str(kv[0]))},
-                }
+        # Install structured callbacks if provided (suppresses raw _emit output)
+        if zip_emit_fn or zip_entry_cb or zip_done_cb:
+            zipped.set_emit(fn=zip_emit_fn, entry_cb=zip_entry_cb, done_cb=zip_done_cb)
+
+        # Suppress BAT's own "Missing file:" log.warning during packing –
+        # the caller already reported missing files in the trace stage.
+        _bat_pack_logger = _logging.getLogger("blender_asset_tracer.pack")
+        _prev_level = _bat_pack_logger.level
+        _bat_pack_logger.setLevel(_logging.ERROR)
+
+        try:
+            with zipped.ZipPacker(
+                Path(infile), project_p, Path(target), pre_traced_deps=pre_traced_deps
+            ) as packer:
+                packer.strategise()
+                packer.execute()
+
+                if return_report:
+                    return {
+                        "zip_path": str(Path(target)),
+                        "output_path": str(packer.output_path),
+                        "missing_files": [str(p) for p in sorted(getattr(packer, "missing_files", set()))],
+                        "unreadable_files": {str(k): v for k, v in sorted(getattr(packer, "unreadable_files", {}).items(), key=lambda kv: str(kv[0]))},
+                    }
+        finally:
+            # Restore logger level and reset emit callbacks
+            _bat_pack_logger.setLevel(_prev_level)
+            zipped.set_emit()
+
         return None
 
     raise ValueError(f"Unknown method: {method!r}")

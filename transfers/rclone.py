@@ -650,8 +650,6 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
            "--stats=0.1s", "--use-json-log", "--stats-log-level", "NOTICE",
            *base[1:]]
 
-    _log_or_print(logger, f"{verb.capitalize():9} {src} -> {dst}")
-
     # Keep a small tail of non-stats output so failures are actionable.
     tail = deque(maxlen=120)
 
