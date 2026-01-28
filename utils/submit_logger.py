@@ -227,8 +227,20 @@ def _normalize_logo_mark(raw: str) -> str:
     return "\n".join(lines)
 
 
-def _get_logo_mark() -> str:
-    """Return the appropriate logo mark text for the current terminal."""
+def _get_logo_width(raw: str) -> int:
+    """Get the maximum line width of the logo."""
+    lines = raw.splitlines()
+    return max((len(ln) for ln in lines), default=0)
+
+
+# Minimum terminal width to show the full logo (with some padding for panel borders)
+LOGO_MIN_WIDTH = 84
+
+
+def _get_logo_mark(terminal_width: int = 120) -> str:
+    """Return the appropriate logo mark text, or empty string if terminal too narrow."""
+    if terminal_width < LOGO_MIN_WIDTH:
+        return ""  # Skip logo entirely for narrow terminals
     return _normalize_logo_mark(LOGO_MARK if _UNICODE else LOGO_MARK_ASCII)
 
 
@@ -397,9 +409,11 @@ class SubmitLogger:
         self._input_fn = input_fn or (lambda prompt, default="": input(prompt))
 
         self._trace_entries: List[TraceEntry] = []
-        self._trace_cols = self._compute_cols()
 
         self._pack_entries: List[Dict[str, Any]] = []
+
+        # Zip state
+        self._zip_total = 0
 
         # Upload/transfer state
         self._upload_total = 0
@@ -409,7 +423,6 @@ class SubmitLogger:
         self._transfer_detail = ""
         self._transfer_cur = 0
         self._transfer_total = 0
-        self._transfer_last_line_count = 0
         self._live = None  # Rich Live context for flicker-free progress
         self._last_progress_time = 0.0  # For rate limiting updates
 
@@ -489,21 +502,32 @@ class SubmitLogger:
         ell = "…" if _UNICODE else "."
         return s[: mx - 1] + ell
 
+    def _get_width(self) -> int:
+        """Get the current console width."""
+        if self.console:
+            try:
+                return int(self.console.width or 80)
+            except Exception:
+                pass
+        return 80
+
     # ───────────────────── logo marks ─────────────────────
 
     def logo_start(self) -> None:
         """Logo mark + start panel at the beginning of a submission."""
-        logo_str = _get_logo_mark()
+        width = self._get_width()
+        logo_str = _get_logo_mark(width)
 
         if self.console and Text is not None and Align is not None:
             body = Text()
 
-            # Logo mark (dim / muted — branding, not "meaning")
+            # Logo mark (dim / muted — branding, not "meaning", no_wrap to prevent line breaks)
             if logo_str:
-                body.append(logo_str, style="sulu.dim")
+                logo_text = Text(logo_str, style="sulu.dim", no_wrap=True, overflow="crop")
+                body.append_text(logo_text)
                 body.append("\n\n")
 
-            # “SULU SUBMITTER” line (accent is allowed as brand accent)
+            # (Intentionally minimal here; caller prints stage headers next)
             badge = Text()
             body.append(badge)
 
@@ -531,7 +555,8 @@ class SubmitLogger:
         job_url: Optional[str] = None,
     ) -> None:
         """Logo mark + celebratory end panel (after job registration)."""
-        logo_str = _get_logo_mark()
+        width = self._get_width()
+        logo_str = _get_logo_mark(width)
 
         # Celebratory marks
         sparkle = "·:*" if _UNICODE else "***"
@@ -539,9 +564,10 @@ class SubmitLogger:
         if self.console and Text is not None and Align is not None:
             body = Text()
 
-            # Logo mark (white for celebration)
+            # Logo mark (white for celebration, no_wrap to prevent line breaks)
             if logo_str:
-                body.append(logo_str, style="#FFFFFF")
+                logo_text = Text(logo_str, style="#FFFFFF", no_wrap=True, overflow="crop")
+                body.append_text(logo_text)
                 body.append("\n\n")
 
             # Celebratory header (all green)
@@ -555,6 +581,11 @@ class SubmitLogger:
                 "Your render job is now queued and will begin rendering shortly.",
                 style="sulu.fg",
             )
+
+            if job_id:
+                body.append("\n")
+                body.append("Job ID: ", style="sulu.muted")
+                body.append(str(job_id), style="sulu.fg")
 
             if job_url:
                 body.append("\n\n")
@@ -586,6 +617,8 @@ class SubmitLogger:
             self._log_fn(
                 "Your render job is now queued and will begin rendering shortly."
             )
+            if job_id:
+                self._log_fn(f"Job ID: {job_id}")
             if job_url:
                 self._log_fn(f"{job_url}")
 
@@ -644,9 +677,10 @@ class SubmitLogger:
         if self.console and Text is not None:
             self.console.print()
             self._rule("Dependencies")
-            c = self._trace_cols["col"]
-            s = self._trace_cols["status"]
-            header = Text("  ")
+            cols = self._compute_cols()
+            c = cols["col"]
+            s = cols["status"]
+            header = Text("  ", no_wrap=True, overflow="crop")
             header.append(f"{'Source':<{c}} ", style="sulu.muted")
             header.append(f"{'Block':<{c}} ", style="sulu.muted")
             header.append(f"{'Resolved':<{c}} ", style="sulu.muted")
@@ -654,8 +688,10 @@ class SubmitLogger:
             self.console.print(header)
             self.console.print(
                 Text(
-                    "  " + (GLYPH_DASH * (max(0, self._trace_cols["total"] - 2))),
+                    "  " + (GLYPH_DASH * (max(0, cols["total"] - 2))),
                     style="sulu.stroke_subtle",
+                    no_wrap=True,
+                    overflow="crop",
                 )
             )
         else:
@@ -678,9 +714,10 @@ class SubmitLogger:
         )
         self._trace_entries.append(entry)
 
+        cols = self._compute_cols()
         type_name = BLOCK_TYPE_NAMES.get(block_type, block_type)
-        c = self._trace_cols["col"]
-        s = self._trace_cols["status"]
+        c = cols["col"]
+        s = cols["status"]
 
         src_t = self._trunc(source_blend, c)
         file_t = self._trunc(found_file, c)
@@ -691,14 +728,14 @@ class SubmitLogger:
         name_t = self._trunc(block_name, name_max)
 
         if self.console and Text is not None:
-            line = Text("  ")
+            line = Text("  ", no_wrap=True, overflow="crop")
 
             # Source
             line.append(f"{src_t:<{c}} ", style="sulu.dim")
 
-            # Block tag (as a machined “pill”)
+            # Block tag (as a machined "pill")
             tag = Text(type_part, style="sulu.pill")
-            line.append(tag)
+            line.append_text(tag)
             line.append(" ", style="sulu.dim")
             line.append(f"{name_t:<{name_max}} ", style="sulu.fg")
 
@@ -717,9 +754,9 @@ class SubmitLogger:
 
             # Optional error detail line
             if error_msg and status == "unreadable":
-                msg = self._trunc(error_msg, max(20, self._trace_cols["total"] - 8))
+                msg = self._trunc(error_msg, max(20, cols["total"] - 8))
                 self.console.print(
-                    Text(f"  {GLYPH_SEAM} {GLYPH_ARROW} {msg}", style="sulu.dim")
+                    Text(f"  {GLYPH_SEAM} {GLYPH_ARROW} {msg}", style="sulu.dim", no_wrap=True, overflow="crop")
                 )
         else:
             status_str = (
@@ -803,16 +840,17 @@ class SubmitLogger:
         if self.console and Text is not None:
             self.console.print()
             self._rule("Manifest")
-            w = self._trace_cols["total"]
+            cols = self._compute_cols()
+            w = cols["total"]
             file_w = max(20, w - 24)
 
-            header = Text("  ")
+            header = Text("  ", no_wrap=True, overflow="crop")
             header.append(f"{'File':<{file_w}} ", style="sulu.muted")
             header.append(f"{'Size':>10} ", style="sulu.muted")
             header.append(f"{'':>3}", style="sulu.muted")
             self.console.print(header)
             self.console.print(
-                Text("  " + (GLYPH_DASH * (max(0, w - 2))), style="sulu.stroke_subtle")
+                Text("  " + (GLYPH_DASH * (max(0, w - 2))), style="sulu.stroke_subtle", no_wrap=True, overflow="crop")
             )
         else:
             self._log_fn("")
@@ -832,13 +870,14 @@ class SubmitLogger:
         )
         filename = Path(filepath).name
         size_str = format_size(size) if size else ""
-        w = self._trace_cols["total"]
+        cols = self._compute_cols()
+        w = cols["total"]
         file_w = max(20, w - 24)
 
         name_t = self._trunc(filename, file_w)
 
         if self.console and Text is not None:
-            line = Text("  ")
+            line = Text("  ", no_wrap=True, overflow="crop")
             if status == "ok":
                 line.append(f"{name_t:<{file_w}} ", style="sulu.fg")
                 line.append(f"{size_str:>10} ", style="sulu.dim")
@@ -894,16 +933,17 @@ class SubmitLogger:
         if self.console and Text is not None:
             self.console.print()
             self._rule("Archive")
-            w = self._trace_cols["total"]
+            cols = self._compute_cols()
+            w = cols["total"]
             file_w = max(20, w - 30)
 
-            header = Text("  ")
+            header = Text("  ", no_wrap=True, overflow="crop")
             header.append(f"{'File':<{file_w}} ", style="sulu.muted")
             header.append(f"{'Size':>10} ", style="sulu.muted")
             header.append(f"{'Mode':>16}", style="sulu.muted")
             self.console.print(header)
             self.console.print(
-                Text("  " + (GLYPH_DASH * (max(0, w - 2))), style="sulu.stroke_subtle")
+                Text("  " + (GLYPH_DASH * (max(0, w - 2))), style="sulu.stroke_subtle", no_wrap=True, overflow="crop")
             )
         else:
             self._log_fn("")
@@ -914,13 +954,14 @@ class SubmitLogger:
         self, index: int, total: int, arcname: str, size: int, method: str
     ) -> None:
         """Log a single file being zipped (structured callback)."""
-        w = self._trace_cols["total"]
+        cols = self._compute_cols()
+        w = cols["total"]
         file_w = max(20, w - 30)
         name_t = self._trunc(arcname, file_w)
         size_str = format_size(size) if size else ""
 
         if self.console and Text is not None:
-            line = Text("  ")
+            line = Text("  ", no_wrap=True, overflow="crop")
             line.append(f"{name_t:<{file_w}} ", style="sulu.fg")
             line.append(f"{size_str:>10} ", style="sulu.dim")
             line.append(f"{method:>16}", style="sulu.muted")
@@ -957,13 +998,63 @@ class SubmitLogger:
 
     # ───────────────────── upload / transfer ─────────────────────
 
+    def _start_live_progress(self) -> None:
+        """Start a Rich Live region for progress (no manual ANSI clearing)."""
+        if not self.console or Live is None:
+            return
+        if self._live is not None:
+            return
+
+        renderable = self._build_progress_panel(
+            self._transfer_cur, self._transfer_total
+        )
+        try:
+            self._live = Live(
+                renderable,
+                console=self.console,
+                refresh_per_second=10,
+                screen=False,  # keep transcript scrolling; no alt-buffer
+                transient=True,  # remove the live render when stopped
+            )
+        except TypeError:
+            # Very old Rich: be minimal
+            self._live = Live(renderable, console=self.console)
+
+        try:
+            self._live.start()
+        except Exception:
+            self._live = None
+
+    def _stop_live_progress(self) -> None:
+        """Stop the Rich Live region if active."""
+        if self._live is None:
+            return
+        try:
+            self._live.stop()
+        except Exception:
+            pass
+        self._live = None
+
+    def _live_update(self, renderable: Any) -> None:
+        """Update live renderable (version-tolerant)."""
+        if self._live is None:
+            return
+        try:
+            self._live.update(renderable, refresh=True)
+        except TypeError:
+            # Older Rich may not accept refresh=
+            try:
+                self._live.update(renderable)
+            except Exception:
+                pass
+
     def upload_start(self, total: int) -> None:
         """Begin the upload phase."""
         self._upload_total = total
         self._upload_step = 0
         self._transfer_active = False
-        self._transfer_last_line_count = 0
         self._last_progress_time = 0.0
+        self._stop_live_progress()
 
     def upload_step(
         self,
@@ -973,6 +1064,9 @@ class SubmitLogger:
         detail: str = "",
     ) -> None:
         """Start a transfer substage - shows title and prepares for progress bar."""
+        # Ensure any previous live region is stopped before printing a new header
+        self._stop_live_progress()
+
         self._upload_step = step
         self._transfer_title = title
         self._transfer_detail = detail
@@ -993,7 +1087,6 @@ class SubmitLogger:
             self.console.print(header)
 
             # Reset progress state
-            self._transfer_last_line_count = 0
             self._last_progress_time = 0.0
         else:
             self._log_fn(f"\n[{step}/{total_steps}] {title} {detail}")
@@ -1030,7 +1123,7 @@ class SubmitLogger:
             stats.append(" / ", style="sulu.dim")
             stats.append(f"{format_size(total)}", style="sulu.muted")
         else:
-            # Indeterminate - pulsing effect
+            # Indeterminate
             bar = Text("░" * bar_width, style="sulu.stroke_subtle")
             stats = Text()
             stats.append(f"{format_size(cur)}", style="sulu.fg")
@@ -1066,47 +1159,32 @@ class SubmitLogger:
                 sys.stderr.flush()
 
     def _render_progress_bar(self, cur: int, total: int) -> None:
-        """Render/update the progress bar panel with rate limiting to reduce flicker."""
+        """Render/update the progress bar panel with rate limiting (no flicker)."""
         if not self.console or Text is None:
             return
 
-        # Rate limit: only update ~10 times per second to reduce flicker
+        # Rate limit ~10Hz
         now = time.time()
-        if (
-            self._transfer_last_line_count > 0
-            and (now - self._last_progress_time) < 0.1
-        ):
+        if (now - self._last_progress_time) < 0.1:
             return
         self._last_progress_time = now
 
+        self._start_live_progress()
         panel = self._build_progress_panel(cur, total)
 
-        # Clear previous lines and render
-        if self._transfer_last_line_count > 0:
-            # Hide cursor, move up, clear, print, show cursor - all in one write
-            self.console.file.write(
-                f"\033[?25l\033[{self._transfer_last_line_count}A\033[J"
-            )
-            self.console.file.flush()
-
-        self.console.print(panel)
-
-        # Show cursor again
-        self.console.file.write("\033[?25h")
-        self.console.file.flush()
-
-        self._transfer_last_line_count = 4
+        if self._live is not None:
+            self._live_update(panel)
+        else:
+            # If Live couldn't start (edge env), degrade to printing occasionally
+            self.console.print(panel)
 
     def upload_complete(self, title: str) -> None:
         """Mark current transfer substage as complete."""
         self._transfer_active = False
 
         if self.console and Text is not None:
-            # Clear the progress bar
-            if self._transfer_last_line_count > 0:
-                self.console.file.write(f"\033[{self._transfer_last_line_count}A\033[J")
-                self.console.file.flush()
-                self._transfer_last_line_count = 0
+            # Stop live region so the completion panel prints cleanly
+            self._stop_live_progress()
 
             # Show completion with stats
             body = Text()
@@ -1131,6 +1209,9 @@ class SubmitLogger:
     def upload_end(self, elapsed: float) -> None:
         """Final upload completion message."""
         if self.console and Text is not None:
+            # Safety: ensure no Live region is still running
+            self._stop_live_progress()
+
             self.console.print()
             body = Text()
             body.append(f"{GLYPH_OK} ", style="sulu.ok_b")
@@ -1336,7 +1417,6 @@ class SubmitLogger:
 
     def fatal(self, message: str) -> None:
         """Print error, prompt to close, then exit."""
-        # Use a block for fatal errors
         self.warn_block(message, severity="error")
         try:
             self._input_fn("\nPress ENTER to close this window...", "")
@@ -1470,10 +1550,10 @@ class SubmitLogger:
                 box=SULU_TABLE_BOX,
                 padding=(0, 1),
                 show_edge=False,
-                expand=True,
+                expand=False,
             )
-            table.add_column("Ext", style="sulu.fg")
-            table.add_column("Count", justify="right", style="sulu.muted")
+            table.add_column("Ext", style="sulu.fg", no_wrap=True)
+            table.add_column("Count", justify="right", style="sulu.muted", no_wrap=True)
             for ext, cnt in sorted(by_ext.items(), key=lambda x: -x[1]):
                 table.add_row(ext, str(cnt))
             table.add_row("", "")
