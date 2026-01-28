@@ -40,8 +40,7 @@ def add_parser(subparsers):
         type=str,
         help="The target can be a directory, a ZIP file (does not have to exist "
         "yet, just use 'something.zip' as target), "
-        "or a URL of S3 storage (s3://endpoint/path) "
-        "or Shaman storage (shaman://endpoint/#checkoutID).",
+        "or a URL of S3 storage (s3://endpoint/path).",
     )
 
     parser.add_argument(
@@ -121,24 +120,6 @@ def create_packer(
 
         packer = create_s3packer(bpath, ppath, pathlib.PurePosixPath(target))
 
-    elif (
-        target.startswith("shaman+http:/")
-        or target.startswith("shaman+https:/")
-        or target.startswith("shaman:/")
-    ):
-        if args.noop:
-            raise ValueError("Shaman uploader does not support no-op.")
-
-        if args.compress:
-            raise ValueError("Shaman uploader does not support on-the-fly compression")
-
-        if args.relative_only:
-            raise ValueError(
-                "Shaman uploader does not support the --relative-only option"
-            )
-
-        packer = create_shamanpacker(bpath, ppath, target)
-
     elif target.lower().endswith(".zip"):
         from .pack import zipped
 
@@ -176,31 +157,6 @@ def create_s3packer(bpath, ppath, tpath) -> pack.Packer:
     log.info("Uploading to S3-compatible storage %s at %s", endpoint, tpath)
 
     return s3.S3Packer(bpath, ppath, tpath, endpoint=endpoint)
-
-
-def create_shamanpacker(
-    bpath: pathlib.Path, ppath: pathlib.Path, tpath: str
-) -> pack.Packer:
-    """Creates a package for sending files to a Shaman server.
-
-    URLs should have the form:
-        shaman://hostname/base/url#jobID
-    This uses HTTPS to connect to the server. To connect using HTTP, use:
-        shaman+http://hostname/base-url#jobID
-    """
-    from .pack import shaman
-
-    endpoint, checkout_id = shaman.parse_endpoint(tpath)
-    if not checkout_id:
-        log.warning(
-            "No checkout ID given on the URL. Going to send BAT pack to Shaman, "
-            "but NOT creating a checkout"
-        )
-
-    log.info("Uploading to Shaman server %s with job %s", endpoint, checkout_id)
-    return shaman.ShamanPacker(
-        bpath, ppath, "/", endpoint=endpoint, checkout_id=checkout_id
-    )
 
 
 def paths_from_cli(args) -> typing.Tuple[pathlib.Path, pathlib.Path, str]:

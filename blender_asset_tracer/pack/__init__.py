@@ -253,6 +253,7 @@ class Packer:
         compress: bool = False,
         relative_only: bool = False,
         rewrite_blendfiles: bool = False,
+        pre_traced_deps: typing.Optional[typing.Iterable[result.BlockUsage]] = None,
     ) -> None:
         self.blendfile = pathlib.Path(bfile)
         self.project = pathlib.Path(project)
@@ -268,6 +269,11 @@ class Packer:
         # NEW: allow rewriting even when noop=True (project upload wants rewritten .blend without staging)
         self.rewrite_blendfiles = bool(rewrite_blendfiles)
 
+        # NEW: accept pre-traced dependencies to avoid redundant trace.deps() calls
+        self._pre_traced_deps = (
+            list(pre_traced_deps) if pre_traced_deps is not None else None
+        )
+
         self._aborted = threading.Event()
         self._abort_lock = threading.RLock()
         self._abort_reason = ""
@@ -282,9 +288,6 @@ class Packer:
 
         self._shorten = functools.partial(shorten_path, self.project)
 
-        if noop:
-            log.warning("Running in no-op mode, only showing what will be done.")
-
         # Filled by strategise()
         self._actions = collections.defaultdict(
             AssetAction
@@ -298,8 +301,12 @@ class Packer:
         self._output_path = None  # type: typing.Optional[pathlib.PurePath]
 
         # Caches (speed + consistent reporting)
-        self._readability_cache = {}  # type: typing.Dict[pathlib.Path, typing.Tuple[bool, str]]
-        self._udim_tiles_cache = {}  # type: typing.Dict[typing.Tuple[pathlib.Path, str], typing.List[pathlib.Path]]
+        self._readability_cache = (
+            {}
+        )  # type: typing.Dict[pathlib.Path, typing.Tuple[bool, str]]
+        self._udim_tiles_cache = (
+            {}
+        )  # type: typing.Dict[typing.Tuple[pathlib.Path, str], typing.List[pathlib.Path]]
 
         # Filled by execute()
         self._file_transferer = None  # type: typing.Optional[transfer.FileTransferer]
@@ -310,7 +317,9 @@ class Packer:
         self._tmpdir = tempfile.TemporaryDirectory(prefix="bat-", suffix="-batpack")
         self._rewrite_in = pathlib.Path(self._tmpdir.name)
 
-    def _make_target_path(self, target: typing.Union[str, pathlib.Path]) -> pathlib.PurePath:
+    def _make_target_path(
+        self, target: typing.Union[str, pathlib.Path]
+    ) -> pathlib.PurePath:
         """Return a Path for the given target.
 
         This can be the target directory itself, but can also be a non-existent
@@ -487,7 +496,9 @@ class Packer:
 
             glob_path = asset_path.with_name(glob_name)
             try:
-                tiles = [p for p in file_sequence.expand_sequence(glob_path) if p.is_file()]
+                tiles = [
+                    p for p in file_sequence.expand_sequence(glob_path) if p.is_file()
+                ]
             except Exception:
                 tiles = []
 
@@ -566,7 +577,14 @@ class Packer:
         self._check_aborted()
         self._new_location_paths = set()
 
-        for usage in trace.deps(self.blendfile, self._progress_cb):
+        # Use pre-traced dependencies if provided (avoids redundant trace.deps() calls)
+        if self._pre_traced_deps is not None:
+            deps_iter = iter(self._pre_traced_deps)
+            log.debug("Using %d pre-traced dependencies", len(self._pre_traced_deps))
+        else:
+            deps_iter = trace.deps(self.blendfile, self._progress_cb)
+
+        for usage in deps_iter:
             self._check_aborted()
             asset_path = usage.abspath
 
@@ -623,7 +641,11 @@ class Packer:
             # UDIM placeholders often do not exist as a literal file.
             # If we can find tiles on disk, treat it as present.
             if is_udim_placeholder and udim_tiles:
-                log.info("UDIM placeholder %s expanded to %d tiles", asset_path, len(udim_tiles))
+                log.info(
+                    "UDIM placeholder %s expanded to %d tiles",
+                    asset_path,
+                    len(udim_tiles),
+                )
             else:
                 log.warning("Missing file: %s", asset_path)
                 self._record_missing(asset_path)
@@ -696,7 +718,9 @@ class Packer:
                 continue
 
             relpath = _outside_project_relpath(path)
-            act.new_path = _nfc_path(pathlib.Path(self._target_path, "_outside_project", relpath))
+            act.new_path = _nfc_path(
+                pathlib.Path(self._target_path, "_outside_project", relpath)
+            )
 
     def _group_rewrites(self) -> None:
         """For each blend file, collect which fields need rewriting.

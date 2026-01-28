@@ -50,13 +50,21 @@ def logger(msg: str) -> None:
     """
     Simple user-facing logger; prints a single message and flushes immediately.
     Intentionally accepts just one string (callers pass already-formatted text).
+    Handles Unicode encoding errors on Windows console gracefully.
     """
-    print(str(msg), flush=True)
+    try:
+        print(str(msg), flush=True)
+    except UnicodeEncodeError:
+        # Fall back to ASCII-safe output on Windows console
+        print(str(msg).encode("ascii", errors="replace").decode("ascii"), flush=True)
 
 
 def _log(msg: str) -> None:
     """Thin wrapper around print(..., flush=True); kept for backward-compat."""
-    print(str(msg), flush=True)
+    try:
+        print(str(msg), flush=True)
+    except UnicodeEncodeError:
+        print(str(msg).encode("ascii", errors="replace").decode("ascii"), flush=True)
 
 
 # small UX helpers

@@ -78,28 +78,75 @@ def _norm_path(path: str) -> str:
 # ─── Lightweight dependency tracing ──────────────────────────────────────────
 
 
-def trace_dependencies(blend_path: Path) -> Tuple[List[Path], Set[Path], Dict[Path, str]]:
+def _get_block_type(usage: Any) -> str:
+    """Get the DNA type name from a BlockUsage."""
+    try:
+        return getattr(usage.block, "dna_type_name", "Unknown")
+    except Exception:
+        return "Unknown"
+
+
+def _get_block_name(usage: Any) -> str:
+    """Get the block name from a BlockUsage, cleaned up."""
+    try:
+        block_name = usage.block_name
+        if isinstance(block_name, bytes):
+            block_name = block_name.decode("utf-8", errors="replace")
+        # Remove type prefix like "IM" or "LI" from names like "IMtexture.png"
+        if len(block_name) >= 2 and block_name[:2].isupper():
+            block_name = block_name[2:]
+        return block_name
+    except Exception:
+        return "unknown"
+
+
+def _get_source_blend_name(usage: Any) -> str:
+    """Get the source .blend filename from a BlockUsage."""
+    try:
+        filepath = usage.block.bfile.filepath
+        return Path(filepath).name
+    except Exception:
+        return "unknown.blend"
+
+
+def trace_dependencies(
+    blend_path: Path,
+    logger: Optional[Any] = None,
+) -> Tuple[List[Path], Set[Path], Dict[Path, str], List[Any]]:
     """
     Lightweight dependency trace using BAT's trace.deps().
 
+    Args:
+        blend_path: Path to the .blend file to trace
+        logger: Optional SubmitLogger instance for rich logging.
+                If provided, logs each dependency with colors and formatting.
+
     Returns:
-        (dependency_paths, missing_files, unreadable_files)
+        (dependency_paths, missing_files, unreadable_files, raw_usages)
 
     Where:
         - dependency_paths: List of absolute paths to all dependencies
         - missing_files: Set of paths that don't exist on disk
         - unreadable_files: Dict of path -> error message for files that exist but can't be read
+        - raw_usages: List of BlockUsage objects (can be passed to Packer to avoid re-tracing)
     """
     deps: List[Path] = []
     missing: Set[Path] = set()
     unreadable: Dict[Path, str] = {}
+    raw_usages: List[Any] = []
 
     for usage in trace.deps(blend_path):
+        raw_usages.append(usage)
         abs_path = usage.abspath
         deps.append(abs_path)
 
+        # Determine status and track issues
+        status = "ok"
+        error_msg = None
+
         if not abs_path.exists():
             missing.add(abs_path)
+            status = "missing"
         else:
             # Check readability
             try:
@@ -108,10 +155,30 @@ def trace_dependencies(blend_path: Path) -> Tuple[List[Path], Set[Path], Dict[Pa
                         f.read(1)
             except (PermissionError, OSError) as e:
                 unreadable[abs_path] = str(e)
+                status = "unreadable"
+                error_msg = str(e)
             except Exception as e:
                 unreadable[abs_path] = f"{type(e).__name__}: {e}"
+                status = "unreadable"
+                error_msg = f"{type(e).__name__}: {e}"
 
-    return deps, missing, unreadable
+        # Log the trace if logger provided
+        if logger is not None:
+            source_blend = _get_source_blend_name(usage)
+            block_type = _get_block_type(usage)
+            block_name = _get_block_name(usage)
+            found_file = abs_path.name
+
+            logger.trace_entry(
+                source_blend=source_blend,
+                block_type=block_type,
+                block_name=block_name,
+                found_file=found_file,
+                status=status,
+                error_msg=error_msg,
+            )
+
+    return deps, missing, unreadable, raw_usages
 
 
 # ─── Project root computation ────────────────────────────────────────────────
@@ -205,6 +272,7 @@ def create_packer(
     target: Path,
     *,
     rewrite_blendfiles: bool = False,
+    pre_traced_deps: Optional[List[Any]] = None,
 ) -> Packer:
     # NOTE: target is converted to str so BAT can treat it as "path ops only".
     packer = Packer(
@@ -215,6 +283,7 @@ def create_packer(
         compress=False,
         relative_only=False,
         rewrite_blendfiles=rewrite_blendfiles,
+        pre_traced_deps=pre_traced_deps,
     )
     return packer
 
@@ -227,6 +296,7 @@ def pack_blend(
     *,
     rewrite_blendfiles: bool = False,
     return_report: bool = False,
+    pre_traced_deps: Optional[List[Any]] = None,
 ):
     """Pack a blend.
 
@@ -238,9 +308,12 @@ def pack_blend(
     ZIP:
       - produces zip at target (existing behavior)
       - if return_report=True, returns a dict with missing/unreadable details
+
+    pre_traced_deps:
+      - Optional list of BlockUsage objects from a previous trace_dependencies() call.
+      - When provided, avoids redundant trace.deps() call inside the packer.
     """
     infile_p = Path(infile)
-    print(f"Packing blend: {project_path}")
 
     if method == "PROJECT":
         if project_path is None:
@@ -256,6 +329,7 @@ def pack_blend(
             Path(project_path),
             target_p,
             rewrite_blendfiles=rewrite_blendfiles,
+            pre_traced_deps=pre_traced_deps,
         )
         packer.strategise()
         packer.execute()
@@ -302,7 +376,9 @@ def pack_blend(
     elif method == "ZIP":
         # Use provided project_path for meaningful zip structure, fallback to blend's parent
         project_p = Path(project_path) if project_path else Path(infile).parent
-        with zipped.ZipPacker(Path(infile), project_p, Path(target)) as packer:
+        with zipped.ZipPacker(
+            Path(infile), project_p, Path(target), pre_traced_deps=pre_traced_deps
+        ) as packer:
             packer.strategise()
             packer.execute()
 

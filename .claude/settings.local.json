@@ -9,7 +9,24 @@
       "Bash(powershell -Command \"Get-Content ''C:\\\\Users\\\\jonas\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--dev-blender-scripts-scripts-addons-sulu-blender-addon\\\\tasks\\\\b961290.output''\")",
       "Bash(powershell:*)",
       "Bash(dir:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(/c/Python312/python:*)",
+      "Bash(echo:*)",
+      "Bash(if [ -d \"tests/bat/blendfiles\" ])",
+      "Bash(then echo \"blendfiles already exists\")",
+      "Bash(else cp -r blender_asset_tracer_tests/blendfiles tests/bat/)",
+      "Bash(fi)",
+      "Bash(for f in blender_asset_tracer_tests/test_*.py)",
+      "Bash(do cp \"$f\" tests/bat/)",
+      "Bash(done)",
+      "Bash(grep:*)",
+      "Bash(for f in tests/bat/test_blendfile_loading.py tests/bat/test_blendfile_modification.py tests/bat/test_compressor.py tests/bat/test_shaman_cache.py tests/bat/test_shaman_transfer.py tests/bat/test_tracer.py tests/bat/test_tracer_file_sequence.py)",
+      "Bash(do sed -i 's/from tests\\\\.abstract_test/from tests.bat.abstract_test/' \"$f\")",
+      "Bash(pip install:*)",
+      "Bash(ls:*)",
+      "Bash(for f in tests/bat/test_*.py)",
+      "Bash(do python -c \"import sys; sys.path.insert\\(0,''.''\\); exec\\(open\\(''$f''\\).read\\(\\)\\)\")",
+      "Bash(xargs -I {} sh -c 'grep -l \"\"token\\\\|secret\\\\|password\\\\|key\"\" {} 2>/dev/null && echo \"\"  WARNING: {} may contain secrets\"\"')"
     ]
   }
 }

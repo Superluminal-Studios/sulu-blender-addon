@@ -440,9 +440,21 @@ def modifier_dynamic_paint(
 def modifier_nodes(
     ctx: ModifierContext, modifier: blendfile.BlendFileBlock, block_name: bytes
 ) -> typing.Iterator[result.BlockUsage]:
-    mod_directory_ptr, mod_directory_field = modifier.get(
-        b"simulation_bake_directory", return_field=True
-    )
+    # simulation_bake_directory was added in Blender 4.0+, may not exist in older files
+    try:
+        mod_directory_ptr, mod_directory_field = modifier.get(
+            b"simulation_bake_directory", return_field=True
+        )
+    except KeyError:
+        mod_directory_ptr = None
+        mod_directory_field = None
+
+    # Check modifier-level bake_target (for inherited bakes)
+    try:
+        mod_bake_target = modifier.get(b"bake_target")
+    except KeyError:
+        mod_bake_target = cdefs.NODES_MODIFIER_BAKE_TARGET_DISK  # Default to disk
+
     try:
         bakes = modifier.get_pointer(b"bakes")
     except KeyError:
@@ -453,6 +465,14 @@ def modifier_nodes(
         return
 
     for bake_idx, bake in enumerate(blendfile.iterators.dynamic_array(bakes)):
+        # Check if bake data is packed - skip packed bakes as they don't reference external files
+        try:
+            bake_target = bake.get(b"bake_target")
+            if bake_target == cdefs.NODES_MODIFIER_BAKE_TARGET_PACKED:
+                continue
+        except KeyError:
+            bake_target = cdefs.NODES_MODIFIER_BAKE_TARGET_INHERIT
+
         bake_directory_ptr, bake_directory_field = bake.get(
             b"directory", return_field=True
         )
@@ -465,6 +485,10 @@ def modifier_nodes(
             field = bake_directory_field
             block = bake
         else:
+            # When inheriting from modifier, check modifier's bake_target
+            if bake_target == cdefs.NODES_MODIFIER_BAKE_TARGET_INHERIT:
+                if mod_bake_target == cdefs.NODES_MODIFIER_BAKE_TARGET_PACKED:
+                    continue
             directory_ptr = mod_directory_ptr
             field = mod_directory_field
             block = modifier

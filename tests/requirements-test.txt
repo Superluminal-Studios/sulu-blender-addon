@@ -1,0 +1,11 @@
+# Test dependencies for Sulu + BAT tests
+# Install with: pip install -r tests/requirements-test.txt
+
+# Required for ZStandard-compressed blend files (Blender 3.0+)
+zstandard>=0.20.0
+
+# Optional: Static type checking (for BAT code quality)
+mypy>=1.0.0
+
+# Optional: Better test runner (falls back to unittest if not available)
+pytest>=7.0.0

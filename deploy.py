@@ -7,18 +7,38 @@ addon_directory = "/tmp/SuperLuminalRender"
 addon_path = f"{addon_directory}.zip"
 init_path = os.path.join(addon_directory, "__init__.py")
 
-exclude_files_addon = ["__pycache__",
-                 ".git",
-                 ".github",
-                 ".gitignore",
-                 ".gitattributes",
-                 ".github",
-                 "README.md",
-                 "extensions_index.json",
-                 "manifest.py",                 
-                 "update_manifest.py",
-                 "blender_manifest.toml",
-                 "deploy.py"]
+exclude_files_addon = [
+    # Version control
+    "__pycache__",
+    ".git",
+    ".github",
+    ".gitignore",
+    ".gitattributes",
+    # Documentation
+    "README.md",
+    "CLAUDE.md",
+    # Extension/manifest files
+    "extensions_index.json",
+    "manifest.py",
+    "update_manifest.py",
+    "blender_manifest.toml",
+    # Build/deploy
+    "deploy.py",
+    # Tests (entire directory)
+    "tests/",
+    "tests",
+    # Dev files
+    "dev_config.json",
+    "dev_config.example.json",
+    # Reports
+    "reports/",
+    "reports",
+    # Session data (should never be included!)
+    "session.json",
+    # Claude Code skills
+    ".claude/",
+    ".claude",
+]
 
 with open(init_path, "r") as f:
     init_content = f.read()

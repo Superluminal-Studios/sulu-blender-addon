@@ -184,3 +184,7 @@ dev_config.json
 # Submission reports (keep directory, ignore contents)
 reports/*
 !reports/.gitkeep
+
+# Test reports (never commit)
+tests/reports/*
+!tests/reports/.gitkeep

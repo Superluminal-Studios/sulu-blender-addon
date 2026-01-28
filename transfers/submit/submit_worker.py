@@ -43,6 +43,28 @@ def _nfc(s: str) -> str:
     return unicodedata.normalize("NFC", str(s))
 
 
+def _is_interactive() -> bool:
+    """Check if we're running in an interactive terminal."""
+    try:
+        return sys.stdin.isatty()
+    except Exception:
+        return False
+
+
+def _safe_input(prompt: str, default: str = "") -> str:
+    """
+    Safe input wrapper that handles non-interactive (automated) mode.
+
+    When stdin is not a TTY (e.g., in automated tests or piped input),
+    returns the default value instead of blocking on input().
+    """
+    if _is_interactive():
+        return input(prompt)
+    # Non-interactive mode: log and return default
+    _LOG(f"[auto] {prompt.strip()} -> {repr(default)}")
+    return default
+
+
 # ─── Lightweight logger fallback ──────────────────────────────────
 # This gets replaced after bootstrap when worker_utils.logger is available.
 def _default_logger(msg: str) -> None:
@@ -73,7 +95,7 @@ def warn(
     _LOG(f"{new_line_str}{emojis.get(emoji, '❌')}  {message}")
     if close_window:
         try:
-            input("\nPress ENTER to close this window…")
+            _safe_input("\nPress ENTER to close this window…", "")
         except Exception:
             pass
         sys.exit(1)
@@ -567,6 +589,9 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     trace_dependencies = bat_utils.trace_dependencies
     compute_project_root = bat_utils.compute_project_root
 
+    submit_logger = importlib.import_module(f"{pkg_name}.utils.submit_logger")
+    create_logger = submit_logger.create_logger
+
     rclone = importlib.import_module(f"{pkg_name}.transfers.rclone")
     run_rclone = rclone.run_rclone
     ensure_rclone = rclone.ensure_rclone
@@ -582,6 +607,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "pack_blend": pack_blend,
         "trace_dependencies": trace_dependencies,
         "compute_project_root": compute_project_root,
+        "create_logger": create_logger,
         "run_rclone": run_rclone,
         "ensure_rclone": ensure_rclone,
     }
@@ -604,12 +630,16 @@ def main() -> None:
     pack_blend = mods["pack_blend"]
     trace_dependencies = mods["trace_dependencies"]
     compute_project_root = mods["compute_project_root"]
+    create_logger = mods["create_logger"]
     run_rclone = mods["run_rclone"]
     ensure_rclone = mods["ensure_rclone"]
 
     proj = data["project"]
 
     clear_console()
+
+    # Create rich logger for beautiful output
+    logger = create_logger(_LOG)
 
     # Single resilient session for *all* HTTP traffic
     session = requests_retry_session()
@@ -624,8 +654,9 @@ def main() -> None:
             if latest_version:
                 latest_version = tuple(int(i) for i in latest_version.split("."))
                 if latest_version > tuple(data["addon_version"]):
-                    answer = input(
-                        "A new version of the Superluminal Render Farm addon is available, would you like to update? (y/n)"
+                    answer = _safe_input(
+                        "A new version of the Superluminal Render Farm addon is available, would you like to update? (y/n) ",
+                        "n"
                     )
                     if answer.lower() == "y":
                         webbrowser.open("https://superlumin.al/blender-addon")
@@ -700,12 +731,19 @@ def main() -> None:
     # Wait until .blend is fully written
     is_blend_saved(blend_path)
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STAGE 1: TRACING - Discover all dependencies
+    # ═══════════════════════════════════════════════════════════════════════════
+    logger.stage_header(1, "TRACING DEPENDENCIES", "Scanning blend file for external references")
+    logger.trace_start(blend_path)
+
     # Pack assets
     if use_project:
-        _LOG("🔍  Scanning project files, this can take a while…\n")
-
-        # 1. Trace dependencies (lightweight, before BAT packing)
-        dep_paths, missing_set, unreadable_dict = trace_dependencies(Path(blend_path))
+        # 1. Trace dependencies with rich logger
+        # raw_usages is passed to pack_blend to avoid redundant re-tracing
+        dep_paths, missing_set, unreadable_dict, raw_usages = trace_dependencies(
+            Path(blend_path), logger=logger
+        )
 
         # 2. Compute project root BEFORE calling BAT
         custom_root = None
@@ -722,7 +760,15 @@ def main() -> None:
             Path(blend_path), dep_paths, custom_root
         )
         common_path = str(project_root).replace("\\", "/")
-        _LOG(f"ℹ️  Using project root: {shorten_path(common_path)}")
+
+        # Show trace summary
+        logger.trace_summary(
+            total=len(dep_paths),
+            missing=len(missing_set),
+            unreadable=len(unreadable_dict),
+            project_root=shorten_path(common_path),
+            cross_drive=len(cross_drive_deps),
+        )
 
         # TEST MODE: Show comprehensive info and exit early
         if test_mode:
@@ -738,7 +784,7 @@ def main() -> None:
                 shorten_path_fn=shorten_path,
                 addon_dir=str(data["addon_dir"]),
             )
-            input("\nPress ENTER to close this window...")
+            _safe_input("\nPress ENTER to close this window...", "")
             sys.exit(0)
 
         # 3. Warn about cross-drive dependencies
@@ -751,7 +797,7 @@ def main() -> None:
                 new_line=True,
             )
             warn("Would you like to continue submission?", emoji="w", close_window=False)
-            answer = input("y/n: ")
+            answer = _safe_input("y/n: ", "y")  # Auto-continue in non-interactive mode
             if answer.lower() != "y":
                 sys.exit(1)
 
@@ -770,55 +816,66 @@ def main() -> None:
                 close_window=False,
             )
             warn("Continue submission anyway?", emoji="w", close_window=False)
-            answer = input("y/n: ")
+            answer = _safe_input("y/n: ", "y")  # Auto-continue in non-interactive mode
             if answer.lower() != "y":
                 sys.exit(1)
 
+        # ═══════════════════════════════════════════════════════════════════════
+        # STAGE 2: PACKING - Build file manifest
+        # ═══════════════════════════════════════════════════════════════════════
+        logger.stage_header(2, "PACKING (PROJECT)", "Building file manifest for incremental upload")
+
         # 5. Pack with correct project root (now BAT uses the computed root)
+        # Pass raw_usages to avoid redundant trace.deps() call inside packer
         fmap, report = pack_blend(
             blend_path,
             target="",
             method="PROJECT",
             project_path=common_path,
             return_report=True,
+            pre_traced_deps=raw_usages,
         )
 
-        # 6. Build manifest from BAT's file_map directly
+        # 6. Build manifest from BAT's file_map (src paths)
         abs_blend = _norm_abs_for_detection(blend_path)
         rel_manifest: List[str] = []
         required_storage = 0
-        blend_rel_from_bat: Optional[str] = None  # Track BAT's computed path for main blend
 
-        # Iterate over file_map entries: src_path -> packed_path (relative to target)
+        # Iterate over file_map entries: src_path -> packed_path
+        # We use src_path to compute relative paths from common_path (project root)
         total_files = len(fmap)
+        logger.info(f"Processing {total_files} files for manifest:")
+        logger.log("")
+
+        ok_count = 0
+        skip_count = 0
         for idx, (src_path, dst_path) in enumerate(fmap.items()):
             src_str = str(src_path).replace("\\", "/")
-            dst_str = str(dst_path).replace("\\", "/")
 
             # Skip the main blend file (uploaded separately)
             if _samepath(src_str, abs_blend):
-                # Capture main blend's relative path from BAT's file_map
-                blend_rel_from_bat = dst_str
+                skip_count += 1
                 continue
 
             # Probe readability and accumulate size
             ok, err = _probe_readable_file(src_str)
             if ok:
-                _LOG(f"✅  [{idx + 1}/{total_files}] {shorten_path(src_str)}")
+                ok_count += 1
+                size = 0
                 try:
-                    required_storage += os.path.getsize(src_str)
+                    size = os.path.getsize(src_str)
+                    required_storage += size
                 except Exception:
                     pass
-                # Use BAT's computed destination path for manifest (NFC to match BAT archive)
+                logger.pack_file(idx + 1, total_files, src_str, size=size, status="ok")
+                # Compute relative path from project root for manifest
                 rel = _relpath_safe(src_str, common_path)
                 rel = _s3key_clean(rel)
                 if rel:
                     rel_manifest.append(rel)
             else:
-                if err == "missing":
-                    _LOG(f"⚠️  [{idx + 1}/{total_files}] {shorten_path(src_str)} — not found")
-                else:
-                    _LOG(f"❌  [{idx + 1}/{total_files}] {shorten_path(src_str)} — unreadable")
+                status = "missing" if err == "missing" else "unreadable"
+                logger.pack_file(idx + 1, total_files, src_str, status=status)
 
         # Include main blend in storage calculation
         try:
@@ -831,31 +888,37 @@ def main() -> None:
             for rel in rel_manifest:
                 fp.write(f"{rel}\n")
 
-        # Compute main blend's S3 key: prefer BAT's file_map, fallback to manual computation
-        if blend_rel_from_bat:
-            # Use BAT's computed destination path (handles _outside_project correctly)
-            blend_rel = blend_rel_from_bat
-        else:
-            # Fallback if blend wasn't in file_map (shouldn't happen, but be defensive)
-            blend_rel = _relpath_safe(abs_blend, common_path)
+        # Compute main blend's S3 key from project root
+        blend_rel = _relpath_safe(abs_blend, common_path)
         main_blend_s3 = _nfc(_s3key_clean(blend_rel) or os.path.basename(abs_blend))
 
-        _LOG(
-            f"\n📄  [Summary] to upload: {len(rel_manifest)} dependencies (+ main .blend), "
-            f"excluded (other drives): {len(cross_drive_deps)}, missing on disk: {len(missing_files_list)}, unreadable: {len(unreadable_files_list)}"
+        logger.pack_summary(
+            ok_count=ok_count,
+            missing_count=len(missing_files_list),
+            unreadable_count=len(unreadable_files_list),
+            cross_drive_count=len(cross_drive_deps),
+            total_size=required_storage,
         )
 
     else:  # ZIP mode
-        _LOG("📦  Creating a single zip with all dependencies, this can take a while…")
-
-        # 1. Trace dependencies (lightweight, before BAT packing)
-        dep_paths, missing_set, unreadable_dict = trace_dependencies(Path(blend_path))
+        # 1. Trace dependencies with rich logger
+        # raw_usages is passed to pack_blend to avoid redundant re-tracing
+        dep_paths, missing_set, unreadable_dict, raw_usages = trace_dependencies(
+            Path(blend_path), logger=logger
+        )
 
         # 2. Compute project root for cleaner zip structure
         project_root, same_drive_deps, cross_drive_deps = compute_project_root(Path(blend_path), dep_paths)
-        print("project_root:", str(project_root).replace("\\", "/"))
         project_root_str = str(project_root).replace("\\", "/")
-        _LOG(f"ℹ️  Using project root for zip: {shorten_path(project_root_str)}")
+
+        # Show trace summary
+        logger.trace_summary(
+            total=len(dep_paths),
+            missing=len(missing_set),
+            unreadable=len(unreadable_dict),
+            project_root=shorten_path(project_root_str),
+            cross_drive=len(cross_drive_deps),
+        )
 
         # TEST MODE: Show comprehensive info and exit early
         if test_mode:
@@ -871,10 +934,18 @@ def main() -> None:
                 shorten_path_fn=shorten_path,
                 addon_dir=str(data["addon_dir"]),
             )
-            input("\nPress ENTER to close this window...")
+            _safe_input("\nPress ENTER to close this window...", "")
             sys.exit(0)
 
+        # ═══════════════════════════════════════════════════════════════════════
+        # STAGE 2: PACKING (ZIP MODE)
+        # ═══════════════════════════════════════════════════════════════════════
+        logger.stage_header(2, "PACKING (ZIP)", "Creating compressed archive with all dependencies")
+        logger.info("Compression: .blend → Zstd, others → Deflate/Store")
+        logger.log("")
+
         # 3. Pack with computed project root (not drive root)
+        # Pass raw_usages to avoid redundant trace.deps() call inside packer
         abs_blend_norm = _norm_abs_for_detection(blend_path)
         zip_report = pack_blend(
             abs_blend_norm,
@@ -882,6 +953,7 @@ def main() -> None:
             method="ZIP",
             project_path=project_root_str,
             return_report=True,
+            pre_traced_deps=raw_usages,
         )
 
         if not zip_file.exists():
@@ -896,20 +968,19 @@ def main() -> None:
             if isinstance(u, dict):
                 unreadable = [(k, str(v)) for k, v in u.items()]
 
-        _print_missing_unreadable_summary(
-            missing,
-            unreadable,
-            header="Zip pack dependency check",
-        )
-
         if missing or unreadable:
+            logger.log("")
+            if missing:
+                logger.warning(f"{len(missing)} missing file(s)")
+            if unreadable:
+                logger.error(f"{len(unreadable)} unreadable file(s)")
             warn(
                 "Some files were missing or unreadable during packing. The zip may be incomplete.",
                 emoji="w",
                 close_window=False,
             )
             warn("Continue submission anyway?", emoji="w", close_window=False)
-            answer = input("y/n: ")
+            answer = _safe_input("y/n: ", "y")  # Auto-continue in non-interactive mode
             if answer.lower() != "y":
                 sys.exit(1)
 
@@ -917,7 +988,10 @@ def main() -> None:
         rel_manifest = []
         common_path = ""
         main_blend_s3 = ""
-        _LOG(f"ℹ️  Zip size estimate: {required_storage / 1_048_576:.1f} MiB")
+
+        logger.log("")
+        logger.success(f"Zip created: {zip_file.name}")
+        logger.info(f"Size: {_format_size(required_storage)}")
 
     # NO_SUBMIT MODE: Skip upload and job registration
     if no_submit:
@@ -944,11 +1018,16 @@ def main() -> None:
                 _LOG(f"\n  Cleaned up temp zip: {zip_file}")
             except:
                 pass
-        input("\nPress ENTER to close this window...")
+        _safe_input("\nPress ENTER to close this window...", "")
         sys.exit(0)
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STAGE 3: UPLOADING - Transfer files to cloud storage
+    # ═══════════════════════════════════════════════════════════════════════════
+    logger.stage_header(3, "UPLOADING", "Transferring files to render farm storage")
+
     # R2 credentials
-    _LOG("\n🔑  Fetching temporary storage credentials...")
+    logger.info("Fetching storage credentials...")
     try:
         s3_response = session.get(
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
@@ -959,11 +1038,11 @@ def main() -> None:
         s3_response.raise_for_status()
         s3info = s3_response.json()["items"][0]
         bucket = s3info["bucket_name"]
+        logger.upload_complete("Credentials obtained")
     except Exception as exc:
         warn(f"Could not obtain storage credentials: {exc}", emoji="x", close_window=True)
 
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
-    _LOG("🚀  Uploading\n")
 
     rclone_settings = [
                         "--transfers", "4",           # single file, no parallelism needed
@@ -978,16 +1057,52 @@ def main() -> None:
                         "--stats", "0.1s"
                     ]
 
+    # Calculate upload steps
+    has_addons = data.get("packed_addons") and len(data["packed_addons"]) > 0
+
     try:
         if not use_project:
+            # ZIP MODE UPLOAD
+            total_steps = 2 if has_addons else 1
+            step = 1
+
+            logger.upload_step(step, total_steps, "Uploading zip archive", f"{zip_file.name} ({_format_size(required_storage)})")
             run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/", rclone_settings)
+            logger.upload_complete("Zip uploaded")
+            step += 1
+
+            if has_addons:
+                logger.upload_step(step, total_steps, "Uploading add-ons", f"{len(data['packed_addons'])} add-on(s)")
+                run_rclone(
+                    base_cmd,
+                    "moveto",
+                    data["packed_addons_path"],
+                    f":s3:{bucket}/{job_id}/addons/",
+                    rclone_settings,
+                )
+                logger.upload_complete("Add-ons uploaded")
+
         else:
-            _LOG("📤  Uploading the main .blend\n")
+            # PROJECT MODE UPLOAD
+            total_steps = 3 if rel_manifest else 2
+            if has_addons:
+                total_steps += 1
+            step = 1
+
+            blend_size = 0
+            try:
+                blend_size = os.path.getsize(blend_path)
+            except:
+                pass
+            logger.upload_step(step, total_steps, "Uploading main .blend", f"{Path(blend_path).name} ({_format_size(blend_size)})")
             move_to_path = _nfc(_s3key_clean(f"{project_name}/{main_blend_s3}"))
             remote_main = f":s3:{bucket}/{move_to_path}"
             run_rclone(base_cmd, "copyto", blend_path, remote_main, rclone_settings)
+            logger.upload_complete("Main .blend uploaded")
+            step += 1
+
             if rel_manifest:
-                _LOG("📤  Uploading dependencies\n")
+                logger.upload_step(step, total_steps, "Uploading dependencies", f"{len(rel_manifest)} file(s)")
                 dependency_rclone_settings = ["--files-from", str(filelist)]
                 dependency_rclone_settings.extend(rclone_settings)
                 run_rclone(
@@ -997,11 +1112,13 @@ def main() -> None:
                     f":s3:{bucket}/{project_name}/",
                     dependency_rclone_settings,
                 )
+                logger.upload_complete("Dependencies uploaded")
+                step += 1
 
             with filelist.open("a", encoding="utf-8") as fp:
                 fp.write(_nfc(_s3key_clean(main_blend_s3)) + "\n")
 
-            _LOG("📤  Uploading dependency manifest\n")
+            logger.upload_step(step, total_steps, "Uploading manifest", filelist.name)
             run_rclone(
                 base_cmd,
                 "move",
@@ -1009,16 +1126,19 @@ def main() -> None:
                 f":s3:{bucket}/{project_name}/",
                 rclone_settings,
             )
+            logger.upload_complete("Manifest uploaded")
+            step += 1
 
-        if data.get("packed_addons") and len(data["packed_addons"]) > 0:
-            _LOG("📤  Uploading packed add-ons")
-            run_rclone(
-                base_cmd,
-                "moveto",
-                data["packed_addons_path"],
-                f":s3:{bucket}/{job_id}/addons/",
-                rclone_settings,
-            )
+            if has_addons:
+                logger.upload_step(step, total_steps, "Uploading add-ons", f"{len(data['packed_addons'])} add-on(s)")
+                run_rclone(
+                    base_cmd,
+                    "moveto",
+                    data["packed_addons_path"],
+                    f":s3:{bucket}/{job_id}/addons/",
+                    rclone_settings,
+                )
+                logger.upload_complete("Add-ons uploaded")
 
     except RuntimeError as exc:
         warn(f"Upload failed: {exc}", emoji="x", close_window=True)
@@ -1077,7 +1197,8 @@ def main() -> None:
         warn(f"Job registration failed: {exc}", emoji="x", close_window=True)
 
     elapsed = time.perf_counter() - t_start
-    _LOG(f"✅  Job submitted successfully. Total time: {elapsed:.1f}s")
+    logger.log("")
+    logger.success(f"Job submitted successfully! Total time: {elapsed:.1f}s")
 
     try:
         # Best effort: remove the handoff file (only in worker mode)
@@ -1086,12 +1207,12 @@ def main() -> None:
     except Exception:
         pass
 
-    selection = input("\nOpen job in your browser? y/n, or just press ENTER to close...")
+    selection = _safe_input("\nOpen job in your browser? y/n, or just press ENTER to close...", "n")
     if selection.lower() == "y":
         web_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{data['job_id']}"
         webbrowser.open(web_url)
         _LOG(f"🌐  Opened {web_url} in your browser.")
-        input("\nPress ENTER to close this window...")
+        _safe_input("\nPress ENTER to close this window...", "")
         sys.exit(1)
 
 

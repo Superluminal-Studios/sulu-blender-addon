@@ -1,0 +1,2 @@
+# This file keeps the reports directory in git while ignoring its contents.
+# Test reports are generated locally and should never be committed.
