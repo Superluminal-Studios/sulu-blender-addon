@@ -234,19 +234,14 @@ def _print_missing_unreadable_summary(
 
     if missing:
         _LOG(f"⚠️  Missing files: {len(missing)}")
-        for p in missing[:25]:
+        for p in missing:
             _LOG(f"    - {p}")
-        if len(missing) > 25:
-            _LOG(f"    ... (+{len(missing) - 25} more)")
 
     if unreadable:
         _LOG(f"\n❌  Unreadable files: {len(unreadable)}")
-        for p, err in unreadable[:25]:
+        for p, err in unreadable:
             _LOG(f"    - {p}")
             _LOG(f"      {err}")
-        if len(unreadable) > 25:
-            _LOG(f"    ... (+{len(unreadable) - 25} more)")
-
         # macOS help block once
         if _IS_MAC:
             # If *any* unreadable looks like permission, show help.
@@ -466,29 +461,23 @@ def _run_test_mode(
 
     if missing_set:
         _LOG(f"\n      MISSING ({len(missing_set)}):")
-        for p in sorted(missing_set)[:15]:
+        for p in sorted(missing_set):
             _LOG(f"        - {shorten_path_fn(str(p))}")
-        if len(missing_set) > 15:
-            _LOG(f"        ... and {len(missing_set) - 15} more")
     else:
         _LOG(f"      No missing files")
 
     if unreadable_dict:
         _LOG(f"\n      UNREADABLE ({len(unreadable_dict)}):")
-        for p, err in sorted(unreadable_dict.items())[:10]:
+        for p, err in sorted(unreadable_dict.items()):
             _LOG(f"        - {shorten_path_fn(str(p))}")
             _LOG(f"          {err}")
-        if len(unreadable_dict) > 10:
-            _LOG(f"        ... and {len(unreadable_dict) - 10} more")
     else:
         _LOG(f"      No unreadable files")
 
     if cross_drive_deps:
         _LOG(f"\n      CROSS-DRIVE ({len(cross_drive_deps)}):")
-        for p in cross_drive_deps[:15]:
+        for p in cross_drive_deps:
             _LOG(f"        - {shorten_path_fn(str(p))}")
-        if len(cross_drive_deps) > 15:
-            _LOG(f"        ... and {len(cross_drive_deps) - 15} more")
     else:
         _LOG(f"      No cross-drive files")
 
@@ -821,7 +810,8 @@ def main() -> None:
                 except Exception:
                     pass
                 # Use BAT's computed destination path for manifest (NFC to match BAT archive)
-                rel = _nfc(_s3key_clean(dst_str))
+                rel = _relpath_safe(src_str, common_path)
+                rel = _s3key_clean(rel)
                 if rel:
                     rel_manifest.append(rel)
             else:
@@ -863,6 +853,7 @@ def main() -> None:
 
         # 2. Compute project root for cleaner zip structure
         project_root, same_drive_deps, cross_drive_deps = compute_project_root(Path(blend_path), dep_paths)
+        print("project_root:", str(project_root).replace("\\", "/"))
         project_root_str = str(project_root).replace("\\", "/")
         _LOG(f"ℹ️  Using project root for zip: {shorten_path(project_root_str)}")
 
@@ -974,67 +965,37 @@ def main() -> None:
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
     _LOG("🚀  Uploading\n")
 
+    rclone_settings = [
+                        "--transfers", "4",           # single file, no parallelism needed
+                        "--checkers", "4",
+                        "--s3-chunk-size", "64M",     # larger chunks = fewer requests
+                        "--s3-upload-concurrency", "4",  # very conservative for cloud drives
+                        "--buffer-size", "64M",       # smaller buffer - don't outpace source
+                        "--retries", "20",
+                        "--low-level-retries", "20",
+                        "--retries-sleep", "5s",
+                        "--timeout", "5m",            # longer timeout for slow cloud drives
+                        "--stats", "0.1s"
+                    ]
+
     try:
         if not use_project:
-            run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/",
-                [
-                    "--transfers", "1",           # single file, no parallelism needed
-                    "--checkers", "1",
-                    "--s3-chunk-size", "64M",     # larger chunks = fewer requests
-                    "--s3-upload-concurrency", "2",  # very conservative for cloud drives
-                    "--buffer-size", "16M",       # smaller buffer - don't outpace source
-                    "--multi-thread-streams", "0",   # disable; doesn't help S3 multipart
-                    "--retries", "10",
-                    "--low-level-retries", "20",
-                    "--retries-sleep", "5s",
-                    "--timeout", "5m",            # longer timeout for slow cloud drives
-                    "--stats", "0.1s"
-                ],)
+            run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/", rclone_settings)
         else:
             _LOG("📤  Uploading the main .blend\n")
             move_to_path = _nfc(_s3key_clean(f"{project_name}/{main_blend_s3}"))
             remote_main = f":s3:{bucket}/{move_to_path}"
-            run_rclone(
-                base_cmd,
-                "copyto",
-                blend_path,
-                remote_main,
-                [
-                    "--transfers", "1",
-                    "--checkers", "1",
-                    "--s3-chunk-size", "64M",
-                    "--s3-upload-concurrency", "2",
-                    "--buffer-size", "16M",
-                    "--multi-thread-streams", "0",
-                    "--retries", "10",
-                    "--low-level-retries", "20",
-                    "--retries-sleep", "5s",
-                    "--timeout", "5m",
-                    "--stats", "0.1s"
-                ],
-            )
-
+            run_rclone(base_cmd, "copyto", blend_path, remote_main, rclone_settings)
             if rel_manifest:
                 _LOG("📤  Uploading dependencies\n")
+                dependency_rclone_settings = ["--files-from", str(filelist)]
+                dependency_rclone_settings.extend(rclone_settings)
                 run_rclone(
                     base_cmd,
                     "copy",
                     str(common_path),
                     f":s3:{bucket}/{project_name}/",
-                    [
-                        "--files-from", str(filelist),
-                        "--checksum",
-                        "--transfers", "2",
-                        "--checkers", "2",
-                        "--s3-chunk-size", "64M",
-                        "--s3-upload-concurrency", "2",
-                        "--buffer-size", "16M",
-                        "--retries", "10",
-                        "--low-level-retries", "20",
-                        "--retries-sleep", "5s",
-                        "--timeout", "5m",
-                        "--stats", "0.1s"
-                    ],
+                    dependency_rclone_settings,
                 )
 
             with filelist.open("a", encoding="utf-8") as fp:
@@ -1046,7 +1007,7 @@ def main() -> None:
                 "move",
                 str(filelist),
                 f":s3:{bucket}/{project_name}/",
-                ["--checksum", "--stats", "0.1s"],
+                rclone_settings,
             )
 
         if data.get("packed_addons") and len(data["packed_addons"]) > 0:
@@ -1056,19 +1017,7 @@ def main() -> None:
                 "moveto",
                 data["packed_addons_path"],
                 f":s3:{bucket}/{job_id}/addons/",
-                [
-                    "--transfers", "2",
-                    "--checkers", "2",
-                    "--s3-chunk-size", "64M",
-                    "--s3-upload-concurrency", "2",
-                    "--buffer-size", "16M",
-                    "--multi-thread-streams", "0",
-                    "--retries", "10",
-                    "--low-level-retries", "20",
-                    "--retries-sleep", "5s",
-                    "--timeout", "5m",
-                    "--stats", "0.1s"
-                ],
+                rclone_settings,
             )
 
     except RuntimeError as exc:
