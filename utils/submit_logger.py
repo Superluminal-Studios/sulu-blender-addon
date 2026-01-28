@@ -177,39 +177,36 @@ GLYPH_LINK = "⟐" if _UNICODE else "*"
 
 # ─────────────────────────── Superluminal logo mark ───────────────────────────
 
-# NOTE: Keep this as raw text. When rendering inside Panels we normalize it
-# (trim leading/trailing blank lines and rstrip each line) so it won't wrap
-# due to trailing whitespace in 80-col terminals.
-LOGO_MARK = r"""
-                                        ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀                      
-                                    ▄▖█▌█▌█▌█▌▀▘                               
-                                  █▌█▌█▌█▌                                     
-                                █▌█▌█▌▀▘                                       
-                              █▌█▌█▌█▌                                         
-                            █▌█▌█▌█▌        █▌                                 
-  █████████  █████  █████   █▌█▌█▌          █▌   █████       █████  █████      
- ███░░░░░███░░███  ░░███    █▌█▌█▌          █▌  ░░███       ░░███  ░░███       
-░███    ░░░  ░███   ░███    █▌█▌            █▌   ░███        ░███   ░███       
-░░█████████  ░███   ░███    █▌█▌          █▌█▌   ░███        ░███   ░███       
- ░░░░░░░░███ ░███   ░███    █▌▀▘          █▌█▌   ░███        ░███   ░███       
- ███    ░███ ░███   ░███    █▌          ▄▖█▌█▌   ░███      █ ░███   ░███       
-░░█████████  ░░████████     █▌          █▌█▌█▌   ███████████ ░░████████        
- ░░░░░░░░░    ░░░░░░░░      █▌        █▌█▌█▌█▌  ░░░░░░░░░░░   ░░░░░░░░         
-                                The Superluminal Computing Corporation         
-                                  ▄▖█▌█▌█▌▀▘                                   
-                                ▄▖█▌█▌█▌▀▘                                     
-                            ▄▖█▌█▌█▌▀▘                                         
-                ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀▘                                             
-                                                                               
-                                                                               
-"""
+# NOTE: Logo lines must have NO trailing whitespace to prevent wrapping issues.
+# The _normalize_logo_mark function also strips as a safety measure.
+LOGO_MARK = "\n".join([
+    "                                        ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀",
+    "                                    ▄▖█▌█▌█▌█▌▀▘",
+    "                                  █▌█▌█▌█▌",
+    "                                █▌█▌█▌▀▘",
+    "                              █▌█▌█▌█▌",
+    "                            █▌█▌█▌█▌        █▌",
+    "  █████████  █████  █████   █▌█▌█▌          █▌   █████       █████  █████",
+    " ███░░░░░███░░███  ░░███    █▌█▌█▌          █▌  ░░███       ░░███  ░░███",
+    "░███    ░░░  ░███   ░███    █▌█▌            █▌   ░███        ░███   ░███",
+    "░░█████████  ░███   ░███    █▌█▌          █▌█▌   ░███        ░███   ░███",
+    " ░░░░░░░░███ ░███   ░███    █▌▀▘          █▌█▌   ░███        ░███   ░███",
+    " ███    ░███ ░███   ░███    █▌          ▄▖█▌█▌   ░███      █ ░███   ░███",
+    "░░█████████  ░░████████     █▌          █▌█▌█▌   ███████████ ░░████████",
+    " ░░░░░░░░░    ░░░░░░░░      █▌        █▌█▌█▌█▌  ░░░░░░░░░░░   ░░░░░░░░",
+    "                                The Superluminal Computing Corporation",
+    "                                  ▄▖█▌█▌█▌▀▘",
+    "                                ▄▖█▌█▌█▌▀▘",
+    "                            ▄▖█▌█▌█▌▀▘",
+    "                ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀▘",
+])
 
 # A conservative ASCII fallback for legacy terminals that don't reliably render
 # the block glyphs above.
-LOGO_MARK_ASCII = r"""
-  SUPERLUMINAL COMPUTING CORPORATION
-  S U L U   S U B M I T T E R
-"""
+LOGO_MARK_ASCII = "\n".join([
+    "  SUPERLUMINAL COMPUTING CORPORATION",
+    "  S U L U   S U B M I T T E R",
+])
 
 
 def _normalize_logo_mark(raw: str) -> str:
@@ -428,14 +425,14 @@ class SubmitLogger:
 
     # ───────────────────── internal helpers ─────────────────────
 
+    # Minimum usable terminal width for table display
+    MIN_TABLE_WIDTH = 60
+
     def _compute_cols(self) -> Dict[str, int]:
         """Compute column widths based on console width."""
-        width = 80
-        if self.console:
-            try:
-                width = int(self.console.width or 80)
-            except Exception:
-                width = 80
+        width = self._get_width()
+        # Clamp to minimum to avoid broken layouts
+        width = max(self.MIN_TABLE_WIDTH, width)
 
         # status column is a single glyph + 2 spaces; keep a tiny fixed width
         status_w = 3
@@ -444,6 +441,18 @@ class SubmitLogger:
         usable = max(30, width - lead - gaps - status_w)
         col_w = max(10, usable // 3)
         return {"col": col_w, "status": status_w, "total": width}
+
+    def _table_line(self, initial: str = "  ") -> Any:
+        """Create a Text object for table-like output (no wrapping)."""
+        if Text is not None:
+            return Text(initial, no_wrap=True, overflow="crop")
+        return None
+
+    def _table_text(self, content: str, style: str = "") -> Any:
+        """Create a styled Text object that won't wrap."""
+        if Text is not None:
+            return Text(content, style=style, no_wrap=True, overflow="crop")
+        return None
 
     def _print(self, msg: str = "") -> None:
         if self.console:
@@ -513,34 +522,39 @@ class SubmitLogger:
 
     # ───────────────────── logo marks ─────────────────────
 
-    def logo_start(self) -> None:
-        """Logo mark + start panel at the beginning of a submission."""
+    def _print_logo(self, style: str = "sulu.dim") -> None:
+        """Print logo directly, line by line, centered, to avoid wrapping issues."""
         width = self._get_width()
         logo_str = _get_logo_mark(width)
+        if not logo_str:
+            return
 
-        if self.console and Text is not None and Align is not None:
-            body = Text()
+        lines = logo_str.split("\n")
+        # Find the max line length for centering calculation
+        max_len = max(len(line) for line in lines) if lines else 0
 
-            # Logo mark (dim / muted — branding, not "meaning", no_wrap to prevent line breaks)
-            if logo_str:
-                logo_text = Text(logo_str, style="sulu.dim", no_wrap=True, overflow="crop")
-                body.append_text(logo_text)
-                body.append("\n\n")
-
-            # (Intentionally minimal here; caller prints stage headers next)
-            badge = Text()
-            body.append(badge)
-
-            panel = self._panel(
-                Align.center(body),
-                title=Text(f"{GLYPH_HEX}  SESSION START", style="sulu.dim"),
-                border_style="sulu.stroke_subtle",
-                style="sulu.panel",
-                padding=(1, 2),
-            )
+        if self.console and Text is not None:
             self.console.print()
-            self.console.print(panel)
+            for line in lines:
+                # Calculate left padding to center this line
+                padding = max(0, (width - max_len) // 2)
+                padded_line = " " * padding + line
+                self.console.print(Text(padded_line, style=style, no_wrap=True, overflow="crop"))
+            self.console.print()
         else:
+            self._log_fn("")
+            for line in lines:
+                padding = max(0, (width - max_len) // 2)
+                self._log_fn(" " * padding + line)
+            self._log_fn("")
+
+    def logo_start(self) -> None:
+        """Logo mark + start panel at the beginning of a submission."""
+        if self.console and Text is not None:
+            self._print_logo(style="sulu.dim")
+        else:
+            width = self._get_width()
+            logo_str = _get_logo_mark(width)
             self._log_fn("")
             if logo_str:
                 self._log_fn(logo_str)
@@ -555,20 +569,15 @@ class SubmitLogger:
         job_url: Optional[str] = None,
     ) -> None:
         """Logo mark + celebratory end panel (after job registration)."""
-        width = self._get_width()
-        logo_str = _get_logo_mark(width)
-
         # Celebratory marks
         sparkle = "·:*" if _UNICODE else "***"
 
         if self.console and Text is not None and Align is not None:
-            body = Text()
+            # Print logo separately (white for celebration)
+            self._print_logo(style="#FFFFFF")
 
-            # Logo mark (white for celebration, no_wrap to prevent line breaks)
-            if logo_str:
-                logo_text = Text(logo_str, style="#FFFFFF", no_wrap=True, overflow="crop")
-                body.append_text(logo_text)
-                body.append("\n\n")
+            # Build the success panel content (without logo)
+            body = Text()
 
             # Celebratory header (all green)
             body.append(f"{sparkle} ", style="bold #1EA138")
@@ -604,9 +613,10 @@ class SubmitLogger:
                 style="sulu.panel",
                 padding=(1, 2),
             )
-            self.console.print()
             self.console.print(panel)
         else:
+            width = self._get_width()
+            logo_str = _get_logo_mark(width)
             self._log_fn("")
             if logo_str:
                 self._log_fn(logo_str)
@@ -1096,11 +1106,7 @@ class SubmitLogger:
         if not self.console or Text is None:
             return ""
 
-        width = 80
-        try:
-            width = int(self.console.width or 80)
-        except Exception:
-            width = 80
+        width = max(self.MIN_TABLE_WIDTH, self._get_width())
 
         # Calculate bar width (account for panel borders and padding)
         bar_width = max(20, width - 8)
@@ -1111,12 +1117,12 @@ class SubmitLogger:
             empty = bar_width - filled
 
             # Build the progress bar with blue fill
-            bar = Text()
+            bar = Text(no_wrap=True, overflow="crop")
             bar.append("█" * filled, style="sulu.accent")
             bar.append("░" * empty, style="sulu.stroke_subtle")
 
             # Stats line
-            stats = Text()
+            stats = Text(no_wrap=True, overflow="crop")
             stats.append(f"{pct * 100:5.1f}%", style="sulu.accent")
             stats.append("  ", style="sulu.stroke_subtle")
             stats.append(f"{format_size(cur)}", style="sulu.fg")
@@ -1124,16 +1130,16 @@ class SubmitLogger:
             stats.append(f"{format_size(total)}", style="sulu.muted")
         else:
             # Indeterminate
-            bar = Text("░" * bar_width, style="sulu.stroke_subtle")
-            stats = Text()
+            bar = Text("░" * bar_width, style="sulu.stroke_subtle", no_wrap=True, overflow="crop")
+            stats = Text(no_wrap=True, overflow="crop")
             stats.append(f"{format_size(cur)}", style="sulu.fg")
             stats.append(" transferred", style="sulu.dim")
 
-        # Combine bar and stats
+        # Combine bar and stats (body allows the newline between them)
         body = Text()
-        body.append(bar)
+        body.append_text(bar)
         body.append("\n")
-        body.append(stats)
+        body.append_text(stats)
 
         return self._panel(
             body,
