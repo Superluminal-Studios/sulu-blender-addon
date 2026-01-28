@@ -26,7 +26,8 @@
       "Bash(ls:*)",
       "Bash(for f in tests/bat/test_*.py)",
       "Bash(do python -c \"import sys; sys.path.insert\\(0,''.''\\); exec\\(open\\(''$f''\\).read\\(\\)\\)\")",
-      "Bash(xargs -I {} sh -c 'grep -l \"\"token\\\\|secret\\\\|password\\\\|key\"\" {} 2>/dev/null && echo \"\"  WARNING: {} may contain secrets\"\"')"
+      "Bash(xargs -I {} sh -c 'grep -l \"\"token\\\\|secret\\\\|password\\\\|key\"\" {} 2>/dev/null && echo \"\"  WARNING: {} may contain secrets\"\"')",
+      "Bash(set PYTHONIOENCODING=utf-8)"
     ]
   }
 }

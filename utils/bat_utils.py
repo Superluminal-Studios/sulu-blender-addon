@@ -117,6 +117,7 @@ def trace_dependencies(
     logger: Optional[Any] = None,
     *,
     hydrate: bool = False,
+    diagnostic_report: Optional[Any] = None,
 ) -> Tuple[List[Path], Set[Path], Dict[Path, str], List[Any]]:
     """
     Lightweight dependency trace using BAT's trace.deps().
@@ -146,10 +147,11 @@ def trace_dependencies(
     for usage in trace.deps(blend_path):
         raw_usages.append(usage)
 
-        # Get source info for logging
-        source_blend = _get_source_blend_name(usage) if logger else ""
-        block_type = _get_block_type(usage) if logger else ""
-        block_name = _get_block_name(usage) if logger else ""
+        # Get source info for logging (needed for both logger and diagnostic_report)
+        needs_block_info = logger or diagnostic_report
+        source_blend = _get_source_blend_name(usage) if needs_block_info else ""
+        block_type = _get_block_type(usage) if needs_block_info else ""
+        block_name = _get_block_name(usage) if needs_block_info else ""
 
         # Use usage.files() to properly expand sequences (UDIM, image sequences, etc.)
         # This handles glob patterns and returns actual file paths.
@@ -175,6 +177,17 @@ def trace_dependencies(
                     found_file=abs_path.name,
                     status="missing",
                     error_msg=None,
+                )
+
+            if diagnostic_report is not None:
+                diagnostic_report.add_trace_entry(
+                    source_blend=source_blend,
+                    block_type=block_type,
+                    block_name=block_name,
+                    resolved_path=str(abs_path),
+                    status="missing",
+                    error_msg=None,
+                    file_size=0,
                 )
         else:
             # Check each expanded file
@@ -210,6 +223,24 @@ def trace_dependencies(
                         error_msg=error_msg,
                     )
 
+                if diagnostic_report is not None:
+                    # Get file size if file exists and is readable
+                    file_size = 0
+                    if status == "ok":
+                        try:
+                            file_size = file_path.stat().st_size
+                        except Exception:
+                            pass
+                    diagnostic_report.add_trace_entry(
+                        source_blend=source_blend,
+                        block_type=block_type,
+                        block_name=block_name,
+                        resolved_path=str(file_path),
+                        status=status,
+                        error_msg=error_msg,
+                        file_size=file_size,
+                    )
+
     return deps, missing, unreadable, raw_usages
 
 
@@ -220,6 +251,8 @@ def compute_project_root(
     blend_path: Path,
     dependency_paths: List[Path],
     custom_project_path: Optional[Path] = None,
+    missing_files: Optional[Set[Path]] = None,
+    unreadable_files: Optional[Dict[Path, str]] = None,
 ) -> Tuple[Path, List[Path], List[Path]]:
     """
     Compute optimal project root from blend file and its dependencies.
@@ -234,6 +267,8 @@ def compute_project_root(
         blend_path: Path to the main .blend file
         dependency_paths: List of dependency paths from trace_dependencies()
         custom_project_path: Optional user-specified project root
+        missing_files: Optional set of paths that don't exist (excluded from root calculation)
+        unreadable_files: Optional dict of paths that can't be read (excluded from root calculation)
 
     Returns:
         (project_root, same_drive_paths, cross_drive_paths)
@@ -254,8 +289,19 @@ def compute_project_root(
     same_drive_paths: List[Path] = []
     cross_drive_paths: List[Path] = []
 
+    # Normalize missing/unreadable sets for comparison - these files won't be uploaded,
+    # so they shouldn't influence the project root calculation
+    missing_norm = {_norm_path(str(p)) for p in (missing_files or set())}
+    unreadable_norm = {_norm_path(str(p)) for p in (unreadable_files or {}).keys()}
+    excluded_paths = missing_norm | unreadable_norm
+
     for dep in dependency_paths:
         dep_norm = _norm_path(str(dep))
+
+        # Skip missing/unreadable files - they won't be uploaded
+        if dep_norm in excluded_paths:
+            continue
+
         dep_drive = _drive(dep_norm)
         if dep_drive == blend_drive:
             same_drive_paths.append(dep)

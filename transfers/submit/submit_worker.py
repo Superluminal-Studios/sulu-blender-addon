@@ -432,6 +432,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     requests_retry_session = worker_utils.requests_retry_session
     _build_base = worker_utils._build_base
     CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
+    open_folder = worker_utils.open_folder
 
     # Set logger for this script
     _set_logger(worker_utils.logger)
@@ -450,6 +451,9 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     run_rclone = rclone.run_rclone
     ensure_rclone = rclone.ensure_rclone
 
+    diagnostic_report_mod = importlib.import_module(f"{pkg_name}.utils.diagnostic_report")
+    DiagnosticReport = diagnostic_report_mod.DiagnosticReport
+
     return {
         "pkg_name": pkg_name,
         "clear_console": clear_console,
@@ -458,6 +462,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "requests_retry_session": requests_retry_session,
         "_build_base": _build_base,
         "CLOUDFLARE_R2_DOMAIN": CLOUDFLARE_R2_DOMAIN,
+        "open_folder": open_folder,
         "pack_blend": pack_blend,
         "trace_dependencies": trace_dependencies,
         "compute_project_root": compute_project_root,
@@ -465,6 +470,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "create_logger": create_logger,
         "run_rclone": run_rclone,
         "ensure_rclone": ensure_rclone,
+        "DiagnosticReport": DiagnosticReport,
     }
 
 
@@ -481,6 +487,7 @@ def main() -> None:
     requests_retry_session = mods["requests_retry_session"]
     _build_base = mods["_build_base"]
     CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
+    open_folder = mods["open_folder"]
     pack_blend = mods["pack_blend"]
     trace_dependencies = mods["trace_dependencies"]
     compute_project_root = mods["compute_project_root"]
@@ -488,6 +495,7 @@ def main() -> None:
     create_logger = mods["create_logger"]
     run_rclone = mods["run_rclone"]
     ensure_rclone = mods["ensure_rclone"]
+    DiagnosticReport = mods["DiagnosticReport"]
 
     proj = data["project"]
 
@@ -522,10 +530,17 @@ def main() -> None:
                             "Restart Blender.",
                         ],
                     )
-                    answer = logger.prompt("Would you like to update now? (y/n) ", "n")
-                    if answer.lower() == "y":
+                    answer = logger.ask_choice(
+                        "A newer version of the add-on is available. Would you like to update now?",
+                        [
+                            ("y", "Yes", "Open download page and exit"),
+                            ("n", "No", "Continue with current version"),
+                        ],
+                        default="n",
+                    )
+                    if answer == "y":
                         webbrowser.open("https://superlumin.al/blender-addon")
-                        logger.fatal("Please complete the update and restart Blender.")
+                        logger.info_exit("Please complete the update and restart Blender.")
     except SystemExit:
         sys.exit(0)
     except Exception:
@@ -586,6 +601,23 @@ def main() -> None:
     # Wait until .blend is fully written
     is_blend_saved(blend_path)
 
+    # Create diagnostic report for continuous logging
+    report = DiagnosticReport(
+        reports_dir=Path(data["addon_dir"]) / "reports",
+        job_id=job_id,
+        blend_name=Path(blend_path).stem,
+        metadata={
+            "source_blend": blend_path,
+            "upload_type": "PROJECT" if use_project else "ZIP",
+            "job_name": data["job_name"],
+            "blender_version": data["blender_version"],
+            "addon_version": data["addon_version"],
+            "device_type": data.get("device_type", ""),
+            "start_frame": data["start_frame"],
+            "end_frame": data["end_frame"],
+        },
+    )
+
     # ═══════════════════════════════════════════════════════════════════════════
     # STAGE 1: TRACING - Discover all dependencies
     # ═══════════════════════════════════════════════════════════════════════════
@@ -599,12 +631,13 @@ def main() -> None:
         ],
     )
     logger.trace_start(blend_path)
+    report.start_stage("trace")
 
     # Pack assets
     if use_project:
         # Trace dependencies (hydrate cloud placeholders)
         dep_paths, missing_set, unreadable_dict, raw_usages = trace_dependencies(
-            Path(blend_path), logger=logger, hydrate=True
+            Path(blend_path), logger=logger, hydrate=True, diagnostic_report=report
         )
 
         ok_files_set = set(
@@ -622,9 +655,14 @@ def main() -> None:
             custom_root = Path(custom_project_path_str)
 
         project_root, same_drive_deps, cross_drive_deps = compute_project_root(
-            Path(blend_path), dep_paths, custom_root
+            Path(blend_path), dep_paths, custom_root,
+            missing_files=missing_set,
+            unreadable_files=unreadable_dict,
         )
         common_path = str(project_root).replace("\\", "/")
+        report.set_metadata("project_root", common_path)
+        if cross_drive_deps:
+            report.add_cross_drive_files([str(p) for p in cross_drive_deps])
 
         # Build warning text for issues
         missing_files_list = [str(p) for p in sorted(missing_set)]
@@ -665,6 +703,7 @@ def main() -> None:
             cross_drive=len(cross_drive_deps),
             warning_text=warning_text,
         )
+        report.complete_stage("trace")
 
         # TEST MODE: show report and exit
         if test_mode:
@@ -679,7 +718,7 @@ def main() -> None:
                     except:
                         pass
 
-            report, report_path = _generate_report(
+            test_report_data, test_report_path = _generate_report(
                 blend_path=blend_path,
                 dep_paths=dep_paths,
                 missing_set=missing_set,
@@ -705,7 +744,7 @@ def main() -> None:
                 ],
                 cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
                 upload_type="PROJECT",
-                report_path=str(report_path) if report_path else None,
+                report_path=str(test_report_path) if test_report_path else None,
                 shorten_fn=shorten_path,
             )
             _safe_input("\nPress ENTER to close this window...", "")
@@ -713,8 +752,28 @@ def main() -> None:
 
         # Prompt if there are issues
         if has_issues:
-            answer = logger.prompt("Continue submission anyway? y/n: ", "y")
-            if answer.lower() != "y":
+            logger.report_info(str(report.get_path()))
+            answer = logger.ask_choice(
+                "Some issues were detected during dependency tracing. Would you like to continue?",
+                [
+                    ("y", "Yes", "Continue with submission"),
+                    ("n", "No", "Cancel and exit"),
+                    ("o", "Open Reports", "View diagnostic reports folder"),
+                ],
+                default="y",
+            )
+            if answer == "o":
+                open_folder(str(report.get_reports_dir()))
+                answer = logger.ask_choice(
+                    "Continue with submission?",
+                    [
+                        ("y", "Yes", "Proceed anyway"),
+                        ("n", "No", "Cancel and exit"),
+                    ],
+                    default="y",
+                )
+            if answer != "y":
+                report.set_status("cancelled")
                 sys.exit(1)
 
         # ═══════════════════════════════════════════════════════════════════════
@@ -726,8 +785,10 @@ def main() -> None:
             "Mapping dependencies to project structure",
         )
 
+        report.start_stage("pack")
+
         # Build file map from pre-expanded OK files (no filesystem I/O needed)
-        fmap, report = pack_blend(
+        fmap, pack_report = pack_blend(
             blend_path,
             target="",
             method="PROJECT",
@@ -771,6 +832,7 @@ def main() -> None:
             rel = _s3key_clean(rel)
             if rel:
                 rel_manifest.append(rel)
+                report.add_pack_entry(src_str, rel, file_size=size, status="ok")
 
         # Include main blend in storage calculation
         try:
@@ -790,16 +852,22 @@ def main() -> None:
             total_size=required_storage,
             title="Manifest complete",
         )
+        report.complete_stage("pack")
 
     else:  # ZIP mode
         dep_paths, missing_set, unreadable_dict, raw_usages = trace_dependencies(
-            Path(blend_path), logger=logger
+            Path(blend_path), logger=logger, diagnostic_report=report
         )
 
         project_root, same_drive_deps, cross_drive_deps = compute_project_root(
-            Path(blend_path), dep_paths
+            Path(blend_path), dep_paths,
+            missing_files=missing_set,
+            unreadable_files=unreadable_dict,
         )
         project_root_str = str(project_root).replace("\\", "/")
+        report.set_metadata("project_root", project_root_str)
+        if cross_drive_deps:
+            report.add_cross_drive_files([str(p) for p in cross_drive_deps])
 
         missing_files_list = [str(p) for p in sorted(missing_set)]
         unreadable_files_list = [
@@ -824,10 +892,31 @@ def main() -> None:
             cross_drive=len(cross_drive_deps),
             warning_text=zip_warning_text,
         )
+        report.complete_stage("trace")
 
         if has_zip_issues:
-            answer = logger.prompt("Continue submission anyway? y/n: ", "y")
-            if answer.lower() != "y":
+            logger.report_info(str(report.get_path()))
+            answer = logger.ask_choice(
+                "Some issues were detected during dependency tracing. Would you like to continue?",
+                [
+                    ("y", "Yes", "Continue with submission"),
+                    ("n", "No", "Cancel and exit"),
+                    ("o", "Open Reports", "View diagnostic reports folder"),
+                ],
+                default="y",
+            )
+            if answer == "o":
+                open_folder(str(report.get_reports_dir()))
+                answer = logger.ask_choice(
+                    "Continue with submission?",
+                    [
+                        ("y", "Yes", "Proceed anyway"),
+                        ("n", "No", "Cancel and exit"),
+                    ],
+                    default="y",
+                )
+            if answer != "y":
+                report.set_status("cancelled")
                 sys.exit(1)
 
         # TEST MODE
@@ -843,7 +932,7 @@ def main() -> None:
                     except:
                         pass
 
-            report, report_path = _generate_report(
+            test_report_data, test_report_path = _generate_report(
                 blend_path=blend_path,
                 dep_paths=dep_paths,
                 missing_set=missing_set,
@@ -869,7 +958,7 @@ def main() -> None:
                 ],
                 cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
                 upload_type="ZIP",
-                report_path=str(report_path) if report_path else None,
+                report_path=str(test_report_path) if test_report_path else None,
                 shorten_fn=shorten_path,
             )
             _safe_input("\nPress ENTER to close this window...", "")
@@ -883,6 +972,7 @@ def main() -> None:
             "PACKING",
             "Creating compressed archive with all dependencies",
         )
+        report.start_stage("pack")
 
         abs_blend_norm = _norm_abs_for_detection(blend_path)
 
@@ -894,6 +984,8 @@ def main() -> None:
                 logger.zip_start(total, 0)
                 _zip_started = True
             logger.zip_entry(idx, total, arcname, size, method)
+            # Log to diagnostic report
+            report.add_pack_entry(arcname, arcname, file_size=size, status="ok")
 
         def _on_zip_done(zippath, total_files, total_bytes, elapsed):
             logger.zip_done(zippath, total_files, total_bytes, elapsed)
@@ -914,12 +1006,14 @@ def main() -> None:
         )
 
         if not zip_file.exists():
+            report.set_status("failed")
             logger.fatal("Zip file does not exist")
 
         required_storage = zip_file.stat().st_size
         rel_manifest = []
         common_path = ""
         main_blend_s3 = ""
+        report.complete_stage("pack")
 
     # NO_SUBMIT MODE
     if no_submit:
@@ -948,6 +1042,7 @@ def main() -> None:
     # STAGE 3: UPLOADING - Transfer files to cloud storage
     # ═══════════════════════════════════════════════════════════════════════════
     logger.stage_header(3, "UPLOADING", "Transferring files to render farm storage")
+    report.start_stage("upload")
 
     # R2 credentials
     logger.storage_connect("connecting")
@@ -1007,6 +1102,7 @@ def main() -> None:
                 "Uploading archive",
                 f"{zip_file.name} ({_format_size(required_storage)})",
             )
+            report.start_upload_step(step, total_steps, "Uploading archive")
             run_rclone(
                 base_cmd,
                 "move",
@@ -1016,6 +1112,7 @@ def main() -> None:
                 logger=logger,
             )
             logger.upload_complete("Archive uploaded")
+            report.complete_upload_step(bytes_transferred=required_storage)
             step += 1
 
             if has_addons:
@@ -1025,6 +1122,7 @@ def main() -> None:
                     "Uploading add-ons",
                     f"{len(data['packed_addons'])} item(s)",
                 )
+                report.start_upload_step(step, total_steps, "Uploading add-ons")
                 run_rclone(
                     base_cmd,
                     "moveto",
@@ -1034,6 +1132,9 @@ def main() -> None:
                     logger=logger,
                 )
                 logger.upload_complete("Add-ons uploaded")
+                report.complete_upload_step()
+
+            report.complete_stage("upload")
 
         else:
             # PROJECT MODE UPLOAD
@@ -1054,6 +1155,7 @@ def main() -> None:
                 "Uploading main .blend",
                 f"{Path(blend_path).name} ({_format_size(blend_size)})",
             )
+            report.start_upload_step(step, total_steps, "Uploading main .blend")
             move_to_path = _nfc(_s3key_clean(f"{project_name}/{main_blend_s3}"))
             remote_main = f":s3:{bucket}/{move_to_path}"
             run_rclone(
@@ -1065,6 +1167,7 @@ def main() -> None:
                 logger=logger,
             )
             logger.upload_complete("Main .blend uploaded")
+            report.complete_upload_step(bytes_transferred=blend_size)
             step += 1
 
             if rel_manifest:
@@ -1074,6 +1177,7 @@ def main() -> None:
                     "Uploading dependencies",
                     f"{len(rel_manifest)} file(s)",
                 )
+                report.start_upload_step(step, total_steps, "Uploading dependencies")
                 dependency_rclone_settings = ["--files-from", str(filelist)]
                 dependency_rclone_settings.extend(rclone_settings)
                 run_rclone(
@@ -1085,12 +1189,14 @@ def main() -> None:
                     logger=logger,
                 )
                 logger.upload_complete("Dependencies uploaded")
+                report.complete_upload_step()
                 step += 1
 
             with filelist.open("a", encoding="utf-8") as fp:
                 fp.write(_nfc(_s3key_clean(main_blend_s3)) + "\n")
 
             logger.upload_step(step, total_steps, "Uploading manifest", filelist.name)
+            report.start_upload_step(step, total_steps, "Uploading manifest")
             run_rclone(
                 base_cmd,
                 "move",
@@ -1100,6 +1206,7 @@ def main() -> None:
                 logger=logger,
             )
             logger.upload_complete("Manifest uploaded")
+            report.complete_upload_step()
             step += 1
 
             if has_addons:
@@ -1109,6 +1216,7 @@ def main() -> None:
                     "Uploading add-ons",
                     f"{len(data['packed_addons'])} item(s)",
                 )
+                report.start_upload_step(step, total_steps, "Uploading add-ons")
                 run_rclone(
                     base_cmd,
                     "moveto",
@@ -1118,8 +1226,12 @@ def main() -> None:
                     logger=logger,
                 )
                 logger.upload_complete("Add-ons uploaded")
+                report.complete_upload_step()
+
+        report.complete_stage("upload")
 
     except RuntimeError as exc:
+        report.set_status("failed")
         logger.fatal(f"Upload failed: {exc}")
 
     finally:
@@ -1183,13 +1295,16 @@ def main() -> None:
         )
         post_resp.raise_for_status()
     except requests.RequestException as exc:
+        report.set_status("failed")
         logger.fatal(f"Job registration failed: {exc}")
 
+    # Finalize the diagnostic report
+    report.finalize()
+
     elapsed = time.perf_counter() - t_start
-    logger.log("")
-    logger.success(f"Job submitted successfully. Total time: {elapsed:.1f}s")
+    job_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{data['job_id']}"
     try:
-        logger.logo_end(job_id=data["job_id"], elapsed=elapsed)
+        logger.logo_end(job_id=data["job_id"], elapsed=elapsed, job_url=job_url)
     except Exception:
         pass
 
@@ -1200,10 +1315,19 @@ def main() -> None:
     except Exception:
         pass
 
-    selection = logger.prompt(
-        "\nOpen job in your browser? y/n, or just press ENTER to close… ", "n"
+    selection = logger.ask_choice(
+        "Submission complete! What would you like to do?",
+        [
+            ("y", "Open in Browser", "View job status on superlumin.al"),
+            ("o", "Open Reports", "View diagnostic reports folder"),
+            ("n", "Close", "Exit this window"),
+        ],
+        default="n",
     )
-    if selection.lower() == "y":
+    if selection == "o":
+        open_folder(str(report.get_reports_dir()))
+        _safe_input("\nPress ENTER to close this window...", "")
+    elif selection == "y":
         web_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{data['job_id']}"
         webbrowser.open(web_url)
         logger.job_complete(web_url)

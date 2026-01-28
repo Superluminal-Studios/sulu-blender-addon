@@ -525,33 +525,50 @@ class SubmitLogger:
             self._log_fn("Render farm submission pipeline")
 
     def logo_end(
-        self, job_id: Optional[str] = None, elapsed: Optional[float] = None
+        self,
+        job_id: Optional[str] = None,
+        elapsed: Optional[float] = None,
+        job_url: Optional[str] = None,
     ) -> None:
-        """Logo mark + end panel (after job registration)."""
+        """Logo mark + celebratory end panel (after job registration)."""
         logo_str = _get_logo_mark()
+
+        # Celebratory marks
+        sparkle = "·:*" if _UNICODE else "***"
 
         if self.console and Text is not None and Align is not None:
             body = Text()
 
-            # Logo mark (dim / muted — branding, not "meaning")
+            # Logo mark (white for celebration)
             if logo_str:
-                body.append(logo_str, style="sulu.dim")
+                body.append(logo_str, style="#FFFFFF")
                 body.append("\n\n")
 
-            # Completion block
-            body.append("SUBMISSION COMPLETE", style="sulu.ok_b")
-            if job_id:
-                body.append("\n")
-                body.append("Job ID: ", style="sulu.muted")
-                body.append(str(job_id), style="sulu.fg")
+            # Celebratory header (all green)
+            body.append(f"{sparkle} ", style="bold #1EA138")
+            body.append("SUBMISSION COMPLETE", style="bold #1EA138")
+            body.append(f" {sparkle[::-1]}", style="bold #1EA138")
+            body.append("\n\n")
+
+            # Job details
+            body.append(
+                "Your render job is now queued and will begin rendering shortly.",
+                style="sulu.fg",
+            )
+
+            if job_url:
+                body.append("\n\n")
+                body.append(str(job_url), style="underline #5250FF")
+
+            # Panel title with time
+            title = Text()
+            title.append(f"{GLYPH_OK}  SUCCESS", style="sulu.ok_b")
             if elapsed is not None:
-                body.append("\n")
-                body.append("Elapsed: ", style="sulu.muted")
-                body.append(f"{elapsed:.1f}s", style="sulu.fg")
+                title.append(f"  ·  {elapsed:.1f}s", style="sulu.dim")
 
             panel = self._panel(
                 Align.center(body),
-                title=Text(f"{GLYPH_HEX}  SESSION END", style="sulu.dim"),
+                title=title,
                 border_style="sulu.ok",
                 style="sulu.panel",
                 padding=(1, 2),
@@ -563,11 +580,14 @@ class SubmitLogger:
             if logo_str:
                 self._log_fn(logo_str)
                 self._log_fn("")
-            self._log_fn("=== SUBMISSION COMPLETE ===")
-            if job_id:
-                self._log_fn(f"Job ID: {job_id}")
-            if elapsed is not None:
-                self._log_fn(f"Elapsed: {elapsed:.1f}s")
+            time_str = f" ({elapsed:.1f}s)" if elapsed is not None else ""
+            self._log_fn(f"{sparkle} SUBMISSION COMPLETE{time_str} {sparkle[::-1]}")
+            self._log_fn("")
+            self._log_fn(
+                "Your render job is now queued and will begin rendering shortly."
+            )
+            if job_url:
+                self._log_fn(f"{job_url}")
 
     # ───────────────────── stage headers ─────────────────────
 
@@ -1136,6 +1156,15 @@ class SubmitLogger:
         else:
             self._log_fn(f"[i] {msg}")
 
+    def report_info(self, report_path: str) -> None:
+        """Display the report file location."""
+        if self.console:
+            self.console.print(
+                f"[sulu.dim]{GLYPH_INFO}[/] [sulu.muted]Report: {report_path}[/]"
+            )
+        else:
+            self._log_fn(f"Report: {report_path}")
+
     def success(self, msg: str) -> None:
         if self.console:
             self.console.print(f"[sulu.ok_b]{GLYPH_OK}[/] [sulu.fg]{msg}[/]")
@@ -1156,6 +1185,99 @@ class SubmitLogger:
 
     def log(self, msg: str) -> None:
         self._print(msg)
+
+    # ───────────────────── chat-style prompts ─────────────────────
+
+    def ask_choice(
+        self,
+        question: str,
+        options: List[Tuple[str, str, str]],
+        default: str = "",
+    ) -> str:
+        """
+        Render a chat-style dialog from SU⡾LU with selectable options.
+
+        Args:
+            question: The question to ask
+            options: List of (key, label, description) tuples
+                     e.g. [("y", "Yes", "Continue with submission"), ...]
+            default: Default key if user just presses Enter
+
+        Returns:
+            The selected key (lowercase)
+        """
+        if self.console and Text is not None and Panel is not None:
+            self.console.print()
+
+            # Build the chat message body
+            body = Text()
+
+            # Question text
+            body.append(question, style="sulu.fg")
+            body.append("\n")
+
+            # Render options inline as compact chips
+            for i, (key, label, desc) in enumerate(options):
+                is_default = key.lower() == default.lower()
+                key_style = (
+                    "bold #5250FF on #2C2F36"
+                    if is_default
+                    else "bold #A2A6AF on #24272E"
+                )
+
+                body.append(f" {key.upper()} ", style=key_style)
+                body.append(" ", style="sulu.dim")
+                body.append(label, style="sulu.fg bold" if is_default else "sulu.muted")
+                if i < len(options) - 1:
+                    body.append("   ", style="sulu.dim")
+
+            # Chat bubble panel with SU⡾LU branding
+            sender = Text()
+            sender.append("SU", style="bold #5250FF")
+            sender.append("⡾", style="#757EFF")
+            sender.append("LU", style="bold #5250FF")
+
+            panel = Panel(
+                body,
+                title=sender,
+                title_align="left",
+                border_style="sulu.accent",
+                padding=(0, 1),
+                box=SULU_PANEL_BOX,
+                style="sulu.panel",
+            )
+            self.console.print(panel)
+
+            # Input prompt line
+            prompt_text = Text()
+            prompt_text.append(" ❯ ", style="sulu.accent")
+            if default:
+                prompt_text.append(f"[{default}] ", style="sulu.dim")
+            self.console.print(prompt_text, end="")
+
+            # Get input
+            try:
+                answer = self._input_fn("", default)
+                answer = answer.strip().lower() if answer.strip() else default.lower()
+            except (EOFError, KeyboardInterrupt):
+                answer = default.lower()
+
+            return answer
+        else:
+            # Plain text fallback
+            self._log_fn("")
+            self._log_fn(f"[SU⡾LU] {question}")
+            opts = "  ".join(f"[{k}] {lbl}" for k, lbl, _ in options)
+            self._log_fn(f"  {opts}")
+
+            prompt_str = f"[{default}] " if default else ""
+            try:
+                answer = self._input_fn(f" > {prompt_str}", default)
+                answer = answer.strip().lower() if answer.strip() else default.lower()
+            except (EOFError, KeyboardInterrupt):
+                answer = default.lower()
+
+            return answer
 
     # ───────────────────── warn / prompt / fatal ─────────────────────
 
@@ -1179,15 +1301,38 @@ class SubmitLogger:
         self.console.print(panel)
 
     def prompt(self, question: str, default: str = "") -> str:
-        """Styled input prompt. Returns the user's answer."""
-        if self.console:
-            # Render question once; avoid duplicate prompt from input()
-            self.console.print(
-                f"[sulu.dim]{GLYPH_INFO}[/] [sulu.fg]{question}[/]", end=""
+        """Styled chat-style input prompt. Returns the user's answer."""
+        if self.console and Text is not None and Panel is not None:
+            self.console.print()
+
+            # Chat bubble with question
+            body = Text(question, style="sulu.fg")
+
+            sender = Text()
+            sender.append("SU", style="bold #5250FF")
+            sender.append("⡾", style="#757EFF")
+            sender.append("LU", style="bold #5250FF")
+
+            panel = Panel(
+                body,
+                title=sender,
+                title_align="left",
+                border_style="sulu.accent",
+                padding=(0, 2),
+                box=SULU_PANEL_BOX,
+                style="sulu.panel",
             )
+            self.console.print(panel)
+
+            # Input prompt
+            prompt_text = Text()
+            prompt_text.append("  ❯ ", style="sulu.accent")
+            self.console.print(prompt_text, end="")
+
+            return self._input_fn("", default)
         else:
-            self._log_fn(question)
-        return self._input_fn("", default)
+            self._log_fn(f"[SU⡾LU] {question}")
+            return self._input_fn("", default)
 
     def fatal(self, message: str) -> None:
         """Print error, prompt to close, then exit."""
@@ -1198,6 +1343,25 @@ class SubmitLogger:
         except Exception:
             pass
         sys.exit(1)
+
+    def info_exit(self, message: str) -> None:
+        """Print info message, prompt to close, then exit cleanly."""
+        if self.console and Panel is not None and Text is not None:
+            panel = self._panel(
+                Text(str(message), style="sulu.fg"),
+                title=Text(f"{GLYPH_INFO}  INFO", style="sulu.muted"),
+                border_style="sulu.accent",
+                style="sulu.well",
+            )
+            self.console.print()
+            self.console.print(panel)
+        else:
+            self._log_fn(f"[i] {message}")
+        try:
+            self._input_fn("\nPress ENTER to close this window...", "")
+        except Exception:
+            pass
+        sys.exit(0)
 
     def version_update(self, url: str, instructions: List[str]) -> None:
         """Panel with URL + steps for addon updates."""
