@@ -132,6 +132,7 @@ _try_import_rich()
 
 # ─────────────────────────── Unicode + glyphs ───────────────────────────
 
+
 def _supports_unicode() -> bool:
     """Best-effort check whether we should emit Unicode glyphs."""
     try:
@@ -174,8 +175,65 @@ GLYPH_DASH = "┄" if _UNICODE else "-"
 GLYPH_HEX = "⬡" if _UNICODE else "#"
 GLYPH_LINK = "⟐" if _UNICODE else "*"
 
+# ─────────────────────────── Superluminal logo mark ───────────────────────────
+
+# NOTE: Keep this as raw text. When rendering inside Panels we normalize it
+# (trim leading/trailing blank lines and rstrip each line) so it won't wrap
+# due to trailing whitespace in 80-col terminals.
+LOGO_MARK = r"""
+                                        ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀                      
+                                    ▄▖█▌█▌█▌█▌▀▘                               
+                                  █▌█▌█▌█▌                                     
+                                █▌█▌█▌▀▘                                       
+                              █▌█▌█▌█▌                                         
+                            █▌█▌█▌█▌        █▌                                 
+  █████████  █████  █████   █▌█▌█▌          █▌   █████       █████  █████      
+ ███░░░░░███░░███  ░░███    █▌█▌█▌          █▌  ░░███       ░░███  ░░███       
+░███    ░░░  ░███   ░███    █▌█▌            █▌   ░███        ░███   ░███       
+░░█████████  ░███   ░███    █▌█▌          █▌█▌   ░███        ░███   ░███       
+ ░░░░░░░░███ ░███   ░███    █▌▀▘          █▌█▌   ░███        ░███   ░███       
+ ███    ░███ ░███   ░███    █▌          ▄▖█▌█▌   ░███      █ ░███   ░███       
+░░█████████  ░░████████     █▌          █▌█▌█▌   ███████████ ░░████████        
+ ░░░░░░░░░    ░░░░░░░░      █▌        █▌█▌█▌█▌  ░░░░░░░░░░░   ░░░░░░░░         
+                                The Superluminal Computing Corporation         
+                                  ▄▖█▌█▌█▌▀▘                                   
+                                ▄▖█▌█▌█▌▀▘                                     
+                            ▄▖█▌█▌█▌▀▘                                         
+                ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀▘                                             
+                                                                               
+                                                                               
+"""
+
+# A conservative ASCII fallback for legacy terminals that don't reliably render
+# the block glyphs above.
+LOGO_MARK_ASCII = r"""
+  SUPERLUMINAL COMPUTING CORPORATION
+  S U L U   S U B M I T T E R
+"""
+
+
+def _normalize_logo_mark(raw: str) -> str:
+    """Normalize logo mark for terminal rendering (prevent unwanted wrapping)."""
+    lines = raw.splitlines()
+
+    # Trim leading/trailing completely blank lines
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+
+    # Strip trailing whitespace per line (keeps geometry, avoids panel wrapping)
+    lines = [ln.rstrip() for ln in lines]
+    return "\n".join(lines)
+
+
+def _get_logo_mark() -> str:
+    """Return the appropriate logo mark text for the current terminal."""
+    return _normalize_logo_mark(LOGO_MARK if _UNICODE else LOGO_MARK_ASCII)
+
 
 # ─────────────────────────── Sulu terminal theme ───────────────────────────
+
 
 def _build_sulu_theme():
     if Theme is None:
@@ -187,25 +245,21 @@ def _build_sulu_theme():
             "sulu.fg": "#D8DEEC",
             "sulu.muted": "#A2A6AF",
             "sulu.dim": "#7E828B",
-
             # Meaning colors (color = meaning only)
             "sulu.accent": "#5250FF",
             "sulu.ring": "#757EFF",
             "sulu.ok": "#1EA138",
             "sulu.warn": "#E17100",
             "sulu.err": "#FF2056",
-
             # Strokes / seams
             "sulu.stroke": "#454A56",
             "sulu.stroke_subtle": "#3A3E48",
             "sulu.stroke_strong": "#545A69",
-
             # Surfaces (used sparingly for panels)
             "sulu.panel": "on #1E2027",
             "sulu.well": "on #21232B",
             "sulu.control": "on #24272E",
             "sulu.overlay": "on #2C2F36",
-
             # Composite helpers
             "sulu.title": "bold #D8DEEC",
             "sulu.stage": "bold #5250FF",
@@ -213,10 +267,8 @@ def _build_sulu_theme():
             "sulu.warn_b": "bold #E17100",
             "sulu.err_b": "bold #FF2056",
             "sulu.link": "underline #5250FF",
-
             # Pills / tags
             "sulu.pill": "#A2A6AF on #24272E",
-
         }
     )
 
@@ -230,8 +282,8 @@ SULU_TABLE_BOX = getattr(box, "SIMPLE_HEAD", None) if box is not None else None
 # Consistent padding across all panels
 PANEL_PADDING = (0, 2)
 
-
 # ─────────────────────────── Console setup ───────────────────────────
+
 
 def get_console() -> Any:
     """Get a rich Console instance or a fallback (None)."""
@@ -257,6 +309,7 @@ def get_console() -> Any:
 
 # ─────────────────────────── Size formatting ───────────────────────────
 
+
 def format_size(size_bytes: int) -> str:
     """Format bytes as human readable."""
     try:
@@ -273,6 +326,7 @@ def format_size(size_bytes: int) -> str:
 
 
 # ─────────────────────────── Trace entry model ───────────────────────────
+
 
 class TraceEntry:
     """Represents a single traced dependency for display."""
@@ -324,6 +378,7 @@ BLOCK_TYPE_NAMES = {
 
 
 # ─────────────────────────── Submit Logger ───────────────────────────
+
 
 class SubmitLogger:
     """
@@ -393,7 +448,9 @@ class SubmitLogger:
         """Subtle divider."""
         if self.console and Rule is not None:
             if title:
-                self.console.print(Rule(f"[sulu.muted]{title}[/]", style="sulu.stroke_subtle"))
+                self.console.print(
+                    Rule(f"[sulu.muted]{title}[/]", style="sulu.stroke_subtle")
+                )
             else:
                 self.console.print(Rule(style="sulu.stroke_subtle"))
         else:
@@ -435,19 +492,20 @@ class SubmitLogger:
     # ───────────────────── logo marks ─────────────────────
 
     def logo_start(self) -> None:
-        """Text logomark at the beginning of a submission."""
+        """Logo mark + start panel at the beginning of a submission."""
+        logo_str = _get_logo_mark()
+
         if self.console and Text is not None and Align is not None:
-            title = Text()
-            title.append("SUPERLUMINAL", style="sulu.title")
-            title.append("  ·  ", style="sulu.stroke_subtle")
-            title.append("SULU SUBMITTER", style="sulu.stage")
-
-            sub = Text("Render farm submission pipeline", style="sulu.muted")
-
             body = Text()
-            body.append(title)
-            body.append("\n")
-            body.append(sub)
+
+            # Logo mark (dim / muted — branding, not "meaning")
+            if logo_str:
+                body.append(logo_str, style="sulu.dim")
+                body.append("\n\n")
+
+            # “SULU SUBMITTER” line (accent is allowed as brand accent)
+            badge = Text()
+            body.append(badge)
 
             panel = self._panel(
                 Align.center(body),
@@ -460,12 +518,27 @@ class SubmitLogger:
             self.console.print(panel)
         else:
             self._log_fn("")
-            self._log_fn("=== SUPERLUMINAL · SULU SUBMITTER ===")
+            if logo_str:
+                self._log_fn(logo_str)
+                self._log_fn("")
+            self._log_fn("=== SULU SUBMITTER ===")
+            self._log_fn("Render farm submission pipeline")
 
-    def logo_end(self, job_id: Optional[str] = None, elapsed: Optional[float] = None) -> None:
-        """Text logomark at the end of submission (after job registration)."""
+    def logo_end(
+        self, job_id: Optional[str] = None, elapsed: Optional[float] = None
+    ) -> None:
+        """Logo mark + end panel (after job registration)."""
+        logo_str = _get_logo_mark()
+
         if self.console and Text is not None and Align is not None:
             body = Text()
+
+            # Logo mark (dim / muted — branding, not "meaning")
+            if logo_str:
+                body.append(logo_str, style="sulu.dim")
+                body.append("\n\n")
+
+            # Completion block
             body.append("SUBMISSION COMPLETE", style="sulu.ok_b")
             if job_id:
                 body.append("\n")
@@ -487,7 +560,14 @@ class SubmitLogger:
             self.console.print(panel)
         else:
             self._log_fn("")
+            if logo_str:
+                self._log_fn(logo_str)
+                self._log_fn("")
             self._log_fn("=== SUBMISSION COMPLETE ===")
+            if job_id:
+                self._log_fn(f"Job ID: {job_id}")
+            if elapsed is not None:
+                self._log_fn(f"Elapsed: {elapsed:.1f}s")
 
     # ───────────────────── stage headers ─────────────────────
 
@@ -552,7 +632,12 @@ class SubmitLogger:
             header.append(f"{'Resolved':<{c}} ", style="sulu.muted")
             header.append(f"{'':>{s}}", style="sulu.muted")
             self.console.print(header)
-            self.console.print(Text("  " + (GLYPH_DASH * (max(0, self._trace_cols['total'] - 2))), style="sulu.stroke_subtle"))
+            self.console.print(
+                Text(
+                    "  " + (GLYPH_DASH * (max(0, self._trace_cols["total"] - 2))),
+                    style="sulu.stroke_subtle",
+                )
+            )
         else:
             self._log_fn("")
             self._log_fn("Dependencies:")
@@ -568,7 +653,9 @@ class SubmitLogger:
         error_msg: Optional[str] = None,
     ) -> None:
         """Log a single traced dependency (prints immediately)."""
-        entry = TraceEntry(source_blend, block_type, block_name, found_file, status, error_msg)
+        entry = TraceEntry(
+            source_blend, block_type, block_name, found_file, status, error_msg
+        )
         self._trace_entries.append(entry)
 
         type_name = BLOCK_TYPE_NAMES.get(block_type, block_type)
@@ -615,9 +702,15 @@ class SubmitLogger:
                     Text(f"  {GLYPH_SEAM} {GLYPH_ARROW} {msg}", style="sulu.dim")
                 )
         else:
-            status_str = GLYPH_OK if status == "ok" else (GLYPH_WARN if status == "missing" else GLYPH_FAIL)
+            status_str = (
+                GLYPH_OK
+                if status == "ok"
+                else (GLYPH_WARN if status == "missing" else GLYPH_FAIL)
+            )
             block_str = f"[{type_name}] {block_name}"
-            self._log_fn(f"  {src_t:<{c}} {block_str:<{c}} {file_t:<{c}} {status_str:>{s}}")
+            self._log_fn(
+                f"  {src_t:<{c}} {block_str:<{c}} {file_t:<{c}} {status_str:>{s}}"
+            )
             if error_msg:
                 self._log_fn(f"    {GLYPH_ARROW} {error_msg}")
 
@@ -674,7 +767,9 @@ class SubmitLogger:
             self.console.print(panel)
         else:
             self._log_fn("")
-            self._log_fn(f"Trace: {total} dependencies (missing={missing}, unreadable={unreadable}, cross_drive={cross_drive})")
+            self._log_fn(
+                f"Trace: {total} dependencies (missing={missing}, unreadable={unreadable}, cross_drive={cross_drive})"
+            )
             if project_root:
                 self._log_fn(f"Project root: {project_root}")
             if warning_text:
@@ -696,7 +791,9 @@ class SubmitLogger:
             header.append(f"{'Size':>10} ", style="sulu.muted")
             header.append(f"{'':>3}", style="sulu.muted")
             self.console.print(header)
-            self.console.print(Text("  " + (GLYPH_DASH * (max(0, w - 2))), style="sulu.stroke_subtle"))
+            self.console.print(
+                Text("  " + (GLYPH_DASH * (max(0, w - 2))), style="sulu.stroke_subtle")
+            )
         else:
             self._log_fn("")
             self._log_fn("Manifest:")
@@ -710,7 +807,9 @@ class SubmitLogger:
         status: str = "ok",
     ) -> None:
         """Log a single manifest entry row in real-time."""
-        self._pack_entries.append({"index": index, "filepath": filepath, "size": size, "status": status})
+        self._pack_entries.append(
+            {"index": index, "filepath": filepath, "size": size, "status": status}
+        )
         filename = Path(filepath).name
         size_str = format_size(size) if size else ""
         w = self._trace_cols["total"]
@@ -734,7 +833,11 @@ class SubmitLogger:
                 line.append(f"{GLYPH_FAIL:>3}", style="sulu.err_b")
             self.console.print(line)
         else:
-            status_str = GLYPH_OK if status == "ok" else (GLYPH_WARN if status == "missing" else GLYPH_FAIL)
+            status_str = (
+                GLYPH_OK
+                if status == "ok"
+                else (GLYPH_WARN if status == "missing" else GLYPH_FAIL)
+            )
             self._log_fn(f"  {name_t:<50} {size_str:>10} {status_str:>3}")
 
     def pack_end(
@@ -779,13 +882,17 @@ class SubmitLogger:
             header.append(f"{'Size':>10} ", style="sulu.muted")
             header.append(f"{'Mode':>16}", style="sulu.muted")
             self.console.print(header)
-            self.console.print(Text("  " + (GLYPH_DASH * (max(0, w - 2))), style="sulu.stroke_subtle"))
+            self.console.print(
+                Text("  " + (GLYPH_DASH * (max(0, w - 2))), style="sulu.stroke_subtle")
+            )
         else:
             self._log_fn("")
             self._log_fn("Archive:")
             self._log_fn("-" * 70)
 
-    def zip_entry(self, index: int, total: int, arcname: str, size: int, method: str) -> None:
+    def zip_entry(
+        self, index: int, total: int, arcname: str, size: int, method: str
+    ) -> None:
         """Log a single file being zipped (structured callback)."""
         w = self._trace_cols["total"]
         file_w = max(20, w - 30)
@@ -801,7 +908,9 @@ class SubmitLogger:
         else:
             self._log_fn(f"  {name_t:<42} {size_str:>10} {method:>16}")
 
-    def zip_done(self, zippath: str, total_files: int, total_bytes: int, elapsed: float) -> None:
+    def zip_done(
+        self, zippath: str, total_files: int, total_bytes: int, elapsed: float
+    ) -> None:
         """Print zip completion summary."""
         if self.console and Text is not None:
             body = Text()
@@ -822,7 +931,9 @@ class SubmitLogger:
             self.console.print(panel)
         else:
             self._log_fn("")
-            self._log_fn(f"Archive ready: {total_files} files, {format_size(total_bytes)}, {elapsed:.1f}s")
+            self._log_fn(
+                f"Archive ready: {total_files} files, {format_size(total_bytes)}, {elapsed:.1f}s"
+            )
 
     # ───────────────────── upload / transfer ─────────────────────
 
@@ -929,7 +1040,9 @@ class SubmitLogger:
             # Plain text fallback
             if total > 0:
                 pct = (cur / max(total, 1)) * 100
-                sys.stderr.write(f"\r  {format_size(cur)} / {format_size(total)} ({pct:.1f}%) ")
+                sys.stderr.write(
+                    f"\r  {format_size(cur)} / {format_size(total)} ({pct:.1f}%) "
+                )
                 sys.stderr.flush()
 
     def _render_progress_bar(self, cur: int, total: int) -> None:
@@ -939,7 +1052,10 @@ class SubmitLogger:
 
         # Rate limit: only update ~10 times per second to reduce flicker
         now = time.time()
-        if self._transfer_last_line_count > 0 and (now - self._last_progress_time) < 0.1:
+        if (
+            self._transfer_last_line_count > 0
+            and (now - self._last_progress_time) < 0.1
+        ):
             return
         self._last_progress_time = now
 
@@ -948,7 +1064,9 @@ class SubmitLogger:
         # Clear previous lines and render
         if self._transfer_last_line_count > 0:
             # Hide cursor, move up, clear, print, show cursor - all in one write
-            self.console.file.write(f"\033[?25l\033[{self._transfer_last_line_count}A\033[J")
+            self.console.file.write(
+                f"\033[?25l\033[{self._transfer_last_line_count}A\033[J"
+            )
             self.console.file.flush()
 
         self.console.print(panel)
@@ -1064,7 +1182,9 @@ class SubmitLogger:
         """Styled input prompt. Returns the user's answer."""
         if self.console:
             # Render question once; avoid duplicate prompt from input()
-            self.console.print(f"[sulu.dim]{GLYPH_INFO}[/] [sulu.fg]{question}[/]", end="")
+            self.console.print(
+                f"[sulu.dim]{GLYPH_INFO}[/] [sulu.fg]{question}[/]", end=""
+            )
         else:
             self._log_fn(question)
         return self._input_fn("", default)
@@ -1110,7 +1230,9 @@ class SubmitLogger:
             self.info("Connecting to storage…")
         else:
             if self.console:
-                self.console.print(f"[sulu.ok_b]{GLYPH_OK}[/] [sulu.fg]Storage connected[/]")
+                self.console.print(
+                    f"[sulu.ok_b]{GLYPH_OK}[/] [sulu.fg]Storage connected[/]"
+                )
             else:
                 self._log_fn("Storage connected")
 
@@ -1227,7 +1349,9 @@ class SubmitLogger:
         if report_path:
             self.info(f"Report saved: {report_path}")
 
-        self.warn_block("TEST MODE — no upload or job registration performed.", severity="warning")
+        self.warn_block(
+            "TEST MODE — no upload or job registration performed.", severity="warning"
+        )
 
     def no_submit_report(
         self,
@@ -1271,7 +1395,14 @@ class SubmitLogger:
                 self._log_fn(f"  {line}")
 
     # Compatibility aliases (older names)
-    def pack_file(self, index: int, total: int, filepath: str, size: Optional[int] = None, status: str = "ok") -> None:
+    def pack_file(
+        self,
+        index: int,
+        total: int,
+        filepath: str,
+        size: Optional[int] = None,
+        status: str = "ok",
+    ) -> None:
         self.pack_entry(index, filepath, size=size, status=status)
 
     def pack_summary(
@@ -1292,10 +1423,13 @@ class SubmitLogger:
             if unreadable_count:
                 parts.append(f"{unreadable_count} unreadable")
             self.warn_block("Issues: " + ", ".join(parts), severity="warning")
-        self.pack_end(ok_count=ok_count, total_size=total_size, title="Packing complete")
+        self.pack_end(
+            ok_count=ok_count, total_size=total_size, title="Packing complete"
+        )
 
 
 # ─────────────────────────── Factory ───────────────────────────
+
 
 def create_logger(
     log_fn: Optional[Callable[[str], None]] = None,
