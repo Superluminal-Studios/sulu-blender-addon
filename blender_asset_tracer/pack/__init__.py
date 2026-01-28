@@ -427,6 +427,11 @@ class Packer:
         """Return True if the path exists and can be opened for reading.
 
         Records missing/unreadable internally. Cached.
+
+        Note: We try to open() the file directly rather than checking exists() first,
+        because cloud drives (OneDrive, Google Drive, iCloud, etc.) may report
+        dehydrated placeholders as non-existent until an open attempt triggers
+        the cloud sync.
         """
         # Normalize to an absolute path for cache stability.
         try:
@@ -439,13 +444,7 @@ class Packer:
             ok, _ = cached
             return ok
 
-        # Existence first.
-        if not abs_path.exists():
-            self._readability_cache[abs_path] = (False, "missing")
-            self._record_missing(abs_path)
-            return False
-
-        # Directories are “readable enough” for our purposes here; the packer
+        # Directories are "readable enough" for our purposes here; the packer
         # expands them later into files.
         try:
             if abs_path.is_dir():
@@ -458,12 +457,17 @@ class Packer:
             self._record_unreadable(abs_path, err)
             return False
 
-        # Read test.
+        # Try to open the file directly - this can trigger cloud sync for
+        # dehydrated placeholders that might fail exists() checks.
         try:
             with abs_path.open("rb") as f:
                 f.read(1)
             self._readability_cache[abs_path] = (True, "")
             return True
+        except FileNotFoundError:
+            self._readability_cache[abs_path] = (False, "missing")
+            self._record_missing(abs_path)
+            return False
         except (PermissionError, OSError) as exc:
             err = f"{type(exc).__name__}: {exc}"
             self._readability_cache[abs_path] = (False, err)

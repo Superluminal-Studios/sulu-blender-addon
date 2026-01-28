@@ -197,22 +197,57 @@ def _mac_permission_help(path: str, err: str) -> str:
     return "\n".join(lines)
 
 
-def _probe_readable_file(p: str) -> Tuple[bool, Optional[str]]:
+def _probe_readable_file(
+    p: str, *, hydrate: bool = False, cloud_files_module=None
+) -> Tuple[bool, Optional[str]]:
     """
     Returns (ok, error_message).
     - ok=True: file exists and can be opened for reading
     - ok=False: missing or unreadable (permission / offline placeholder / etc.)
+
+    If hydrate=True, reads the entire file to force cloud-mounted drives (OneDrive,
+    Google Drive, iCloud, etc.) to fully download "dehydrated" placeholder files.
+    This ensures files are actually available before rclone tries to upload them.
+
+    Args:
+        p: Path to the file
+        hydrate: If True, attempt to fully read/hydrate the file
+        cloud_files_module: Optional pre-imported cloud_files module for
+                           Windows-specific cloud placeholder handling
     """
     path = str(p)
-    if not os.path.exists(path):
-        return (False, "missing")
-    if os.path.isdir(path):
-        # We generally don't upload dirs directly in project mode manifests.
-        return (False, "is a directory")
+
+    # Check for directory first (this is a quick local check)
+    try:
+        if os.path.isdir(path):
+            # We generally don't upload dirs directly in project mode manifests.
+            return (False, "is a directory")
+    except Exception:
+        pass
+
+    # If we have the cloud_files module, use it for proper cloud placeholder handling
+    if cloud_files_module is not None:
+        return cloud_files_module.read_file_with_hydration(
+            path,
+            hydrate=hydrate,
+            timeout_seconds=30,
+        )
+
+    # Fallback: direct file access (works for non-cloud files)
     try:
         with open(path, "rb") as f:
-            f.read(1)
+            if hydrate:
+                # Read entire file in chunks to force cloud sync/hydration.
+                chunk_size = 1024 * 1024  # 1 MiB chunks
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+            else:
+                f.read(1)
         return (True, None)
+    except FileNotFoundError:
+        return (False, "File not found")
     except PermissionError as exc:
         return (False, f"PermissionError: {exc}")
     except OSError as exc:
@@ -377,6 +412,7 @@ def _generate_report(
 
 # ─── Worker bootstrap (safe to import) ────────────────────────────
 
+
 def _load_handoff_from_argv(argv: List[str]) -> Dict[str, object]:
     if len(argv) < 2:
         raise RuntimeError(
@@ -418,6 +454,9 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     trace_dependencies = bat_utils.trace_dependencies
     compute_project_root = bat_utils.compute_project_root
 
+    # Cloud file utilities for handling OneDrive/Google Drive/iCloud placeholders
+    cloud_files = importlib.import_module(f"{pkg_name}.utils.cloud_files")
+
     submit_logger = importlib.import_module(f"{pkg_name}.utils.submit_logger")
     create_logger = submit_logger.create_logger
 
@@ -436,6 +475,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "pack_blend": pack_blend,
         "trace_dependencies": trace_dependencies,
         "compute_project_root": compute_project_root,
+        "cloud_files": cloud_files,
         "create_logger": create_logger,
         "run_rclone": run_rclone,
         "ensure_rclone": ensure_rclone,
@@ -459,6 +499,7 @@ def main() -> None:
     pack_blend = mods["pack_blend"]
     trace_dependencies = mods["trace_dependencies"]
     compute_project_root = mods["compute_project_root"]
+    cloud_files = mods["cloud_files"]
     create_logger = mods["create_logger"]
     run_rclone = mods["run_rclone"]
     ensure_rclone = mods["ensure_rclone"]
@@ -499,7 +540,9 @@ def main() -> None:
     except SystemExit:
         sys.exit(0)
     except Exception:
-        logger.info("Skipped add-on update check (network not available or rate-limited). Continuing...")
+        logger.info(
+            "Skipped add-on update check (network not available or rate-limited). Continuing..."
+        )
 
     headers = {"Authorization": data["user_token"]}
 
@@ -558,7 +601,8 @@ def main() -> None:
     # STAGE 1: TRACING - Discover all dependencies
     # ═══════════════════════════════════════════════════════════════════════════
     logger.stage_header(
-        1, "TRACING DEPENDENCIES",
+        1,
+        "TRACING DEPENDENCIES",
         "Scanning blend file for external references",
         details=[
             f"Main file: {Path(blend_path).name}",
@@ -571,8 +615,16 @@ def main() -> None:
     if use_project:
         # 1. Trace dependencies with rich logger
         # raw_usages is passed to pack_blend to avoid redundant re-tracing
+        # hydrate=True forces full file reads to download dehydrated cloud files
+        # (OneDrive, Google Drive, iCloud, etc.) so the trace report is accurate
         dep_paths, missing_set, unreadable_dict, raw_usages = trace_dependencies(
-            Path(blend_path), logger=logger
+            Path(blend_path), logger=logger, hydrate=True
+        )
+        # Cache OK files for manifest stage (avoid re-probing)
+        ok_files_cache = set(
+            str(p).replace("\\", "/")
+            for p in dep_paths
+            if p not in missing_set and p not in unreadable_dict
         )
 
         # 2. Compute project root BEFORE calling BAT
@@ -591,8 +643,13 @@ def main() -> None:
 
         # 3. Build warning text for issues (shown inside trace summary panel)
         missing_files_list = [str(p) for p in sorted(missing_set)]
-        unreadable_files_list = [(str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))]
-        has_issues = bool(cross_drive_deps or missing_files_list or unreadable_files_list)
+        unreadable_files_list = [
+            (str(p), err)
+            for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))
+        ]
+        has_issues = bool(
+            cross_drive_deps or missing_files_list or unreadable_files_list
+        )
 
         warning_text = None
         if has_issues:
@@ -611,7 +668,11 @@ def main() -> None:
             if _IS_MAC and unreadable_files_list:
                 for p, err in unreadable_files_list:
                     low = err.lower()
-                    if "permission" in low or "operation not permitted" in low or "not permitted" in low:
+                    if (
+                        "permission" in low
+                        or "operation not permitted" in low
+                        or "not permitted" in low
+                    ):
                         mac_extra = "\n" + _mac_permission_help(p, err)
                         break
 
@@ -666,7 +727,12 @@ def main() -> None:
                 by_ext=by_ext,
                 total_size=total_size,
                 missing=[str(p) for p in sorted(missing_set)],
-                unreadable=[(str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))],
+                unreadable=[
+                    (str(p), err)
+                    for p, err in sorted(
+                        unreadable_dict.items(), key=lambda x: str(x[0])
+                    )
+                ],
                 cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
                 upload_type="PROJECT",
                 report_path=str(report_path) if report_path else None,
@@ -702,7 +768,8 @@ def main() -> None:
 
         total_files = len(fmap)
         logger.stage_header(
-            2, "WRITING MANIFEST",
+            2,
+            "WRITING MANIFEST",
             "Building file manifest for incremental upload",
             details=[f"{total_files} files to process"],
         )
@@ -719,9 +786,8 @@ def main() -> None:
                 skip_count += 1
                 continue
 
-            # Probe readability and accumulate size
-            ok, err = _probe_readable_file(src_str)
-            if not ok:
+            # Use cached readability from Stage 1 (files were already hydrated there)
+            if src_str not in ok_files_cache:
                 # Already warned about missing/unreadable in stage 1 - skip silently
                 continue
 
@@ -769,12 +835,17 @@ def main() -> None:
         )
 
         # 2. Compute project root for cleaner zip structure
-        project_root, same_drive_deps, cross_drive_deps = compute_project_root(Path(blend_path), dep_paths)
+        project_root, same_drive_deps, cross_drive_deps = compute_project_root(
+            Path(blend_path), dep_paths
+        )
         project_root_str = str(project_root).replace("\\", "/")
 
         # Build warning text for issues
         missing_files_list = [str(p) for p in sorted(missing_set)]
-        unreadable_files_list = [(str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))]
+        unreadable_files_list = [
+            (str(p), err)
+            for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))
+        ]
         has_zip_issues = bool(missing_files_list or unreadable_files_list)
 
         zip_warning_text = None
@@ -785,8 +856,7 @@ def main() -> None:
             if unreadable_files_list:
                 parts_z.append(f"{len(unreadable_files_list)} unreadable file(s)")
             zip_warning_text = (
-                "\n".join(f"  - {p}" for p in parts_z)
-                + "\nThe zip may be incomplete."
+                "\n".join(f"  - {p}" for p in parts_z) + "\nThe zip may be incomplete."
             )
 
         # Show trace summary (with warnings inline)
@@ -838,7 +908,12 @@ def main() -> None:
                 by_ext=by_ext,
                 total_size=total_size,
                 missing=[str(p) for p in sorted(missing_set)],
-                unreadable=[(str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))],
+                unreadable=[
+                    (str(p), err)
+                    for p, err in sorted(
+                        unreadable_dict.items(), key=lambda x: str(x[0])
+                    )
+                ],
                 cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
                 upload_type="ZIP",
                 report_path=str(report_path) if report_path else None,
@@ -851,7 +926,8 @@ def main() -> None:
         # STAGE 2: PACKING (ZIP MODE)
         # ═══════════════════════════════════════════════════════════════════════
         logger.stage_header(
-            2, "PACKING",
+            2,
+            "PACKING",
             "Creating compressed archive with all dependencies",
         )
 
@@ -932,7 +1008,9 @@ def main() -> None:
         s3_response = session.get(
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
             headers=headers,
-            params={"filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')"},
+            params={
+                "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')"
+            },
             timeout=30,
         )
         s3_response.raise_for_status()
@@ -945,17 +1023,27 @@ def main() -> None:
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
 
     rclone_settings = [
-                        "--transfers", "4",           # single file, no parallelism needed
-                        "--checkers", "4",
-                        "--s3-chunk-size", "64M",     # larger chunks = fewer requests
-                        "--s3-upload-concurrency", "4",  # very conservative for cloud drives
-                        "--buffer-size", "64M",       # smaller buffer - don't outpace source
-                        "--retries", "20",
-                        "--low-level-retries", "20",
-                        "--retries-sleep", "5s",
-                        "--timeout", "5m",            # longer timeout for slow cloud drives
-                        "--stats", "0.1s"
-                    ]
+        "--transfers",
+        "4",  # single file, no parallelism needed
+        "--checkers",
+        "4",
+        "--s3-chunk-size",
+        "64M",  # larger chunks = fewer requests
+        "--s3-upload-concurrency",
+        "4",  # very conservative for cloud drives
+        "--buffer-size",
+        "64M",  # smaller buffer - don't outpace source
+        "--retries",
+        "20",
+        "--low-level-retries",
+        "20",
+        "--retries-sleep",
+        "5s",
+        "--timeout",
+        "5m",  # longer timeout for slow cloud drives
+        "--stats",
+        "0.1s",
+    ]
 
     # Calculate upload steps
     has_addons = data.get("packed_addons") and len(data["packed_addons"]) > 0
@@ -967,13 +1055,25 @@ def main() -> None:
             step = 1
             logger.upload_start(total_steps)
 
-            logger.upload_step(step, total_steps, "Uploading zip archive", f"{zip_file.name} ({_format_size(required_storage)})")
-            run_rclone(base_cmd, "move", str(zip_file), f":s3:{bucket}/", rclone_settings)
+            logger.upload_step(
+                step,
+                total_steps,
+                "Uploading zip archive",
+                f"{zip_file.name} ({_format_size(required_storage)})",
+            )
+            run_rclone(
+                base_cmd, "move", str(zip_file), f":s3:{bucket}/", rclone_settings
+            )
             logger.upload_complete("Zip uploaded")
             step += 1
 
             if has_addons:
-                logger.upload_step(step, total_steps, "Uploading add-ons", f"{len(data['packed_addons'])} add-on(s)")
+                logger.upload_step(
+                    step,
+                    total_steps,
+                    "Uploading add-ons",
+                    f"{len(data['packed_addons'])} add-on(s)",
+                )
                 run_rclone(
                     base_cmd,
                     "moveto",
@@ -996,7 +1096,12 @@ def main() -> None:
                 blend_size = os.path.getsize(blend_path)
             except:
                 pass
-            logger.upload_step(step, total_steps, "Uploading main .blend", f"{Path(blend_path).name} ({_format_size(blend_size)})")
+            logger.upload_step(
+                step,
+                total_steps,
+                "Uploading main .blend",
+                f"{Path(blend_path).name} ({_format_size(blend_size)})",
+            )
             move_to_path = _nfc(_s3key_clean(f"{project_name}/{main_blend_s3}"))
             remote_main = f":s3:{bucket}/{move_to_path}"
             run_rclone(base_cmd, "copyto", blend_path, remote_main, rclone_settings)
@@ -1004,7 +1109,12 @@ def main() -> None:
             step += 1
 
             if rel_manifest:
-                logger.upload_step(step, total_steps, "Uploading dependencies", f"{len(rel_manifest)} file(s)")
+                logger.upload_step(
+                    step,
+                    total_steps,
+                    "Uploading dependencies",
+                    f"{len(rel_manifest)} file(s)",
+                )
                 dependency_rclone_settings = ["--files-from", str(filelist)]
                 dependency_rclone_settings.extend(rclone_settings)
                 run_rclone(
@@ -1032,7 +1142,12 @@ def main() -> None:
             step += 1
 
             if has_addons:
-                logger.upload_step(step, total_steps, "Uploading add-ons", f"{len(data['packed_addons'])} add-on(s)")
+                logger.upload_step(
+                    step,
+                    total_steps,
+                    "Uploading add-ons",
+                    f"{len(data['packed_addons'])} add-on(s)",
+                )
                 run_rclone(
                     base_cmd,
                     "moveto",
@@ -1063,7 +1178,15 @@ def main() -> None:
             "project_id": data["project"]["id"],
             "packed_addons": data["packed_addons"],
             "organization_id": org_id,
-            "main_file": _nfc(str(Path(blend_path).relative_to(project_root_str)).replace("\\", "/")) if not use_project else _nfc(_s3key_clean(main_blend_s3)),
+            "main_file": (
+                _nfc(
+                    str(Path(blend_path).relative_to(project_root_str)).replace(
+                        "\\", "/"
+                    )
+                )
+                if not use_project
+                else _nfc(_s3key_clean(main_blend_s3))
+            ),
             "project_path": project_name,
             "name": data["job_name"],
             "status": "queued",
@@ -1083,7 +1206,9 @@ def main() -> None:
             "use_async_upload": data["use_async_upload"],
             "defer_status": data["use_async_upload"],
             "farm_url": data["farm_url"],
-            "tasks": list(range(data["start_frame"], data["end_frame"] + 1, frame_step_val)),
+            "tasks": list(
+                range(data["start_frame"], data["end_frame"] + 1, frame_step_val)
+            ),
         }
     }
 
@@ -1109,7 +1234,9 @@ def main() -> None:
     except Exception:
         pass
 
-    selection = logger.prompt("\nOpen job in your browser? y/n, or just press ENTER to close...", "n")
+    selection = logger.prompt(
+        "\nOpen job in your browser? y/n, or just press ENTER to close...", "n"
+    )
     if selection.lower() == "y":
         web_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{data['job_id']}"
         webbrowser.open(web_url)
@@ -1126,6 +1253,7 @@ if __name__ == "__main__":
         raise
     except Exception as exc:
         import traceback
+
         traceback.print_exc()
         # Logger may not be initialized yet, fall back to print
         print(

@@ -12,6 +12,9 @@ from ..blender_asset_tracer import trace
 from ..blender_asset_tracer.pack import Packer
 from ..blender_asset_tracer.pack import zipped
 
+# Import cloud file utilities for handling OneDrive/Google Drive/iCloud placeholders
+from . import cloud_files
+
 
 # ─── Drive detection helpers (OS-agnostic) ───────────────────────────────────
 
@@ -112,6 +115,8 @@ def _get_source_blend_name(usage: Any) -> str:
 def trace_dependencies(
     blend_path: Path,
     logger: Optional[Any] = None,
+    *,
+    hydrate: bool = False,
 ) -> Tuple[List[Path], Set[Path], Dict[Path, str], List[Any]]:
     """
     Lightweight dependency trace using BAT's trace.deps().
@@ -120,12 +125,15 @@ def trace_dependencies(
         blend_path: Path to the .blend file to trace
         logger: Optional SubmitLogger instance for rich logging.
                 If provided, logs each dependency with colors and formatting.
+        hydrate: If True, reads entire files to force cloud-mounted drives
+                 (OneDrive, Google Drive, iCloud, etc.) to fully download
+                 "dehydrated" placeholder files. Use for PROJECT mode uploads.
 
     Returns:
         (dependency_paths, missing_files, unreadable_files, raw_usages)
 
     Where:
-        - dependency_paths: List of absolute paths to all dependencies
+        - dependency_paths: List of absolute paths to all dependencies (expanded from sequences)
         - missing_files: Set of paths that don't exist on disk
         - unreadable_files: Dict of path -> error message for files that exist but can't be read
         - raw_usages: List of BlockUsage objects (can be passed to Packer to avoid re-tracing)
@@ -137,46 +145,70 @@ def trace_dependencies(
 
     for usage in trace.deps(blend_path):
         raw_usages.append(usage)
-        abs_path = usage.abspath
-        deps.append(abs_path)
 
-        # Determine status and track issues
-        status = "ok"
-        error_msg = None
+        # Get source info for logging
+        source_blend = _get_source_blend_name(usage) if logger else ""
+        block_type = _get_block_type(usage) if logger else ""
+        block_name = _get_block_name(usage) if logger else ""
 
-        if not abs_path.exists():
+        # Use usage.files() to properly expand sequences (UDIM, image sequences, etc.)
+        # This handles glob patterns and returns actual file paths.
+        # For non-sequences, it yields the single file path.
+        expanded_files = []
+        try:
+            expanded_files = list(usage.files())
+        except Exception as e:
+            # files() can raise exceptions for missing directories, etc.
+            pass
+
+        if not expanded_files:
+            # No files found - either pattern didn't match or file doesn't exist
+            abs_path = usage.abspath
+            deps.append(abs_path)
             missing.add(abs_path)
-            status = "missing"
+
+            if logger is not None:
+                logger.trace_entry(
+                    source_blend=source_blend,
+                    block_type=block_type,
+                    block_name=block_name,
+                    found_file=abs_path.name,
+                    status="missing",
+                    error_msg=None,
+                )
         else:
-            # Check readability
-            try:
-                if abs_path.is_file():
-                    with abs_path.open("rb") as f:
-                        f.read(1)
-            except (PermissionError, OSError) as e:
-                unreadable[abs_path] = str(e)
-                status = "unreadable"
-                error_msg = str(e)
-            except Exception as e:
-                unreadable[abs_path] = f"{type(e).__name__}: {e}"
-                status = "unreadable"
-                error_msg = f"{type(e).__name__}: {e}"
+            # Check each expanded file
+            for file_path in expanded_files:
+                deps.append(file_path)
 
-        # Log the trace if logger provided
-        if logger is not None:
-            source_blend = _get_source_blend_name(usage)
-            block_type = _get_block_type(usage)
-            block_name = _get_block_name(usage)
-            found_file = abs_path.name
+                # Try to read the file (and hydrate if on cloud drive)
+                ok, err = cloud_files.read_file_with_hydration(
+                    str(file_path),
+                    hydrate=hydrate,
+                    timeout_seconds=30,
+                )
 
-            logger.trace_entry(
-                source_blend=source_blend,
-                block_type=block_type,
-                block_name=block_name,
-                found_file=found_file,
-                status=status,
-                error_msg=error_msg,
-            )
+                if ok:
+                    status = "ok"
+                    error_msg = None
+                elif err == "File not found":
+                    missing.add(file_path)
+                    status = "missing"
+                    error_msg = None
+                else:
+                    unreadable[file_path] = err or "Unknown error"
+                    status = "unreadable"
+                    error_msg = err
+
+                if logger is not None:
+                    logger.trace_entry(
+                        source_blend=source_blend,
+                        block_type=block_type,
+                        block_name=block_name,
+                        found_file=file_path.name,
+                        status=status,
+                        error_msg=error_msg,
+                    )
 
     return deps, missing, unreadable, raw_usages
 

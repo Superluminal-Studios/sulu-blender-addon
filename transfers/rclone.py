@@ -41,6 +41,7 @@ class _TextBar:
     Minimal inline progress bar for when tqdm isn't available.
     Prints to stderr to avoid mixing with regular logs.
     """
+
     def __init__(self, total: int = 0, desc: str = "Transferred", **kwargs) -> None:
         self.n = 0
         self.desc = desc
@@ -99,58 +100,54 @@ def _progress_bar(total: int = 0, **kwargs):
 _UNIT = {
     "B": 1,
     "KiB": 1024,
-    "MiB": 1024 ** 2,
-    "GiB": 1024 ** 3,
-    "TiB": 1024 ** 4,
+    "MiB": 1024**2,
+    "GiB": 1024**3,
+    "TiB": 1024**4,
     "kB": 1000,
-    "MB": 1000 ** 2,
-    "GB": 1000 ** 3,
-    "TB": 1000 ** 4,
+    "MB": 1000**2,
+    "GB": 1000**3,
+    "TB": 1000**4,
 }
 
 # Map (normalized_os, normalized_arch) -> rclone's "os-arch" string
 SUPPORTED_PLATFORMS = {
-    ("windows", "386"):    "windows-386",
-    ("windows", "amd64"):  "windows-amd64",
-    ("windows", "arm64"):  "windows-arm64",
-
-    ("osx",  "amd64"):  "osx-amd64",
-    ("osx",  "arm64"):  "osx-arm64",
-
-    ("linux",   "386"):    "linux-386",
-    ("linux",   "amd64"):  "linux-amd64",
-    ("linux",   "arm"):    "linux-arm",
-    ("linux",   "armv6"):  "linux-arm-v6",
-    ("linux",   "armv7"):  "linux-arm-v7",
-    ("linux",   "arm64"):  "linux-arm64",
-    ("linux",   "mips"):   "linux-mips",
-    ("linux",   "mipsle"): "linux-mipsle",
-
-    ("freebsd", "386"):    "freebsd-386",
-    ("freebsd", "amd64"):  "freebsd-amd64",
-    ("freebsd", "arm"):    "freebsd-arm",
-
-    ("openbsd", "386"):    "openbsd-386",
-    ("openbsd", "amd64"):  "openbsd-amd64",
-
-    ("netbsd",  "386"):    "netbsd-386",
-    ("netbsd",  "amd64"):  "netbsd-amd64",
-
-    ("plan9",   "386"):    "plan9-386",
-    ("plan9",   "amd64"):  "plan9-amd64",
-
-    ("solaris", "amd64"):  "solaris-amd64",
+    ("windows", "386"): "windows-386",
+    ("windows", "amd64"): "windows-amd64",
+    ("windows", "arm64"): "windows-arm64",
+    ("osx", "amd64"): "osx-amd64",
+    ("osx", "arm64"): "osx-arm64",
+    ("linux", "386"): "linux-386",
+    ("linux", "amd64"): "linux-amd64",
+    ("linux", "arm"): "linux-arm",
+    ("linux", "armv6"): "linux-arm-v6",
+    ("linux", "armv7"): "linux-arm-v7",
+    ("linux", "arm64"): "linux-arm64",
+    ("linux", "mips"): "linux-mips",
+    ("linux", "mipsle"): "linux-mipsle",
+    ("freebsd", "386"): "freebsd-386",
+    ("freebsd", "amd64"): "freebsd-amd64",
+    ("freebsd", "arm"): "freebsd-arm",
+    ("openbsd", "386"): "openbsd-386",
+    ("openbsd", "amd64"): "openbsd-amd64",
+    ("netbsd", "386"): "netbsd-386",
+    ("netbsd", "amd64"): "netbsd-amd64",
+    ("plan9", "386"): "plan9-386",
+    ("plan9", "amd64"): "plan9-amd64",
+    ("solaris", "amd64"): "solaris-amd64",
 }
 
 # -------------------------------------------------------------------
 #  Rclone Download Helpers
 # -------------------------------------------------------------------
 
+
 def get_addon_directory() -> Path:
     return Path(__file__).resolve().parent
 
+
 def rclone_install_directory() -> Path:
     return get_addon_directory() / "rclone"
+
 
 def normalize_os(os_name: str) -> str:
     os_name = os_name.lower()
@@ -162,6 +159,7 @@ def normalize_os(os_name: str) -> str:
         return "osx"
     return os_name
 
+
 def normalize_arch(arch_name: str) -> str:
     arch_name = arch_name.lower()
     if arch_name in ("x86_64", "amd64"):
@@ -171,6 +169,7 @@ def normalize_arch(arch_name: str) -> str:
     if arch_name in ("aarch64", "arm64"):
         return "arm64"
     return arch_name
+
 
 def get_platform_suffix() -> str:
     sys_name = normalize_os(platform.system())
@@ -183,12 +182,15 @@ def get_platform_suffix() -> str:
         )
     return SUPPORTED_PLATFORMS[key]
 
+
 def get_rclone_url() -> str:
     suffix = get_platform_suffix()
     return f"https://downloads.rclone.org/rclone-current-{suffix}.zip"
 
+
 def get_rclone_platform_dir(suffix: str) -> Path:
     return rclone_install_directory() / suffix
+
 
 def download_with_bar(url: str, dest: Path, logger=None) -> None:
     s = Session()
@@ -196,9 +198,18 @@ def download_with_bar(url: str, dest: Path, logger=None) -> None:
         total=3,
         backoff_factor=0.4,
         status_forcelist=[429, 502, 503, 504],
-        allowed_methods={'POST', 'GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE', 'TRACE', 'CONNECT'},
+        allowed_methods={
+            "POST",
+            "GET",
+            "HEAD",
+            "OPTIONS",
+            "PUT",
+            "DELETE",
+            "TRACE",
+            "CONNECT",
+        },
     )
-    s.mount('https://', HTTPAdapter(max_retries=retries))
+    s.mount("https://", HTTPAdapter(max_retries=retries))
     _log_or_print(logger, "⬇️  Downloading rclone…")
     resp = s.get(url, stream=True, timeout=600)
     resp.raise_for_status()
@@ -221,6 +232,7 @@ def download_with_bar(url: str, dest: Path, logger=None) -> None:
                 sys.stdout.flush()
     if total:
         print("")
+
 
 def ensure_rclone(logger=None) -> Path:
     suf = get_platform_suffix()
@@ -259,6 +271,7 @@ def ensure_rclone(logger=None) -> Path:
 
     _log_or_print(logger, "✅  rclone installed")
     return rclone_bin
+
 
 def _bytes_from_stats(obj):
     s = obj.get("stats")
@@ -316,12 +329,14 @@ _TIME_SKEW_RE = re.compile(
     re.IGNORECASE,
 )
 
+
 def _looks_like_windows_path(p: str) -> bool:
     s = str(p or "").strip()
     if not s:
         return False
     s2 = s.replace("\\", "/")
     return bool(_WIN_DRIVE_RE.match(s2)) or s2.startswith("//") or s2.startswith("\\\\")
+
 
 def _looks_like_rclone_remote(p: str) -> bool:
     s = str(p or "").strip()
@@ -333,6 +348,7 @@ def _looks_like_rclone_remote(p: str) -> bool:
     if s2.startswith(":"):
         return True
     return bool(re.match(r"^[A-Za-z0-9][A-Za-z0-9_-]*:", s2))
+
 
 def _human_bytes(n: int) -> str:
     try:
@@ -346,6 +362,7 @@ def _human_bytes(n: int) -> str:
             return f"{n} B" if unit == "B" else f"{n:.1f} {unit}"
         n = n / 1024.0
     return f"{n:.1f} TiB"
+
 
 def _free_space_bytes_for_path(p: str) -> Optional[int]:
     try:
@@ -361,6 +378,7 @@ def _free_space_bytes_for_path(p: str) -> Optional[int]:
         return int(usage.free)
     except Exception:
         return None
+
 
 def _format_go_duration_approx(d: str) -> str:
     """
@@ -393,6 +411,7 @@ def _format_go_duration_approx(d: str) -> str:
         return " ".join(parts)
     return s
 
+
 def _extract_time_skew(tail_lines: List[str]) -> Optional[Tuple[str, str]]:
     """
     Look for rclone's helpful notice:
@@ -411,6 +430,7 @@ def _extract_time_skew(tail_lines: List[str]) -> Optional[Tuple[str, str]]:
         delta = m.group("delta").strip()
         return (host, _format_go_duration_approx(delta))
     return None
+
 
 def _pick_technical_line(tail_lines: List[str]) -> str:
     """
@@ -433,7 +453,12 @@ def _pick_technical_line(tail_lines: List[str]) -> str:
         if not s:
             continue
         low = s.lower()
-        if "statuscode" in low or "forbidden" in low or "accessdenied" in low or "unauthorized" in low:
+        if (
+            "statuscode" in low
+            or "forbidden" in low
+            or "accessdenied" in low
+            or "unauthorized" in low
+        ):
             return s
     # 3) last
     for ln in reversed(tail_lines):
@@ -442,7 +467,10 @@ def _pick_technical_line(tail_lines: List[str]) -> str:
             return s
     return ""
 
-def _classify_failure(verb: str, src: str, dst: str, exit_code: int, tail_lines: List[str]) -> Tuple[str, str]:
+
+def _classify_failure(
+    verb: str, src: str, dst: str, exit_code: int, tail_lines: List[str]
+) -> Tuple[str, str]:
     """
     Returns (category, user_message).
     Message intentionally has NO leading emoji (callers already add them).
@@ -467,7 +495,7 @@ def _classify_failure(verb: str, src: str, dst: str, exit_code: int, tail_lines:
             "    - macOS: System Settings → General → Date & Time → “Set time and date automatically”\n"
             "    - Linux: enable NTP (often: `sudo timedatectl set-ntp true`)\n"
             "\n"
-            f"Technical: time differs from {host}{delta_str}."
+            f"Technical: time differs from {host}{delta_str}.",
         )
 
     # Also catch other time-related strings (TLS / x509, skew errors, expired request)
@@ -494,7 +522,7 @@ def _classify_failure(verb: str, src: str, dst: str, exit_code: int, tail_lines:
             "    - macOS: System Settings → General → Date & Time → “Set time and date automatically”\n"
             "    - Linux: enable NTP (often: `sudo timedatectl set-ntp true`)\n"
             "\n"
-            f"Technical: {_pick_technical_line(tail_lines) or f'exit code {exit_code}'}"
+            f"Technical: {_pick_technical_line(tail_lines) or f'exit code {exit_code}'}",
         )
 
     # ---- Local disk full ----
@@ -523,7 +551,7 @@ def _classify_failure(verb: str, src: str, dst: str, exit_code: int, tail_lines:
             "  • Free up disk space (or choose a different destination folder)\n"
             "  • Then retry\n"
             "\n"
-            f"Technical: {_pick_technical_line(tail_lines) or 'disk full'}"
+            f"Technical: {_pick_technical_line(tail_lines) or 'disk full'}",
         )
 
     # ---- Network / connection errors (check BEFORE quota to avoid false positives) ----
@@ -550,7 +578,7 @@ def _classify_failure(verb: str, src: str, dst: str, exit_code: int, tail_lines:
             "  • If on WiFi, try moving closer to router or use ethernet\n"
             "  • Retry the upload — large files sometimes need multiple attempts\n"
             "\n"
-            f"Technical: {_pick_technical_line(tail_lines) or 'network error'}"
+            f"Technical: {_pick_technical_line(tail_lines) or 'network error'}",
         )
 
     # ---- Remote quota / storage exhausted ----
@@ -572,20 +600,33 @@ def _classify_failure(verb: str, src: str, dst: str, exit_code: int, tail_lines:
             "  • Free space in your cloud storage / plan (or upgrade)\n"
             "  • Then retry\n"
             "\n"
-            f"Technical: {_pick_technical_line(tail_lines) or 'insufficient storage/quota'}"
+            f"Technical: {_pick_technical_line(tail_lines) or 'insufficient storage/quota'}",
         )
 
     # ---- Not found (useful for downloader) ----
-    not_found_markers = ("directory not found", "no such key", "404", "not exist", "cannot find")
+    not_found_markers = (
+        "directory not found",
+        "no such key",
+        "404",
+        "not exist",
+        "cannot find",
+    )
     if any(m in low for m in not_found_markers):
         return (
             "not_found",
             "Nothing to transfer yet (source path not found). This is often normal if outputs haven’t been produced yet.\n"
-            f"Technical: {_pick_technical_line(tail_lines) or f'exit code {exit_code}'}"
+            f"Technical: {_pick_technical_line(tail_lines) or f'exit code {exit_code}'}",
         )
 
     # ---- Permissions / auth (403 etc) ----
-    perm_markers = ("statuscode: 403", " forbidden", "accessdenied", "unauthorized", "invalidaccesskeyid", "signaturedoesnotmatch")
+    perm_markers = (
+        "statuscode: 403",
+        " forbidden",
+        "accessdenied",
+        "unauthorized",
+        "invalidaccesskeyid",
+        "signaturedoesnotmatch",
+    )
     if any(m in low for m in perm_markers):
         return (
             "forbidden",
@@ -595,7 +636,7 @@ def _classify_failure(verb: str, src: str, dst: str, exit_code: int, tail_lines:
             "  • Log out and back in (to refresh credentials), then retry\n"
             "  • Make sure your system time is correct\n"
             "\n"
-            f"Technical: {_pick_technical_line(tail_lines) or '403 forbidden'}"
+            f"Technical: {_pick_technical_line(tail_lines) or '403 forbidden'}",
         )
 
     # ---- Default ----
@@ -604,7 +645,9 @@ def _classify_failure(verb: str, src: str, dst: str, exit_code: int, tail_lines:
         return ("unknown", f"rclone failed (exit code {exit_code}).\nTechnical: {tech}")
     return ("unknown", f"rclone failed (exit code {exit_code}).")
 
+
 # ────────────────────────── main runner ──────────────────────────
+
 
 def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
     """
@@ -626,7 +669,9 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
 
     # Auto-upgrade files list flag to avoid comment/whitespace parsing issues.
     # Only do this if the args look like ["--files-from", "<path>"] etc.
-    if "--files-from" in extra and _rclone_supports_flag(rclone_exe, "--files-from-raw"):
+    if "--files-from" in extra and _rclone_supports_flag(
+        rclone_exe, "--files-from-raw"
+    ):
         upgraded = []
         i = 0
         while i < len(extra):
@@ -643,12 +688,24 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
 
     # Add local unicode normalization if supported and not already present.
     if _rclone_supports_flag(rclone_exe, "--local-unicode-normalization"):
-        if "--local-unicode-normalization" not in extra and "--local-unicode-normalization" not in base:
+        if (
+            "--local-unicode-normalization" not in extra
+            and "--local-unicode-normalization" not in base
+        ):
             extra = ["--local-unicode-normalization"] + extra
 
-    cmd = [base[0], verb, src, dst, *extra,
-           "--stats=0.1s", "--use-json-log", "--stats-log-level", "NOTICE",
-           *base[1:]]
+    cmd = [
+        base[0],
+        verb,
+        src,
+        dst,
+        *extra,
+        "--stats=0.1s",
+        "--use-json-log",
+        "--stats-log-level",
+        "NOTICE",
+        *base[1:],
+    ]
 
     # Keep a small tail of non-stats output so failures are actionable.
     tail = deque(maxlen=120)
@@ -696,15 +753,21 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
                             if tot and tot > 0:
                                 bar = _progress_bar(
                                     total=tot,
-                                    unit="B", unit_scale=True, unit_divisor=1024,
-                                    desc="Transferred", file=sys.stderr,
+                                    unit="B",
+                                    unit_scale=True,
+                                    unit_divisor=1024,
+                                    desc="Transferred",
+                                    file=sys.stderr,
                                 )
                                 have_real_total = True
                             elif cur > 0:
                                 bar = _progress_bar(
                                     total=max(cur, 1),
-                                    unit="B", unit_scale=True, unit_divisor=1024,
-                                    desc="Transferred", file=sys.stderr,
+                                    unit="B",
+                                    unit_scale=True,
+                                    unit_divisor=1024,
+                                    desc="Transferred",
+                                    file=sys.stderr,
                                 )
                             else:
                                 # Nothing moving yet; keep listening.
@@ -713,7 +776,11 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
 
                         # Patch in real total when it appears
                         if bar is not None:
-                            if not have_real_total and tot and tot > getattr(bar, "total", 0):
+                            if (
+                                not have_real_total
+                                and tot
+                                and tot > getattr(bar, "total", 0)
+                            ):
                                 try:
                                     bar.total = tot
                                     bar.refresh()
@@ -741,7 +808,14 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
                     msg = str(obj.get("msg", "") or "").strip()
                     if msg:
                         # Keep these; do not spam-print INFO.
-                        if level in ("error", "fatal", "critical", "warning", "warn", "notice"):
+                        if level in (
+                            "error",
+                            "fatal",
+                            "critical",
+                            "warning",
+                            "warn",
+                            "notice",
+                        ):
                             _remember_line(f"{level}: {msg}")
                         else:
                             _remember_line(f"{level}: {msg}" if level else msg)
@@ -772,7 +846,10 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
             if category == "unknown":
                 # Write full tail to a temp log (no credentials), so users can attach it.
                 try:
-                    log_path = Path(tempfile.gettempdir()) / f"superluminal_rclone_{uuid.uuid4().hex[:8]}.log"
+                    log_path = (
+                        Path(tempfile.gettempdir())
+                        / f"superluminal_rclone_{uuid.uuid4().hex[:8]}.log"
+                    )
                     with log_path.open("w", encoding="utf-8", errors="replace") as fp:
                         fp.write("\n".join(tail_lines))
                     user_msg += f"\n\nDetails saved to: {log_path}"

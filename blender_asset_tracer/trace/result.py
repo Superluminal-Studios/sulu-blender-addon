@@ -135,20 +135,35 @@ class BlockUsage:
         is inspected and the actual files in the sequence are yielded.
 
         It is assumed that paths are valid UTF-8.
+
+        For cloud-mounted drives, this tries to open files before checking
+        exists(), as opening can trigger cloud providers to download placeholders.
         """
 
         path = self.__fspath__()
         if not self.is_sequence:
-            if not path.exists():
-                log.warning("Path %s does not exist for %s", path, self)
+            # Try to open the file first - this triggers cloud sync for
+            # placeholder files that might not pass exists() check
+            try:
+                with open(path, "rb") as f:
+                    f.read(1)
+                yield path
                 return
-            yield path
-            return
+            except FileNotFoundError:
+                log.debug("Path %s does not exist for %s", path, self)
+                return
+            except Exception:
+                # Other errors (permission, etc.) - check if file exists
+                if not path.exists():
+                    log.debug("Path %s does not exist for %s", path, self)
+                    return
+                yield path
+                return
 
         try:
             yield from file_sequence.expand_sequence(path)
         except file_sequence.DoesNotExist:
-            log.warning("Path %s does not exist for %s", path, self)
+            log.debug("Path %s does not exist for %s", path, self)
 
     def __fspath__(self) -> pathlib.Path:
         """Determine the absolute path of the asset on the filesystem."""
