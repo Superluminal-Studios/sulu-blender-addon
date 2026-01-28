@@ -186,15 +186,15 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             # project upload controls
             "use_project_upload": (props.upload_type == "PROJECT"),
             "automatic_project_path": bool(props.automatic_project_path),
-
             # IMPORTANT FIX:
             # If the user left this blank, do NOT turn it into CWD via os.path.abspath("").
             "custom_project_path": (
-                os.path.abspath(bpy.path.abspath(props.custom_project_path)).replace("\\", "/")
+                os.path.abspath(bpy.path.abspath(props.custom_project_path)).replace(
+                    "\\", "/"
+                )
                 if str(props.custom_project_path or "").strip()
                 else ""
             ),
-
             "job_name": (
                 Path(bpy.data.filepath).stem if props.use_file_name else props.job_name
             ),

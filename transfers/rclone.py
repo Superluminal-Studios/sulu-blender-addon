@@ -1,3 +1,16 @@
+"""
+rclone.py — rclone bootstrap + runner with streaming progress.
+
+Design goal: integrate cleanly with Sulu Submitter's scrolling transcript UI.
+- Uses Rich Progress when available (prefers logger.console if provided)
+- No emoji; Unicode symbols only. Falls back to plain text if needed.
+- Keeps tail logs for actionable error classification without spamming.
+
+Public API (used by submit_worker):
+- ensure_rclone(logger=None) -> Path
+- run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None)
+"""
+
 import platform
 from pathlib import Path
 import tempfile
@@ -13,88 +26,44 @@ import json
 import re
 import shutil
 from collections import deque
-from typing import List, Optional, Tuple
-
-# Try to use the add-on's bundled tqdm; fall back to a visible text progress if missing.
-try:
-    from ..tqdm import tqdm as _tqdm
-except Exception:
-    _tqdm = None
+from typing import List, Optional, Tuple, Any
 
 
-def _log_or_print(logger, msg: str) -> None:
-    if logger:
+# Unicode glyphs (no emoji)
+_GLYPH_DOWN = "↓"
+_GLYPH_OK = "✓"
+_GLYPH_FAIL = "✕"
+
+
+def _call_logger(logger: Any, method: str, msg: str) -> None:
+    """Call logger.info/warning/error/log if present, else treat logger as callable, else print."""
+    if logger is None:
+        try:
+            print(str(msg))
+        except UnicodeEncodeError:
+            print(str(msg).encode("ascii", errors="replace").decode("ascii"))
+        return
+
+    fn = getattr(logger, method, None)
+    if callable(fn):
+        try:
+            fn(str(msg))
+            return
+        except Exception:
+            pass
+
+    if callable(logger):
         try:
             logger(str(msg))
             return
         except Exception:
             pass
-    # Fallback - handle Unicode encoding errors on Windows console
+
+    # Fallback
     try:
         print(str(msg))
     except UnicodeEncodeError:
         print(str(msg).encode("ascii", errors="replace").decode("ascii"))
-
-
-class _TextBar:
-    """
-    Minimal inline progress bar for when tqdm isn't available.
-    Prints to stderr to avoid mixing with regular logs.
-    """
-
-    def __init__(self, total: int = 0, desc: str = "Transferred", **kwargs) -> None:
-        self.n = 0
-        self.desc = desc
-        self._last_len = 0
-        self.total = int(total) if total else 0  # triggers render
-
-    def _fmt_bytes(self, n: int) -> str:
-        return f"{n / (1024**2):.1f} MiB"
-
-    def _render(self) -> None:
-        if self.total > 0:
-            pct = (self.n / max(self.total, 1)) * 100.0
-            s = f"{self.desc}: {self._fmt_bytes(self.n)} / {self._fmt_bytes(self.total)} ({pct:5.1f}%)"
-        else:
-            s = f"{self.desc}: {self._fmt_bytes(self.n)}"
-        pad = max(0, self._last_len - len(s))
-        sys.stderr.write("\r" + s + " " * pad)
-        sys.stderr.flush()
-        self._last_len = len(s)
-
-    def update(self, n: int) -> None:
-        if n <= 0:
-            return
-        self.n += int(n)
-        self._render()
-
-    def refresh(self) -> None:
-        self._render()
-
-    @property
-    def total(self) -> int:
-        return self._total
-
-    @total.setter
-    def total(self, v: int) -> None:
-        self._total = int(v) if v else 0
-        self._render()
-
-    def close(self) -> None:
-        sys.stderr.write("\n")
-        sys.stderr.flush()
-
-
-def _progress_bar(total: int = 0, **kwargs):
-    """
-    Return a tqdm bar if available, otherwise a visible inline text bar.
-    """
-    if _tqdm is not None:
-        try:
-            return _tqdm(total=max(int(total or 0), 0), **kwargs)
-        except Exception:
-            pass
-    return _TextBar(total=total, desc=kwargs.get("desc", "Transferred"))
 
 
 _UNIT = {
@@ -135,6 +104,7 @@ SUPPORTED_PLATFORMS = {
     ("plan9", "amd64"): "plan9-amd64",
     ("solaris", "amd64"): "solaris-amd64",
 }
+
 
 # -------------------------------------------------------------------
 #  Rclone Download Helpers
@@ -192,7 +162,17 @@ def get_rclone_platform_dir(suffix: str) -> Path:
     return rclone_install_directory() / suffix
 
 
+def _plain_download_bar(total: int, done: int, width: int = 32) -> str:
+    if total <= 0:
+        return ""
+    filled = int(width * done / max(total, 1))
+    return "█" * filled + " " * (width - filled)
+
+
 def download_with_bar(url: str, dest: Path, logger=None) -> None:
+    """
+    Download a file with a simple inline progress bar.
+    """
     s = Session()
     retries = Retry(
         total=3,
@@ -210,13 +190,13 @@ def download_with_bar(url: str, dest: Path, logger=None) -> None:
         },
     )
     s.mount("https://", HTTPAdapter(max_retries=retries))
-    _log_or_print(logger, "⬇️  Downloading rclone…")
+
+    _call_logger(logger, "info", f"{_GLYPH_DOWN} Preparing rclone…")
     resp = s.get(url, stream=True, timeout=600)
     resp.raise_for_status()
 
-    total = int(resp.headers.get("Content-Length", 0))
+    total = int(resp.headers.get("Content-Length", 0)) or 0
     done = 0
-    bar_cols = 40
 
     with dest.open("wb") as fp:
         for chunk in resp.iter_content(1024 * 64):
@@ -225,13 +205,13 @@ def download_with_bar(url: str, dest: Path, logger=None) -> None:
             fp.write(chunk)
             done += len(chunk)
             if total:
-                filled = int(bar_cols * done / total)
-                bar = "█" * filled + " " * (bar_cols - filled)
-                percent = (done * 100) / total
-                sys.stdout.write(f"\r    |{bar}| {percent:5.1f}% ")
-                sys.stdout.flush()
+                bar = _plain_download_bar(total, done)
+                pct = (done * 100) / max(total, 1)
+                sys.stderr.write(f"\r  {bar} {pct:5.1f}% ")
+                sys.stderr.flush()
     if total:
-        print("")
+        sys.stderr.write("\n")
+        sys.stderr.flush()
 
 
 def ensure_rclone(logger=None) -> Path:
@@ -248,7 +228,7 @@ def ensure_rclone(logger=None) -> Path:
     url = get_rclone_url()
     download_with_bar(url, tmp_zip, logger=logger)
 
-    _log_or_print(logger, "📦  Extracting rclone…")
+    _call_logger(logger, "info", "Extracting rclone…")
     with zipfile.ZipFile(tmp_zip) as zf:
         target_written = False
         for m in zf.infolist():
@@ -269,7 +249,7 @@ def ensure_rclone(logger=None) -> Path:
         except Exception:
             pass
 
-    _log_or_print(logger, "✅  rclone installed")
+    _call_logger(logger, "info", f"{_GLYPH_OK} rclone ready")
     return rclone_bin
 
 
@@ -320,7 +300,7 @@ def _rclone_supports_flag(rclone_exe: str, flag: str) -> bool:
 
 
 # -------------------------------------------------------------------
-#  Error classification + UX cleanup
+#  Error classification + UX cleanup (unchanged logic, calmer text)
 # -------------------------------------------------------------------
 
 _WIN_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
@@ -382,7 +362,7 @@ def _free_space_bytes_for_path(p: str) -> Optional[int]:
 
 def _format_go_duration_approx(d: str) -> str:
     """
-    Take a Go duration string like '-1h0m44.216s' and return a friendlier '1h 0m 44s' (absolute).
+    Take a Go duration string like '-1h0m44.216s' and return '1h 0m 44s' (absolute).
     If parsing fails, returns the original (absolute) string.
     """
     s = str(d or "").strip()
@@ -390,7 +370,6 @@ def _format_go_duration_approx(d: str) -> str:
         return ""
     if s[0] in "+-":
         s = s[1:]
-    # Common Go duration pieces: 1h, 2m, 44.2s, 500ms, etc.
     h = re.search(r"(\d+)h", s)
     m = re.search(r"(\d+)m", s)
     sec = re.search(r"(\d+(?:\.\d+)?)s", s)
@@ -401,7 +380,6 @@ def _format_go_duration_approx(d: str) -> str:
     if m:
         parts.append(f"{int(m.group(1))}m")
     if sec:
-        # Round seconds to nearest integer for UX
         try:
             parts.append(f"{int(round(float(sec.group(1))))}s")
         except Exception:
@@ -414,7 +392,7 @@ def _format_go_duration_approx(d: str) -> str:
 
 def _extract_time_skew(tail_lines: List[str]) -> Optional[Tuple[str, str]]:
     """
-    Look for rclone's helpful notice:
+    Look for rclone's notice:
       'Time may be set wrong - time from "host" is -1h0m44s different from this computer'
     Returns (host, approx_delta) or None.
     """
@@ -424,7 +402,6 @@ def _extract_time_skew(tail_lines: List[str]) -> Optional[Tuple[str, str]]:
             continue
         m = _TIME_SKEW_RE.search(str(ln))
         if not m:
-            # Still a strong signal even if format changes
             return ("storage server", "")
         host = m.group("host").strip() or "storage server"
         delta = m.group("delta").strip()
@@ -434,20 +411,18 @@ def _extract_time_skew(tail_lines: List[str]) -> Optional[Tuple[str, str]]:
 
 def _pick_technical_line(tail_lines: List[str]) -> str:
     """
-    Pick a single, useful technical line without spamming retries.
+    Pick a single, useful technical line without dumping retries.
     Preference:
-      1) "Failed to ..." summary line
-      2) any line with StatusCode / Forbidden / AccessDenied
+      1) 'Failed to ...'
+      2) auth-ish lines
       3) last non-empty line
     """
-    # 1) "Failed to ..."
     for ln in reversed(tail_lines):
         s = str(ln).strip()
         if not s:
             continue
         if "failed to" in s.lower():
             return s
-    # 2) HTTP-ish / auth-ish
     for ln in reversed(tail_lines):
         s = str(ln).strip()
         if not s:
@@ -460,7 +435,6 @@ def _pick_technical_line(tail_lines: List[str]) -> str:
             or "unauthorized" in low
         ):
             return s
-    # 3) last
     for ln in reversed(tail_lines):
         s = str(ln).strip()
         if s:
@@ -473,13 +447,12 @@ def _classify_failure(
 ) -> Tuple[str, str]:
     """
     Returns (category, user_message).
-    Message intentionally has NO leading emoji (callers already add them).
+    Message intentionally has NO leading emoji.
     """
     blob = "\n".join([str(x) for x in (tail_lines or [])]).strip()
     low = blob.lower()
 
     # ---- Clock skew / wrong system time ----
-    # rclone emits a very explicit NOTICE for clock skew; prioritize it.
     skew = _extract_time_skew(tail_lines)
     if skew is not None:
         host, delta = skew
@@ -491,14 +464,13 @@ def _classify_failure(
             "\n"
             "Fix:\n"
             "  • Turn on automatic time sync in your OS, then retry.\n"
-            "    - Windows: Settings → Time & language → Date & time → “Set time automatically” → “Sync now”\n"
-            "    - macOS: System Settings → General → Date & Time → “Set time and date automatically”\n"
+            "    - Windows: Settings → Time & language → Date & time → Set time automatically → Sync now\n"
+            "    - macOS: System Settings → General → Date & Time → Set automatically\n"
             "    - Linux: enable NTP (often: `sudo timedatectl set-ntp true`)\n"
             "\n"
             f"Technical: time differs from {host}{delta_str}.",
         )
 
-    # Also catch other time-related strings (TLS / x509, skew errors, expired request)
     clock_markers = (
         "requesttimetooskewed",
         "difference between the request time",
@@ -518,9 +490,6 @@ def _classify_failure(
             "\n"
             "Fix:\n"
             "  • Turn on automatic time sync in your OS, then retry.\n"
-            "    - Windows: Settings → Time & language → Date & time → “Set time automatically” → “Sync now”\n"
-            "    - macOS: System Settings → General → Date & Time → “Set time and date automatically”\n"
-            "    - Linux: enable NTP (often: `sudo timedatectl set-ntp true`)\n"
             "\n"
             f"Technical: {_pick_technical_line(tail_lines) or f'exit code {exit_code}'}",
         )
@@ -554,7 +523,7 @@ def _classify_failure(
             f"Technical: {_pick_technical_line(tail_lines) or 'disk full'}",
         )
 
-    # ---- Network / connection errors (check BEFORE quota to avoid false positives) ----
+    # ---- Network / connection errors ----
     network_markers = (
         "broken pipe",
         "use of closed network connection",
@@ -576,7 +545,7 @@ def _classify_failure(
             "Fix:\n"
             "  • Check your internet connection\n"
             "  • If on WiFi, try moving closer to router or use ethernet\n"
-            "  • Retry the upload — large files sometimes need multiple attempts\n"
+            "  • Retry the upload\n"
             "\n"
             f"Technical: {_pick_technical_line(tail_lines) or 'network error'}",
         )
@@ -589,7 +558,7 @@ def _classify_failure(
         "storagequotaexceeded",
         "statuscode: 507",
         "statuscode:507",
-        "notentitled",  # common R2-style entitlement/billing signal
+        "notentitled",
     )
     if any(m in low for m in remote_space_markers):
         return (
@@ -603,7 +572,7 @@ def _classify_failure(
             f"Technical: {_pick_technical_line(tail_lines) or 'insufficient storage/quota'}",
         )
 
-    # ---- Not found (useful for downloader) ----
+    # ---- Not found ----
     not_found_markers = (
         "directory not found",
         "no such key",
@@ -614,7 +583,7 @@ def _classify_failure(
     if any(m in low for m in not_found_markers):
         return (
             "not_found",
-            "Nothing to transfer yet (source path not found). This is often normal if outputs haven’t been produced yet.\n"
+            "Nothing to transfer yet (source path not found). This can be normal if outputs haven’t been produced yet.\n"
             f"Technical: {_pick_technical_line(tail_lines) or f'exit code {exit_code}'}",
         )
 
@@ -639,7 +608,6 @@ def _classify_failure(
             f"Technical: {_pick_technical_line(tail_lines) or '403 forbidden'}",
         )
 
-    # ---- Default ----
     tech = _pick_technical_line(tail_lines)
     if tech:
         return ("unknown", f"rclone failed (exit code {exit_code}).\nTechnical: {tech}")
@@ -668,16 +636,12 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
     rclone_exe = str(base[0])
 
     # Auto-upgrade files list flag to avoid comment/whitespace parsing issues.
-    # Only do this if the args look like ["--files-from", "<path>"] etc.
-    if "--files-from" in extra and _rclone_supports_flag(
-        rclone_exe, "--files-from-raw"
-    ):
+    if "--files-from" in extra and _rclone_supports_flag(rclone_exe, "--files-from-raw"):
         upgraded = []
         i = 0
         while i < len(extra):
             if extra[i] == "--files-from":
                 upgraded.append("--files-from-raw")
-                # preserve next arg (path)
                 if i + 1 < len(extra):
                     upgraded.append(extra[i + 1])
                     i += 2
@@ -708,13 +672,79 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
     ]
 
     # Keep a small tail of non-stats output so failures are actionable.
-    tail = deque(maxlen=120)
+    tail = deque(maxlen=160)
 
     def _remember_line(s: str) -> None:
         s = str(s or "").strip()
         if not s:
             return
         tail.append(s)
+
+    # Progress bar - uses logger's transfer_progress if available, else simple text
+    progress_started = False
+    progress_total = 0
+    progress_cur = 0
+    progress_last_len = 0
+
+    # Check if logger has transfer_progress method (rich UI)
+    has_rich_progress = (
+        logger is not None
+        and hasattr(logger, "transfer_progress")
+        and callable(getattr(logger, "transfer_progress", None))
+    )
+
+    def _fmt_bytes(n: int) -> str:
+        if n < 1024:
+            return f"{n} B"
+        if n < 1024 * 1024:
+            return f"{n / 1024:.1f} KB"
+        if n < 1024 * 1024 * 1024:
+            return f"{n / (1024 * 1024):.1f} MB"
+        return f"{n / (1024 * 1024 * 1024):.2f} GB"
+
+    def _progress_start(total: Optional[int] = None) -> None:
+        nonlocal progress_started, progress_total
+        progress_started = True
+        progress_total = int(total) if total and total > 0 else 0
+        if has_rich_progress:
+            logger.transfer_progress(0, progress_total)
+        else:
+            _progress_render_simple()
+
+    def _progress_render_simple() -> None:
+        nonlocal progress_last_len
+        if progress_total > 0:
+            pct = (progress_cur / max(progress_total, 1)) * 100.0
+            bar_w = 30
+            filled = int(bar_w * progress_cur / max(progress_total, 1))
+            bar = "█" * filled + "░" * (bar_w - filled)
+            line = f"  {bar} {pct:5.1f}%  {_fmt_bytes(progress_cur)} / {_fmt_bytes(progress_total)}"
+        else:
+            line = f"  Transferred: {_fmt_bytes(progress_cur)}"
+        pad = max(0, progress_last_len - len(line))
+        sys.stderr.write("\r" + line + " " * pad)
+        sys.stderr.flush()
+        progress_last_len = len(line)
+
+    def _progress_update(cur: int, tot: Optional[int] = None) -> None:
+        nonlocal progress_cur, progress_total
+        progress_cur = cur
+        if tot and tot > 0:
+            progress_total = max(progress_total, tot)
+        if not progress_started:
+            return
+        if has_rich_progress:
+            logger.transfer_progress(progress_cur, progress_total)
+        else:
+            _progress_render_simple()
+
+    def _progress_stop() -> None:
+        nonlocal progress_started
+        if progress_started:
+            if not has_rich_progress:
+                sys.stderr.write("\n")
+                sys.stderr.flush()
+            progress_started = False
 
     with subprocess.Popen(
         cmd,
@@ -725,9 +755,7 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
         encoding="utf-8",
         errors="replace",
     ) as proc:
-        bar = None
-        last = 0
-        have_real_total = False
+        last_bytes = 0
 
         for raw in proc.stdout:
             fragments = raw.rstrip("\n").split("\r")
@@ -747,75 +775,22 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
                     if out is not None:
                         cur, tot = out
 
-                        # UX: don't create a bar for 0 bytes / unknown totals.
-                        # This prevents the noisy "0.00/1.00" line on immediate failures.
-                        if bar is None:
-                            if tot and tot > 0:
-                                bar = _progress_bar(
-                                    total=tot,
-                                    unit="B",
-                                    unit_scale=True,
-                                    unit_divisor=1024,
-                                    desc="Transferred",
-                                    file=sys.stderr,
-                                )
-                                have_real_total = True
-                            elif cur > 0:
-                                bar = _progress_bar(
-                                    total=max(cur, 1),
-                                    unit="B",
-                                    unit_scale=True,
-                                    unit_divisor=1024,
-                                    desc="Transferred",
-                                    file=sys.stderr,
-                                )
+                        if not progress_started:
+                            if (tot and tot > 0) or cur > 0:
+                                _progress_start(total=tot if tot > 0 else None)
                             else:
-                                # Nothing moving yet; keep listening.
-                                last = cur
+                                last_bytes = cur
                                 continue
 
-                        # Patch in real total when it appears
-                        if bar is not None:
-                            if (
-                                not have_real_total
-                                and tot
-                                and tot > getattr(bar, "total", 0)
-                            ):
-                                try:
-                                    bar.total = tot
-                                    bar.refresh()
-                                except Exception:
-                                    bar.total = tot
-                                    bar.refresh()
-                                have_real_total = True
-                            elif cur > getattr(bar, "total", 0):
-                                try:
-                                    bar.total = cur
-                                    bar.refresh()
-                                except Exception:
-                                    bar.total = cur
-                                    bar.refresh()
-
-                            delta = cur - last
-                            if delta > 0:
-                                bar.update(delta)
-                            last = cur
-
+                        _progress_update(cur, tot)
+                        last_bytes = cur
                         continue
 
                     # Non-stats JSON: store NOTICE/WARN/ERROR lines for failure messages
                     level = str(obj.get("level", "") or "").lower()
                     msg = str(obj.get("msg", "") or "").strip()
                     if msg:
-                        # Keep these; do not spam-print INFO.
-                        if level in (
-                            "error",
-                            "fatal",
-                            "critical",
-                            "warning",
-                            "warn",
-                            "notice",
-                        ):
+                        if level in ("error", "fatal", "critical", "warning", "warn", "notice"):
                             _remember_line(f"{level}: {msg}")
                         else:
                             _remember_line(f"{level}: {msg}" if level else msg)
@@ -824,16 +799,11 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
                 # Plain text line (sometimes appears even with --use-json-log)
                 _remember_line(line)
                 if logger is None:
-                    # Only live-print plain text when no logger is present
                     print(line)
 
         code = proc.wait()
 
-        if bar:
-            try:
-                bar.close()
-            except Exception:
-                pass
+        _progress_stop()
 
         if code:
             tail_lines = list(tail)
@@ -842,9 +812,8 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
                 verb=verb, src=src, dst=dst, exit_code=code, tail_lines=tail_lines
             )
 
-            # For unknown errors, provide a tiny hint for support without dumping retries.
             if category == "unknown":
-                # Write full tail to a temp log (no credentials), so users can attach it.
+                # Write full tail to a temp log so users can attach it.
                 try:
                     log_path = (
                         Path(tempfile.gettempdir())

@@ -354,6 +354,49 @@ def pack_blend(
         if project_path is None:
             raise ValueError("project_path is required for method='PROJECT'")
 
+        project_p = Path(project_path)
+
+        # FAST PATH: When we have pre-traced deps and don't need blendfile rewriting,
+        # skip the packer entirely and build file_map directly from trace results.
+        # This avoids redundant filesystem checks in packer.strategise().
+        #
+        # pre_traced_deps can be either:
+        # - List of BlockUsage objects (from raw trace)
+        # - List of Path objects (pre-expanded file paths)
+        if pre_traced_deps is not None and not rewrite_blendfiles:
+            file_map: Dict[Path, Path] = {}
+            # Add the main blend file
+            file_map[infile_p] = infile_p
+
+            # Add all dependencies that are within the project
+            for item in pre_traced_deps:
+                # Check if it's a Path (pre-expanded) or BlockUsage
+                if isinstance(item, Path):
+                    file_path = item
+                    try:
+                        file_path.relative_to(project_p)
+                        file_map[file_path] = file_path
+                    except ValueError:
+                        pass  # Outside project
+                else:
+                    # BlockUsage - use abspath (don't call files() to avoid I/O)
+                    try:
+                        file_path = item.abspath
+                        # Skip patterns - they should have been expanded already
+                        if "<UDIM>" in file_path.name or "*" in file_path.name:
+                            continue
+                        file_path.relative_to(project_p)
+                        file_map[file_path] = file_path
+                    except (ValueError, AttributeError):
+                        pass  # Outside project or invalid
+
+            report: Dict[str, Any] = {
+                "missing_files": [],
+                "unreadable_files": {},
+            }
+            return (file_map, report) if return_report else file_map
+
+        # SLOW PATH: Use full packer (needed for blendfile rewriting)
         # If target is empty, use a stable temp pack-root (path ops only)
         target_p = Path(target) if str(target).strip() else Path(
             tempfile.mkdtemp(prefix="bat_packroot_")
@@ -361,7 +404,7 @@ def pack_blend(
 
         packer = create_packer(
             infile_p,
-            Path(project_path),
+            project_p,
             target_p,
             rewrite_blendfiles=rewrite_blendfiles,
             pre_traced_deps=pre_traced_deps,

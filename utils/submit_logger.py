@@ -1,41 +1,54 @@
 """
-Rich-based logging utilities for submit worker.
+submit_logger.py — Rich-based logging utilities for the Sulu Submit worker.
 
-Provides beautiful, colorful console output with:
-- Stage headers with borders
-- Trace tables showing dependency chains
-- Progress indicators with status colors
-- File size formatting
+Design goal: "precision instrument" scrolling transcript.
+- Rich-only (no Textual / curses). No fixed-screen dashboard.
+- Calm, engineered, consistent: machined steel + dark glass.
+- Color is meaning only (accent / ok / warn / err / muted).
+- Unicode, but no emoji. Graceful ASCII fallback for legacy terminals.
+
+This module intentionally keeps the API surface that the submit worker expects:
+stage_header, trace_start/entry/summary, pack_start/entry/end, upload_*,
+zip_* callbacks, version_update, fatal/prompt, etc.
 """
+
 from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-# Import vendored rich library (local to addon)
-# We try multiple import paths to handle both direct execution and package imports
+# Import vendored rich library (local to addon) with fallbacks.
 RICH_AVAILABLE = False
 Console = None
 Table = None
 Panel = None
 Text = None
 Style = None
+Rule = None
+Theme = None
+Align = None
+Live = None
 box = None
 
 
-def _try_import_rich():
+def _try_import_rich() -> None:
     """Try to import rich from various locations."""
-    global RICH_AVAILABLE, Console, Table, Panel, Text, Style, box
+    global RICH_AVAILABLE, Console, Table, Panel, Text, Style, Rule, Theme, Align, Live, box
 
-    # Method 1: Try relative import (works when imported as part of package)
+    # Method 1: Relative import (works when imported as part of package)
     try:
         from ..rich.console import Console as _Console
         from ..rich.panel import Panel as _Panel
         from ..rich.table import Table as _Table
         from ..rich.text import Text as _Text
         from ..rich.style import Style as _Style
+        from ..rich.rule import Rule as _Rule
+        from ..rich.theme import Theme as _Theme
+        from ..rich.align import Align as _Align
+        from ..rich.live import Live as _Live
         from ..rich import box as _box
 
         Console = _Console
@@ -43,6 +56,10 @@ def _try_import_rich():
         Table = _Table
         Text = _Text
         Style = _Style
+        Rule = _Rule
+        Theme = _Theme
+        Align = _Align
+        Live = _Live
         box = _box
         RICH_AVAILABLE = True
         return
@@ -56,12 +73,15 @@ def _try_import_rich():
         if rich_dir.exists() and str(addon_dir) not in sys.path:
             sys.path.insert(0, str(addon_dir))
 
-        # Import as top-level 'rich' module
         import rich.console
         import rich.panel
         import rich.table
         import rich.text
         import rich.style
+        import rich.rule
+        import rich.theme
+        import rich.align
+        import rich.live
         import rich.box
 
         Console = rich.console.Console
@@ -69,6 +89,10 @@ def _try_import_rich():
         Table = rich.table.Table
         Text = rich.text.Text
         Style = rich.style.Style
+        Rule = rich.rule.Rule
+        Theme = rich.theme.Theme
+        Align = rich.align.Align
+        Live = rich.live.Live
         box = rich.box
         RICH_AVAILABLE = True
         return
@@ -82,6 +106,10 @@ def _try_import_rich():
         from rich.table import Table as _Table
         from rich.text import Text as _Text
         from rich.style import Style as _Style
+        from rich.rule import Rule as _Rule
+        from rich.theme import Theme as _Theme
+        from rich.align import Align as _Align
+        from rich.live import Live as _Live
         from rich import box as _box
 
         Console = _Console
@@ -89,6 +117,10 @@ def _try_import_rich():
         Table = _Table
         Text = _Text
         Style = _Style
+        Rule = _Rule
+        Theme = _Theme
+        Align = _Align
+        Live = _Live
         box = _box
         RICH_AVAILABLE = True
         return
@@ -96,78 +128,173 @@ def _try_import_rich():
         pass
 
 
-# Try importing rich at module load time
 _try_import_rich()
 
-
-# ─── Icons (ASCII fallback for Windows) ───────────────────────────────────────
+# ─────────────────────────── Unicode + glyphs ───────────────────────────
 
 def _supports_unicode() -> bool:
-    """Check if the terminal supports Unicode output."""
-    # Check for UTF-8 encoding
+    """Best-effort check whether we should emit Unicode glyphs."""
     try:
         encoding = sys.stdout.encoding or ""
         if "utf" in encoding.lower():
             return True
     except Exception:
         pass
-    # Check PYTHONIOENCODING
+
+    # Explicit override
     if "utf" in os.environ.get("PYTHONIOENCODING", "").lower():
         return True
-    # Windows legacy console typically doesn't support Unicode
+
+    # Windows: allow Unicode in modern terminals (Windows Terminal, VSCode terminal, etc.)
     if sys.platform == "win32":
-        # Check if running in Windows Terminal or modern console
         if os.environ.get("WT_SESSION"):
             return True
+        if os.environ.get("TERM_PROGRAM", "").lower() in ("vscode",):
+            return True
+        # legacy console: stay conservative
         return False
+
     return True
 
 
-# Icons with ASCII fallbacks
 _UNICODE = _supports_unicode()
 
-ICON_FOLDER = "📂" if _UNICODE else "[DIR]"
-ICON_FILE = "📄" if _UNICODE else "[FILE]"
-ICON_PACKAGE = "📦" if _UNICODE else "[PKG]"
-ICON_CHECK = "✓" if _UNICODE else "[OK]"
-ICON_CROSS = "✗" if _UNICODE else "[X]"
-ICON_WARN = "⚠" if _UNICODE else "[!]"
-ICON_ARROW = "→" if _UNICODE else "->"
-ICON_SEARCH = "🔍" if _UNICODE else "[?]"
-ICON_CHART = "📊" if _UNICODE else "[#]"
-ICON_ROCKET = "🚀" if _UNICODE else "[>]"
-ICON_KEY = "🔑" if _UNICODE else "[K]"
-ICON_INFO = "ℹ" if _UNICODE else "[i]"
-ICON_SUCCESS = "✅" if _UNICODE else "[OK]"
-ICON_ERROR = "❌" if _UNICODE else "[ERR]"
+# No emoji. Unicode symbols only (with ASCII-ish fallback).
+GLYPH_STAGE = "▸" if _UNICODE else ">"
+GLYPH_OK = "✓" if _UNICODE else "OK"
+GLYPH_FAIL = "✕" if _UNICODE else "X"
+GLYPH_WARN = "!"  # ASCII is fine and universally safe
+GLYPH_INFO = "ⓘ" if _UNICODE else "i"
+GLYPH_ARROW = "→" if _UNICODE else "->"
+GLYPH_BULLET = "•" if _UNICODE else "-"
+GLYPH_SEAM = "┆" if _UNICODE else "|"
+GLYPH_DASH = "┄" if _UNICODE else "-"
+
+# Small “hardware-ish” marks for panels
+GLYPH_HEX = "⬡" if _UNICODE else "#"
+GLYPH_LINK = "⟐" if _UNICODE else "*"
 
 
-# ─── Styles ───────────────────────────────────────────────────────────────────
+# ─────────────────────────── Sulu terminal theme ───────────────────────────
 
-STYLE_OK = "green"
-STYLE_MISSING = "yellow"
-STYLE_UNREADABLE = "red"
-STYLE_INFO = "cyan"
-STYLE_DIM = "dim"
-STYLE_HEADER = "bold white"
+def _build_sulu_theme():
+    if Theme is None:
+        return None
+    # These are terminal-appropriate matches of the CSS semantic theme.
+    return Theme(
+        {
+            # Text roles
+            "sulu.fg": "#D8DEEC",
+            "sulu.muted": "#A2A6AF",
+            "sulu.dim": "#7E828B",
 
-# Block type colors
-BLOCK_TYPE_STYLES = {
-    "Library": "bright_blue",
-    "Image": "bright_magenta",
-    "Sound": "bright_cyan",
-    "MovieClip": "bright_cyan",
-    "VFont": "bright_yellow",
-    "PointCache": "orange3",
-    "Modifier": "orange3",
-    "Sequence": "bright_cyan",
-    "bNodeTree": "bright_green",
-    "Volume": "purple",
-}
+            # Meaning colors (color = meaning only)
+            "sulu.accent": "#5250FF",
+            "sulu.ring": "#757EFF",
+            "sulu.ok": "#1EA138",
+            "sulu.warn": "#E17100",
+            "sulu.err": "#FF2056",
+
+            # Strokes / seams
+            "sulu.stroke": "#454A56",
+            "sulu.stroke_subtle": "#3A3E48",
+            "sulu.stroke_strong": "#545A69",
+
+            # Surfaces (used sparingly for panels)
+            "sulu.panel": "on #1E2027",
+            "sulu.well": "on #21232B",
+            "sulu.control": "on #24272E",
+            "sulu.overlay": "on #2C2F36",
+
+            # Composite helpers
+            "sulu.title": "bold #D8DEEC",
+            "sulu.stage": "bold #5250FF",
+            "sulu.ok_b": "bold #1EA138",
+            "sulu.warn_b": "bold #E17100",
+            "sulu.err_b": "bold #FF2056",
+            "sulu.link": "underline #5250FF",
+
+            # Pills / tags
+            "sulu.pill": "#A2A6AF on #24272E",
+
+        }
+    )
 
 
-# ─── Human-readable block type names ──────────────────────────────────────────
+SULU_TUI_THEME = _build_sulu_theme()
 
+# Geometry (machined: square, minimal)
+SULU_PANEL_BOX = getattr(box, "SQUARE", None) if box is not None else None
+SULU_TABLE_BOX = getattr(box, "SIMPLE_HEAD", None) if box is not None else None
+
+# Consistent padding across all panels
+PANEL_PADDING = (0, 2)
+
+
+# ─────────────────────────── Console setup ───────────────────────────
+
+def get_console() -> Any:
+    """Get a rich Console instance or a fallback (None)."""
+    if not (RICH_AVAILABLE and Console is not None):
+        return None
+
+    theme = SULU_TUI_THEME
+    kwargs = dict(
+        force_terminal=True,
+        highlight=False,
+        legacy_windows=True,
+        color_system="auto",
+    )
+    if theme is not None:
+        kwargs["theme"] = theme
+
+    # emoji=False is available on modern Rich; keep compatibility.
+    try:
+        return Console(**kwargs, emoji=False)
+    except TypeError:
+        return Console(**kwargs)
+
+
+# ─────────────────────────── Size formatting ───────────────────────────
+
+def format_size(size_bytes: int) -> str:
+    """Format bytes as human readable."""
+    try:
+        size_bytes = int(size_bytes)
+    except Exception:
+        return "unknown"
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    if size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+# ─────────────────────────── Trace entry model ───────────────────────────
+
+class TraceEntry:
+    """Represents a single traced dependency for display."""
+
+    def __init__(
+        self,
+        source_blend: str,
+        block_type: str,
+        block_name: str,
+        found_file: str,
+        status: str,  # "ok", "missing", "unreadable"
+        error_msg: Optional[str] = None,
+    ):
+        self.source_blend = source_blend
+        self.block_type = block_type
+        self.block_name = block_name
+        self.found_file = found_file
+        self.status = status
+        self.error_msg = error_msg
+
+
+# Human-readable block type names (kept, but we no longer rainbow-color them)
 BLOCK_TYPE_NAMES = {
     "Library": "Library",
     "Image": "Image",
@@ -196,68 +323,11 @@ BLOCK_TYPE_NAMES = {
 }
 
 
-# ─── Console setup ────────────────────────────────────────────────────────────
-
-def get_console() -> Any:
-    """Get a rich Console instance or a fallback."""
-    if RICH_AVAILABLE and Console is not None:
-        try:
-            # Create console with explicit settings for cross-platform color support
-            # force_terminal=True ensures colors even when output is piped
-            # legacy_windows=True enables colors on older Windows consoles
-            console = Console(
-                force_terminal=True,
-                highlight=False,
-                legacy_windows=True,
-                color_system="auto",
-            )
-            return console
-        except Exception:
-            pass
-    return None
-
-
-# ─── Size formatting ──────────────────────────────────────────────────────────
-
-def format_size(size_bytes: int) -> str:
-    """Format bytes as human readable."""
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    elif size_bytes < 1024 * 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
-    else:
-        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
-
-
-# ─── Trace entry class ────────────────────────────────────────────────────────
-
-class TraceEntry:
-    """Represents a single traced dependency for display."""
-
-    def __init__(
-        self,
-        source_blend: str,
-        block_type: str,
-        block_name: str,
-        found_file: str,
-        status: str,  # "ok", "missing", "unreadable"
-        error_msg: Optional[str] = None,
-    ):
-        self.source_blend = source_blend
-        self.block_type = block_type
-        self.block_name = block_name
-        self.found_file = found_file
-        self.status = status
-        self.error_msg = error_msg
-
-
-# ─── Submit Logger class ──────────────────────────────────────────────────────
+# ─────────────────────────── Submit Logger ───────────────────────────
 
 class SubmitLogger:
     """
-    Rich-based logger for submit worker with beautiful formatting.
+    Rich-based logger for submit worker with a consistently styled, scrolling transcript.
 
     Falls back to plain text if rich is not available.
     """
@@ -267,53 +337,159 @@ class SubmitLogger:
         log_fn: Optional[Callable[[str], None]] = None,
         input_fn: Optional[Callable[[str, str], str]] = None,
     ):
-        """
-        Initialize the logger.
-
-        Args:
-            log_fn: Optional fallback logging function for plain text mode.
-            input_fn: Optional input function matching _safe_input(prompt, default) signature.
-        """
         self.console = get_console() if RICH_AVAILABLE else None
         self._log_fn = log_fn or print
         self._input_fn = input_fn or (lambda prompt, default="": input(prompt))
-        self._trace_entries: List[TraceEntry] = []
-        self._trace_cols = self._compute_trace_cols()
-        self._pack_entries: List[Dict[str, Any]] = []
-        self._upload_entries: List[Dict[str, Any]] = []
 
-    def _compute_trace_cols(self) -> Dict[str, int]:
-        """Compute trace table column widths based on console width."""
+        self._trace_entries: List[TraceEntry] = []
+        self._trace_cols = self._compute_cols()
+
+        self._pack_entries: List[Dict[str, Any]] = []
+
+        # Upload/transfer state
+        self._upload_total = 0
+        self._upload_step = 0
+        self._transfer_active = False
+        self._transfer_title = ""
+        self._transfer_detail = ""
+        self._transfer_cur = 0
+        self._transfer_total = 0
+        self._transfer_last_line_count = 0
+        self._live = None  # Rich Live context for flicker-free progress
+        self._last_progress_time = 0.0  # For rate limiting updates
+
+    # ───────────────────── internal helpers ─────────────────────
+
+    def _compute_cols(self) -> Dict[str, int]:
+        """Compute column widths based on console width."""
         width = 80
         if self.console:
             try:
-                width = self.console.width or 80
+                width = int(self.console.width or 80)
             except Exception:
-                pass
-        # Reserve: 1 leading space + 3 column gaps (1 each) + status col (7)
-        status_w = 7
-        usable = width - 1 - 3 - status_w  # space for the 3 data columns
-        # Split equally among the 3 data columns
+                width = 80
+
+        # status column is a single glyph + 2 spaces; keep a tiny fixed width
+        status_w = 3
+        gaps = 3  # spaces between main columns
+        lead = 2  # leading indent
+        usable = max(30, width - lead - gaps - status_w)
         col_w = max(10, usable // 3)
         return {"col": col_w, "status": status_w, "total": width}
 
     def _print(self, msg: str = "") -> None:
-        """Print a message using the appropriate method."""
         if self.console:
             self.console.print(msg)
         else:
             self._log_fn(msg)
 
     def _print_rich(self, *args, **kwargs) -> None:
-        """Print using rich console if available."""
         if self.console:
             self.console.print(*args, **kwargs)
         else:
-            # Fallback: extract text content
-            text = " ".join(str(a) for a in args)
-            self._log_fn(text)
+            self._log_fn(" ".join(str(a) for a in args))
 
-    # ─── Stage headers ────────────────────────────────────────────────────────
+    def _rule(self, title: str = "") -> None:
+        """Subtle divider."""
+        if self.console and Rule is not None:
+            if title:
+                self.console.print(Rule(f"[sulu.muted]{title}[/]", style="sulu.stroke_subtle"))
+            else:
+                self.console.print(Rule(style="sulu.stroke_subtle"))
+        else:
+            self._log_fn("-" * 70)
+
+    def _panel(
+        self,
+        body: Any,
+        *,
+        title: Optional[Any] = None,
+        border_style: str = "sulu.stroke",
+        style: str = "sulu.panel",
+        box_style: Any = None,
+        padding: Tuple[int, int] = PANEL_PADDING,
+    ) -> Any:
+        """Create a consistently styled Panel (rich only)."""
+        if Panel is None:
+            return body
+        return Panel(
+            body,
+            title=title,
+            title_align="left",
+            border_style=border_style,
+            padding=padding,
+            box=box_style or SULU_PANEL_BOX,
+            style=style,
+        )
+
+    def _trunc(self, val: str, mx: int) -> str:
+        s = str(val or "")
+        if mx <= 0:
+            return ""
+        if len(s) <= mx:
+            return s
+        # Keep last char as ellipsis-ish dot to reduce visual noise
+        ell = "…" if _UNICODE else "."
+        return s[: mx - 1] + ell
+
+    # ───────────────────── logo marks ─────────────────────
+
+    def logo_start(self) -> None:
+        """Text logomark at the beginning of a submission."""
+        if self.console and Text is not None and Align is not None:
+            title = Text()
+            title.append("SUPERLUMINAL", style="sulu.title")
+            title.append("  ·  ", style="sulu.stroke_subtle")
+            title.append("SULU SUBMITTER", style="sulu.stage")
+
+            sub = Text("Render farm submission pipeline", style="sulu.muted")
+
+            body = Text()
+            body.append(title)
+            body.append("\n")
+            body.append(sub)
+
+            panel = self._panel(
+                Align.center(body),
+                title=Text(f"{GLYPH_HEX}  SESSION START", style="sulu.dim"),
+                border_style="sulu.stroke_subtle",
+                style="sulu.panel",
+                padding=(1, 2),
+            )
+            self.console.print()
+            self.console.print(panel)
+        else:
+            self._log_fn("")
+            self._log_fn("=== SUPERLUMINAL · SULU SUBMITTER ===")
+
+    def logo_end(self, job_id: Optional[str] = None, elapsed: Optional[float] = None) -> None:
+        """Text logomark at the end of submission (after job registration)."""
+        if self.console and Text is not None and Align is not None:
+            body = Text()
+            body.append("SUBMISSION COMPLETE", style="sulu.ok_b")
+            if job_id:
+                body.append("\n")
+                body.append("Job ID: ", style="sulu.muted")
+                body.append(str(job_id), style="sulu.fg")
+            if elapsed is not None:
+                body.append("\n")
+                body.append("Elapsed: ", style="sulu.muted")
+                body.append(f"{elapsed:.1f}s", style="sulu.fg")
+
+            panel = self._panel(
+                Align.center(body),
+                title=Text(f"{GLYPH_HEX}  SESSION END", style="sulu.dim"),
+                border_style="sulu.ok",
+                style="sulu.panel",
+                padding=(1, 2),
+            )
+            self.console.print()
+            self.console.print(panel)
+        else:
+            self._log_fn("")
+            self._log_fn("=== SUBMISSION COMPLETE ===")
+
+    # ───────────────────── stage headers ─────────────────────
 
     def stage_header(
         self,
@@ -322,60 +498,65 @@ class SubmitLogger:
         subtitle: str = "",
         details: Optional[List[str]] = None,
     ) -> None:
-        """Print a beautiful stage header with optional detail lines inside the panel."""
-        if self.console:
-            header_text = f"STAGE {stage_num}: {title}"
+        """Print a consistent stage header panel."""
+        if self.console and Text is not None:
+            t = Text()
+            t.append(f"{GLYPH_STAGE} ", style="sulu.accent")
+            t.append("STAGE ", style="sulu.dim")
+            t.append(str(stage_num), style="sulu.dim")
+            t.append(" — ", style="sulu.stroke_subtle")
+            t.append(str(title), style="sulu.title")
+
             body = Text()
             if subtitle:
-                body.append(subtitle, style="dim")
+                body.append(subtitle, style="sulu.muted")
             if details:
                 for line in details:
                     if body.plain:
                         body.append("\n")
-                    body.append(line)
-            panel = Panel(
+                    body.append(f"{GLYPH_BULLET} ", style="sulu.dim")
+                    body.append(str(line), style="sulu.dim")
+
+            panel = self._panel(
                 body if body.plain else "",
-                title=f"[bold white]{header_text}[/]",
-                border_style="bright_blue",
-                padding=(0, 2),
+                title=t,
+                border_style="sulu.stroke",
+                style="sulu.panel",
             )
             self.console.print()
             self.console.print(panel)
         else:
             self._log_fn("")
             self._log_fn("=" * 70)
-            self._log_fn(f"  STAGE {stage_num}: {title}")
+            self._log_fn(f"> STAGE {stage_num}: {title}")
             if subtitle:
                 self._log_fn(f"  {subtitle}")
             if details:
                 for line in details:
-                    self._log_fn(f"  {line}")
+                    self._log_fn(f"  - {line}")
             self._log_fn("=" * 70)
 
-    # ─── Trace logging ────────────────────────────────────────────────────────
+    # ───────────────────── trace logging ─────────────────────
 
     def trace_start(self, blend_path: str) -> None:
-        """Start tracing - emit table header only.
-
-        "Main file" and "Scanning" info should be passed via
-        ``stage_header(..., details=[...])`` so they appear inside the
-        stage panel.
-        """
+        """Begin a trace section."""
         self._trace_entries = []
-        if self.console:
+        if self.console and Text is not None:
             self.console.print()
+            self._rule("Dependencies")
             c = self._trace_cols["col"]
             s = self._trace_cols["status"]
-            w = self._trace_cols["total"]
-            self.console.print(f"[bold cyan] {'Block File':<{c}} {'Block':<{c}} {'Found File':<{c}} {'Status':>{s}}[/]")
-            self.console.print(f"[dim]{'-' * w}[/]")
+            header = Text("  ")
+            header.append(f"{'Source':<{c}} ", style="sulu.muted")
+            header.append(f"{'Block':<{c}} ", style="sulu.muted")
+            header.append(f"{'Resolved':<{c}} ", style="sulu.muted")
+            header.append(f"{'':>{s}}", style="sulu.muted")
+            self.console.print(header)
+            self.console.print(Text("  " + (GLYPH_DASH * (max(0, self._trace_cols['total'] - 2))), style="sulu.stroke_subtle"))
         else:
             self._log_fn("")
-            c = self._trace_cols["col"]
-            s = self._trace_cols["status"]
-            w = self._trace_cols["total"]
-            self._log_fn(f" {'Block File':<{c}} {'Block':<{c}} {'Found File':<{c}} {'Status':>{s}}")
-            self._log_fn("-" * w)
+            self._log_fn("Dependencies:")
+            self._log_fn("-" * 70)
 
     def trace_entry(
         self,
@@ -386,134 +567,59 @@ class SubmitLogger:
         status: str,
         error_msg: Optional[str] = None,
     ) -> None:
-        """Log a single trace entry - prints immediately for real-time feedback."""
+        """Log a single traced dependency (prints immediately)."""
         entry = TraceEntry(source_blend, block_type, block_name, found_file, status, error_msg)
         self._trace_entries.append(entry)
 
-        # Print immediately for real-time feedback (table row format)
         type_name = BLOCK_TYPE_NAMES.get(block_type, block_type)
-        type_style = BLOCK_TYPE_STYLES.get(block_type, "white")
         c = self._trace_cols["col"]
         s = self._trace_cols["status"]
 
-        # Truncate helper
-        def _trunc(val: str, w: int) -> str:
-            return (val[:w-1] + ".") if len(val) > w else val
+        src_t = self._trunc(source_blend, c)
+        file_t = self._trunc(found_file, c)
 
-        src_trunc = _trunc(source_blend, c)
-        file_trunc = _trunc(found_file, c)
+        # Block column: [Type] name
+        type_part = f"[{type_name}]"
+        name_max = max(0, c - len(type_part) - 1)
+        name_t = self._trunc(block_name, name_max)
 
         if self.console and Text is not None:
-            line = Text(" ")
+            line = Text("  ")
 
-            # Block File column (dim)
-            line.append(f"{src_trunc:<{c}} ", style="dim")
+            # Source
+            line.append(f"{src_t:<{c}} ", style="sulu.dim")
 
-            # Block column (type colored + name)
-            type_part = f"[{type_name}]"
-            name_max = c - len(type_part) - 1
-            name_trunc = _trunc(block_name, name_max) if name_max > 0 else ""
-            line.append(type_part, style=type_style)
-            padded_name = f" {name_trunc}"
-            line.append(f"{padded_name:<{c - len(type_part)}} ", style="white")
+            # Block tag (as a machined “pill”)
+            tag = Text(type_part, style="sulu.pill")
+            line.append(tag)
+            line.append(" ", style="sulu.dim")
+            line.append(f"{name_t:<{name_max}} ", style="sulu.fg")
 
-            # Found File column
+            # Resolved
             if status == "ok":
-                line.append(f"{file_trunc:<{c}} ", style="bright_white")
+                line.append(f"{file_t:<{c}} ", style="sulu.fg")
+                line.append(f"{GLYPH_OK:>{s}}", style="sulu.ok_b")
             elif status == "missing":
-                line.append(f"{file_trunc:<{c}} ", style="yellow")
+                line.append(f"{file_t:<{c}} ", style="sulu.warn")
+                line.append(f"{GLYPH_WARN:>{s}}", style="sulu.warn_b")
             else:
-                line.append(f"{file_trunc:<{c}} ", style="red")
-
-            # Status column
-            if status == "ok":
-                line.append(f"{ICON_CHECK:>{s}}", style="green")
-            elif status == "missing":
-                line.append(f"{'MISS':>{s}}", style="yellow bold")
-            else:
-                line.append(f"{'ERR':>{s}}", style="red bold")
+                line.append(f"{file_t:<{c}} ", style="sulu.err")
+                line.append(f"{GLYPH_FAIL:>{s}}", style="sulu.err_b")
 
             self.console.print(line)
 
-            # Print error message on next line if present
+            # Optional error detail line
             if error_msg and status == "unreadable":
-                self.console.print(f"[red dim]  {' '*c} {ICON_ARROW} {error_msg}[/]")
-        else:
-            # Plain text fallback
-            block_str = f"[{type_name}] {block_name}"
-            block_trunc = _trunc(block_str, c)
-            status_str = ICON_CHECK if status == "ok" else ("MISS" if status == "missing" else "ERR")
-            self._log_fn(f" {src_trunc:<{c}} {block_trunc:<{c}} {file_trunc:<{c}} {status_str:>{s}}")
-            if error_msg:
-                self._log_fn(f"  {' '*c} {ICON_ARROW} {error_msg}")
-
-    def _render_trace_table(self) -> None:
-        """Render collected trace entries as a beautiful table."""
-        if not self._trace_entries:
-            return
-
-        if self.console and Table is not None:
-            # Create a rich Table with minimal styling for clean look
-            table = Table(
-                show_header=True,
-                header_style="bold cyan",
-                border_style="bright_blue",
-                box=box.SIMPLE_HEAD if box else None,
-                expand=True,
-                padding=(0, 1),
-                show_edge=False,
-            )
-
-            # Add columns: Block File, Block (with type), Found File, Status
-            # First 3 columns have equal width (ratio=1) and truncate with ellipsis
-            table.add_column("Block File", style="dim", overflow="ellipsis", ratio=1, no_wrap=True)
-            table.add_column("Block", style="white", overflow="ellipsis", ratio=1, no_wrap=True)
-            table.add_column("Found File", style="white", overflow="ellipsis", ratio=1, no_wrap=True)
-            table.add_column("", justify="center", no_wrap=True, width=7)
-
-            # Add rows
-            for entry in self._trace_entries:
-                type_name = BLOCK_TYPE_NAMES.get(entry.block_type, entry.block_type)
-                type_style = BLOCK_TYPE_STYLES.get(entry.block_type, "white")
-
-                # Status cell with color and icon
-                if entry.status == "ok":
-                    status_cell = Text(ICON_CHECK, style="green")
-                elif entry.status == "missing":
-                    status_cell = Text("MISSING", style="yellow bold")
-                else:
-                    status_cell = Text("ERROR", style="red bold")
-
-                # Block cell: [Type] name
-                block_text = f"[{type_name}] {entry.block_name}"
-                block_cell = Text()
-                block_cell.append(f"[{type_name}]", style=type_style)
-                block_cell.append(f" {entry.block_name}", style="white")
-
-                # Found file cell (error shown in status tooltip or separate)
-                if entry.status == "ok":
-                    file_cell = Text(entry.found_file, style="white")
-                elif entry.status == "missing":
-                    file_cell = Text(entry.found_file, style="yellow")
-                else:
-                    file_cell = Text(entry.found_file, style="red")
-
-                table.add_row(
-                    entry.source_blend,
-                    block_cell,
-                    file_cell,
-                    status_cell,
+                msg = self._trunc(error_msg, max(20, self._trace_cols["total"] - 8))
+                self.console.print(
+                    Text(f"  {GLYPH_SEAM} {GLYPH_ARROW} {msg}", style="sulu.dim")
                 )
-
-            self.console.print(table)
         else:
-            # Plain text fallback - print each entry
-            for entry in self._trace_entries:
-                type_name = BLOCK_TYPE_NAMES.get(entry.block_type, entry.block_type)
-                status_icon = ICON_CHECK if entry.status == "ok" else (f"{ICON_WARN} MISSING" if entry.status == "missing" else f"{ICON_CROSS} UNREADABLE")
-                self._log_fn(f"  {entry.source_blend:20} [{type_name:10}] {entry.block_name:20} {ICON_ARROW} {entry.found_file}  {status_icon}")
-                if entry.error_msg:
-                    self._log_fn(f"                       {ICON_ARROW} {entry.error_msg}")
+            status_str = GLYPH_OK if status == "ok" else (GLYPH_WARN if status == "missing" else GLYPH_FAIL)
+            block_str = f"[{type_name}] {block_name}"
+            self._log_fn(f"  {src_t:<{c}} {block_str:<{c}} {file_t:<{c}} {status_str:>{s}}")
+            if error_msg:
+                self._log_fn(f"    {GLYPH_ARROW} {error_msg}")
 
     def trace_summary(
         self,
@@ -524,250 +630,76 @@ class SubmitLogger:
         cross_drive: int = 0,
         warning_text: Optional[str] = None,
     ) -> None:
-        """Print trace summary as a styled Panel, optionally with warnings included."""
+        """Print trace summary as a styled panel (with optional warnings)."""
         has_issues = missing > 0 or unreadable > 0 or cross_drive > 0
-        if self.console and Panel is not None and Text is not None:
-            body = Text()
-            body.append(f"{ICON_CHECK} {total} dependencies found", style="bold green" if not has_issues else "bold")
-            if project_root:
-                body.append(f"\n{ICON_FOLDER} Project root: ", style="cyan")
-                body.append(project_root, style="white")
-            if warning_text:
-                body.append(f"\n\n{warning_text}", style="yellow")
-
-            border = "green" if not has_issues else "yellow"
-            panel = Panel(
-                body,
-                title=f"[bold white]{ICON_CHART} Trace Complete[/]",
-                border_style=border,
-                padding=(0, 2),
-            )
-            self.console.print()
-            self.console.print(panel)
-        else:
-            self._log_fn("")
-            self._log_fn(f"{ICON_CHART}  Trace complete: {total} dependencies found")
-            if project_root:
-                self._log_fn(f"  {ICON_FOLDER}  Project root: {project_root}")
-            if warning_text:
-                self._log_fn(f"  {ICON_WARN}  {warning_text}")
-            elif has_issues:
-                if missing > 0:
-                    self._log_fn(f"  {ICON_WARN}  {missing} missing file(s)")
-                if unreadable > 0:
-                    self._log_fn(f"  {ICON_ERROR}  {unreadable} unreadable file(s)")
-                if cross_drive > 0:
-                    self._log_fn(f"  {ICON_WARN}  {cross_drive} on different drive (excluded)")
-
-    # ─── Packing logging ──────────────────────────────────────────────────────
-
-    def pack_file(
-        self,
-        index: int,
-        total: int,
-        filepath: str,
-        size: Optional[int] = None,
-        status: str = "ok",
-    ) -> None:
-        """Log a file being added to pack."""
-        size_str = f"({format_size(size)})" if size else ""
-        filename = Path(filepath).name
-
-        if self.console:
-            if status == "ok":
-                self.console.print(f"    [green]{ICON_CHECK}[/] [{index}/{total}] {filename}  [dim]{size_str}[/]")
-            elif status == "missing":
-                self.console.print(f"    [yellow]{ICON_WARN}[/] [{index}/{total}] {filename}  [yellow]MISSING[/]")
-            else:
-                self.console.print(f"    [red]{ICON_ERROR}[/] [{index}/{total}] {filename}  [red]UNREADABLE[/]")
-        else:
-            status_icon = ICON_CHECK if status == "ok" else (ICON_WARN if status == "missing" else ICON_ERROR)
-            self._log_fn(f"    {status_icon} [{index}/{total}] {filename}  {size_str}")
-
-    def pack_summary(
-        self,
-        ok_count: int,
-        missing_count: int = 0,
-        unreadable_count: int = 0,
-        cross_drive_count: int = 0,
-        total_size: int = 0,
-    ) -> None:
-        """Print packing summary."""
-        if self.console:
-            self.console.print()
-            self.console.print(f"[bold]{ICON_CHART} Packing complete:[/]")
-            self.console.print(f"    [green]{ICON_CHECK} {ok_count} files added to manifest[/]")
-            self.console.print(f"    [cyan]+ 1 main .blend file[/]")
-            if cross_drive_count > 0:
-                self.console.print(f"    [yellow]{ICON_WARN} {cross_drive_count} excluded (different drive)[/]")
-            if missing_count > 0:
-                self.console.print(f"    [yellow]{ICON_WARN} {missing_count} missing[/]")
-            if unreadable_count > 0:
-                self.console.print(f"    [red]{ICON_ERROR} {unreadable_count} unreadable[/]")
-            self.console.print(f"    [cyan]{ICON_FOLDER} Total size: {format_size(total_size)}[/]")
-        else:
-            self._log_fn("")
-            self._log_fn(f"{ICON_CHART}  Packing complete:")
-            self._log_fn(f"    {ICON_CHECK} {ok_count} files added to manifest")
-            self._log_fn(f"    + 1 main .blend file")
-            if cross_drive_count > 0:
-                self._log_fn(f"    {ICON_WARN} {cross_drive_count} excluded (different drive)")
-            if missing_count > 0:
-                self._log_fn(f"    {ICON_WARN} {missing_count} missing")
-            if unreadable_count > 0:
-                self._log_fn(f"    {ICON_ERROR} {unreadable_count} unreadable")
-            self._log_fn(f"    {ICON_FOLDER} Total size: {format_size(total_size)}")
-
-    # ─── Upload logging ───────────────────────────────────────────────────────
-
-    def upload_step(
-        self,
-        step: int,
-        total_steps: int,
-        title: str,
-        detail: str = "",
-    ) -> None:
-        """Log an upload step starting (table row style)."""
-        w = self._trace_cols["total"]
-        title_w = w - 30
-        step_str = f"[{step}/{total_steps}]"
-
-        def _trunc(val: str, mx: int) -> str:
-            return (val[:mx - 1] + ".") if len(val) > mx else val
-
-        title_t = _trunc(title, title_w)
-        det_t = _trunc(detail, 18) if detail else ""
-
         if self.console and Text is not None:
-            line = Text(" ")
-            line.append(f"{step_str:<8}", style="cyan bold")
-            line.append(f"{title_t:<{title_w}} ", style="white")
-            line.append(f"{det_t:<18} ", style="dim")
-            line.append(f"{ICON_ARROW:>4}", style="cyan")
-            self.console.print(line)
-        else:
-            self._log_fn(f" {step_str:<8} {title_t:<40} {det_t:<18} {ICON_ARROW}")
-
-    def upload_complete(self, title: str) -> None:
-        """Log an upload step completed."""
-        if self.console:
-            self.console.print(f"    [green]{ICON_CHECK} {title}[/]")
-        else:
-            self._log_fn(f"    {ICON_CHECK} {title}")
-
-    # ─── General messages ─────────────────────────────────────────────────────
-
-    def info(self, msg: str) -> None:
-        """Print an info message."""
-        if self.console:
-            self.console.print(f"[cyan]{ICON_INFO}  {msg}[/]")
-        else:
-            self._log_fn(f"{ICON_INFO}  {msg}")
-
-    def success(self, msg: str) -> None:
-        """Print a success message."""
-        if self.console:
-            self.console.print(f"[bold green]{ICON_SUCCESS} {msg}[/]")
-        else:
-            self._log_fn(f"{ICON_SUCCESS}  {msg}")
-
-    def warning(self, msg: str) -> None:
-        """Print a warning message."""
-        if self.console:
-            self.console.print(f"[yellow]{ICON_WARN}  {msg}[/]")
-        else:
-            self._log_fn(f"{ICON_WARN}  {msg}")
-
-    def error(self, msg: str) -> None:
-        """Print an error message."""
-        if self.console:
-            self.console.print(f"[bold red]{ICON_ERROR} {msg}[/]")
-        else:
-            self._log_fn(f"{ICON_ERROR}  {msg}")
-
-    def log(self, msg: str) -> None:
-        """Print a plain message."""
-        self._print(msg)
-
-    # ─── Warn / prompt / fatal ───────────────────────────────────────────────
-
-    def warn_block(self, message: str, severity: str = "warning") -> None:
-        """Render a styled Panel for warnings/errors. Does NOT exit."""
-        border = "yellow" if severity == "warning" else "red"
-        icon = ICON_WARN if severity == "warning" else ICON_ERROR
-        label = "WARNING" if severity == "warning" else "ERROR"
-        if self.console and Panel is not None:
-            panel = Panel(
-                message,
-                title=f"[bold {border}]{icon} {label}[/]",
-                border_style=border,
-                padding=(0, 2),
-            )
-            self.console.print()
-            self.console.print(panel)
-        else:
-            self._log_fn("")
-            self._log_fn(f"{icon}  {label}: {message}")
-
-    def prompt(self, question: str, default: str = "") -> str:
-        """Styled input prompt. Returns the user's answer.
-
-        The question is rendered once via rich (or log_fn) and then
-        ``_input_fn`` is called with an empty visible prompt so the
-        text is not duplicated on screen.
-        """
-        if self.console:
-            self.console.print(f"[bold cyan]{ICON_INFO}  {question}[/]", end="")
-        else:
-            self._log_fn(f"{ICON_INFO}  {question}")
-        # Pass empty string as the visible prompt to _input_fn so the
-        # question isn't printed a second time by input().
-        return self._input_fn("", default)
-
-    def fatal(self, message: str) -> None:
-        """Print error, prompt to close, then ``sys.exit(1)``."""
-        self.error(message)
-        try:
-            self._input_fn("\nPress ENTER to close this window...", "")
-        except Exception:
-            pass
-        sys.exit(1)
-
-    def version_update(self, url: str, instructions: List[str]) -> None:
-        """Info Panel with URL and bulleted instructions for addon updates."""
-        if self.console and Panel is not None:
             body = Text()
-            body.append(url, style="bold cyan underline")
-            for line in instructions:
-                body.append(f"\n  - {line}")
-            panel = Panel(
+            if not has_issues:
+                body.append(f"{GLYPH_OK} ", style="sulu.ok_b")
+                body.append(f"{total} dependencies found", style="sulu.fg")
+            else:
+                body.append(f"{GLYPH_WARN} ", style="sulu.warn_b")
+                body.append(f"{total} dependencies found", style="sulu.fg")
+
+            if project_root:
+                body.append("\n")
+                body.append("Project root: ", style="sulu.muted")
+                body.append(str(project_root), style="sulu.fg")
+
+            # Inline issue summary
+            if has_issues:
+                body.append("\n")
+                parts = []
+                if cross_drive:
+                    parts.append(f"{cross_drive} cross-drive excluded")
+                if missing:
+                    parts.append(f"{missing} missing")
+                if unreadable:
+                    parts.append(f"{unreadable} unreadable")
+                body.append("Issues: ", style="sulu.muted")
+                body.append(", ".join(parts), style="sulu.warn")
+
+            if warning_text:
+                body.append("\n\n")
+                body.append(str(warning_text), style="sulu.warn")
+
+            border = "sulu.ok" if not has_issues else "sulu.warn"
+            panel = self._panel(
                 body,
-                title=f"[bold cyan]{ICON_INFO} Update Available[/]",
-                border_style="cyan",
-                padding=(0, 2),
+                title=Text(f"{GLYPH_HEX}  TRACE", style="sulu.dim"),
+                border_style=border,
+                style="sulu.well",
             )
             self.console.print()
             self.console.print(panel)
         else:
             self._log_fn("")
-            self._log_fn(f"{ICON_INFO}  Update Available")
-            self._log_fn(f"  {url}")
-            for line in instructions:
-                self._log_fn(f"  - {line}")
+            self._log_fn(f"Trace: {total} dependencies (missing={missing}, unreadable={unreadable}, cross_drive={cross_drive})")
+            if project_root:
+                self._log_fn(f"Project root: {project_root}")
+            if warning_text:
+                self._log_fn(warning_text)
 
-    # ─── Pack table ──────────────────────────────────────────────────────────
+    # ───────────────────── packing logging ─────────────────────
 
     def pack_start(self) -> None:
-        """Begin a new pack table (resets entries)."""
+        """Begin a manifest/pack listing."""
         self._pack_entries = []
-        if self.console:
+        if self.console and Text is not None:
             self.console.print()
+            self._rule("Manifest")
             w = self._trace_cols["total"]
-            self.console.print(f"[bold cyan] {'File':<{w - 24}} {'Size':>10} {'Status':>10}[/]")
-            self.console.print(f"[dim]{'-' * w}[/]")
+            file_w = max(20, w - 24)
+
+            header = Text("  ")
+            header.append(f"{'File':<{file_w}} ", style="sulu.muted")
+            header.append(f"{'Size':>10} ", style="sulu.muted")
+            header.append(f"{'':>3}", style="sulu.muted")
+            self.console.print(header)
+            self.console.print(Text("  " + (GLYPH_DASH * (max(0, w - 2))), style="sulu.stroke_subtle"))
         else:
             self._log_fn("")
-            self._log_fn(f" {'File':<50} {'Size':>10} {'Status':>10}")
+            self._log_fn("Manifest:")
             self._log_fn("-" * 70)
 
     def pack_entry(
@@ -777,193 +709,429 @@ class SubmitLogger:
         size: Optional[int] = None,
         status: str = "ok",
     ) -> None:
-        """Log a single pack entry row in real-time."""
+        """Log a single manifest entry row in real-time."""
         self._pack_entries.append({"index": index, "filepath": filepath, "size": size, "status": status})
         filename = Path(filepath).name
         size_str = format_size(size) if size else ""
         w = self._trace_cols["total"]
-        file_w = w - 24
+        file_w = max(20, w - 24)
 
-        def _trunc(val: str, mx: int) -> str:
-            return (val[:mx - 1] + ".") if len(val) > mx else val
-
-        name_t = _trunc(filename, file_w)
+        name_t = self._trunc(filename, file_w)
 
         if self.console and Text is not None:
-            line = Text(" ")
+            line = Text("  ")
             if status == "ok":
-                line.append(f"{name_t:<{file_w}} ", style="white")
-                line.append(f"{size_str:>10} ", style="dim")
-                line.append(f"{ICON_CHECK:>10}", style="green")
+                line.append(f"{name_t:<{file_w}} ", style="sulu.fg")
+                line.append(f"{size_str:>10} ", style="sulu.dim")
+                line.append(f"{GLYPH_OK:>3}", style="sulu.ok_b")
             elif status == "missing":
-                line.append(f"{name_t:<{file_w}} ", style="yellow")
-                line.append(f"{'':>10} ", style="dim")
-                line.append(f"{'MISS':>10}", style="yellow bold")
+                line.append(f"{name_t:<{file_w}} ", style="sulu.warn")
+                line.append(f"{'':>10} ", style="sulu.dim")
+                line.append(f"{GLYPH_WARN:>3}", style="sulu.warn_b")
             else:
-                line.append(f"{name_t:<{file_w}} ", style="red")
-                line.append(f"{'':>10} ", style="dim")
-                line.append(f"{'ERR':>10}", style="red bold")
+                line.append(f"{name_t:<{file_w}} ", style="sulu.err")
+                line.append(f"{'':>10} ", style="sulu.dim")
+                line.append(f"{GLYPH_FAIL:>3}", style="sulu.err_b")
             self.console.print(line)
         else:
-            status_str = ICON_CHECK if status == "ok" else ("MISS" if status == "missing" else "ERR")
-            self._log_fn(f" {name_t:<50} {size_str:>10} {status_str:>10}")
+            status_str = GLYPH_OK if status == "ok" else (GLYPH_WARN if status == "missing" else GLYPH_FAIL)
+            self._log_fn(f"  {name_t:<50} {size_str:>10} {status_str:>3}")
 
     def pack_end(
         self,
         ok_count: int,
         total_size: int = 0,
-        title: str = "Pack Complete",
+        title: str = "Manifest complete",
     ) -> None:
-        """Print packing summary as a styled Panel."""
-        if self.console and Panel is not None and Text is not None:
+        """Print manifest summary as a styled panel."""
+        if self.console and Text is not None:
             body = Text()
-            body.append(f"{ICON_CHECK} {ok_count} files", style="bold green")
-            body.append(f"  |  {format_size(total_size)}", style="cyan")
+            body.append(f"{GLYPH_OK} ", style="sulu.ok_b")
+            body.append(f"{ok_count} file(s)", style="sulu.fg")
+            body.append("  ·  ", style="sulu.stroke_subtle")
+            body.append(f"{format_size(total_size)}", style="sulu.muted")
 
-            panel = Panel(
+            panel = self._panel(
                 body,
-                title=f"[bold white]{ICON_PACKAGE} {title}[/]",
-                border_style="green",
-                padding=(0, 2),
+                title=Text(f"{GLYPH_HEX}  {title.upper()}", style="sulu.dim"),
+                border_style="sulu.ok",
+                style="sulu.well",
             )
             self.console.print()
             self.console.print(panel)
         else:
             self._log_fn("")
-            self._log_fn(f"{ICON_PACKAGE}  {title}: {ok_count} files, {format_size(total_size)}")
+            self._log_fn(f"{title}: {ok_count} files, {format_size(total_size)}")
 
-    # ─── Zip table (structured callbacks from BAT ZipTransferrer) ───────────
+    # ───────────────────── zip callbacks (BAT) ─────────────────────
 
     def zip_start(self, total_files: int, total_bytes: int) -> None:
-        """Begin zip progress table."""
+        """Begin zip progress listing (structured callbacks from packer)."""
         self._zip_total = total_files
-        if self.console:
+        if self.console and Text is not None:
             self.console.print()
+            self._rule("Archive")
             w = self._trace_cols["total"]
-            self.console.print(
-                f"[bold cyan] {'File':<{w - 30}} {'Size':>10} {'Method':>16}[/]"
-            )
-            self.console.print(f"[dim]{'-' * w}[/]")
+            file_w = max(20, w - 30)
+
+            header = Text("  ")
+            header.append(f"{'File':<{file_w}} ", style="sulu.muted")
+            header.append(f"{'Size':>10} ", style="sulu.muted")
+            header.append(f"{'Mode':>16}", style="sulu.muted")
+            self.console.print(header)
+            self.console.print(Text("  " + (GLYPH_DASH * (max(0, w - 2))), style="sulu.stroke_subtle"))
         else:
             self._log_fn("")
-            self._log_fn(f" {'File':<42} {'Size':>10} {'Method':>16}")
+            self._log_fn("Archive:")
             self._log_fn("-" * 70)
 
     def zip_entry(self, index: int, total: int, arcname: str, size: int, method: str) -> None:
-        """Log a single file being zipped (structured callback from BAT)."""
+        """Log a single file being zipped (structured callback)."""
         w = self._trace_cols["total"]
-        file_w = w - 30
-
-        def _trunc(val: str, mx: int) -> str:
-            return (val[:mx - 1] + ".") if len(val) > mx else val
-
-        name_t = _trunc(arcname, file_w)
+        file_w = max(20, w - 30)
+        name_t = self._trunc(arcname, file_w)
         size_str = format_size(size) if size else ""
 
-        # Choose icon based on method
-        is_store = method.lower().startswith("store")
-        icon = ICON_CHECK if is_store else ICON_PACKAGE
-
         if self.console and Text is not None:
-            line = Text(" ")
-            line.append(f"{name_t:<{file_w}} ", style="white")
-            line.append(f"{size_str:>10} ", style="dim")
-            line.append(f"{icon} {method:>13}", style="green" if is_store else "cyan")
+            line = Text("  ")
+            line.append(f"{name_t:<{file_w}} ", style="sulu.fg")
+            line.append(f"{size_str:>10} ", style="sulu.dim")
+            line.append(f"{method:>16}", style="sulu.muted")
             self.console.print(line)
         else:
-            self._log_fn(f" {name_t:<42} {size_str:>10} {icon} {method:>13}")
+            self._log_fn(f"  {name_t:<42} {size_str:>10} {method:>16}")
 
     def zip_done(self, zippath: str, total_files: int, total_bytes: int, elapsed: float) -> None:
         """Print zip completion summary."""
-        if self.console and Panel is not None:
-            body = (
-                f"{ICON_CHECK} {total_files} file(s)  |  "
-                f"{format_size(total_bytes)}  |  "
-                f"{elapsed:.1f}s"
-            )
-            panel = Panel(
+        if self.console and Text is not None:
+            body = Text()
+            body.append(f"{GLYPH_OK} ", style="sulu.ok_b")
+            body.append(f"{total_files} file(s)", style="sulu.fg")
+            body.append("  ·  ", style="sulu.stroke_subtle")
+            body.append(f"{format_size(total_bytes)}", style="sulu.muted")
+            body.append("  ·  ", style="sulu.stroke_subtle")
+            body.append(f"{elapsed:.1f}s", style="sulu.muted")
+
+            panel = self._panel(
                 body,
-                title=f"[bold green]{ICON_SUCCESS} Zip Complete[/]",
-                border_style="green",
-                padding=(0, 2),
+                title=Text(f"{GLYPH_HEX}  ARCHIVE READY", style="sulu.dim"),
+                border_style="sulu.ok",
+                style="sulu.well",
             )
             self.console.print()
             self.console.print(panel)
         else:
             self._log_fn("")
-            self._log_fn(
-                f"{ICON_SUCCESS}  Zip complete: {total_files} files, "
-                f"{format_size(total_bytes)}, {elapsed:.1f}s"
-            )
+            self._log_fn(f"Archive ready: {total_files} files, {format_size(total_bytes)}, {elapsed:.1f}s")
 
-    # ─── Upload table ────────────────────────────────────────────────────────
+    # ───────────────────── upload / transfer ─────────────────────
 
     def upload_start(self, total: int) -> None:
-        """Begin a new upload table."""
-        self._upload_entries = []
+        """Begin the upload phase."""
         self._upload_total = total
-        if self.console:
-            self.console.print()
-            w = self._trace_cols["total"]
-            self.console.print(f"[bold cyan] {'Step':<8} {'Action':<{w - 30}} {'Detail':<18} {'':>4}[/]")
-            self.console.print(f"[dim]{'-' * w}[/]")
-        else:
-            self._log_fn("")
-            self._log_fn(f" {'Step':<8} {'Action':<40} {'Detail':<18}")
-            self._log_fn("-" * 70)
+        self._upload_step = 0
+        self._transfer_active = False
+        self._transfer_last_line_count = 0
+        self._last_progress_time = 0.0
 
-    def upload_entry(
+    def upload_step(
         self,
         step: int,
-        action: str,
+        total_steps: int,
+        title: str,
         detail: str = "",
-        status: str = "ok",
     ) -> None:
-        """Log a single upload entry row."""
-        self._upload_entries.append({"step": step, "action": action, "detail": detail, "status": status})
-        total = getattr(self, "_upload_total", step)
-        step_str = f"[{step}/{total}]"
-        w = self._trace_cols["total"]
-        act_w = w - 30
-
-        def _trunc(val: str, mx: int) -> str:
-            return (val[:mx - 1] + ".") if len(val) > mx else val
-
-        act_t = _trunc(action, act_w)
-        det_t = _trunc(detail, 18)
+        """Start a transfer substage - shows title and prepares for progress bar."""
+        self._upload_step = step
+        self._transfer_title = title
+        self._transfer_detail = detail
+        self._transfer_active = True
+        self._transfer_cur = 0
+        self._transfer_total = 0
 
         if self.console and Text is not None:
-            line = Text(" ")
-            line.append(f"{step_str:<8}", style="cyan bold")
-            line.append(f"{act_t:<{act_w}} ", style="white")
-            line.append(f"{det_t:<18} ", style="dim")
-            if status == "ok":
-                line.append(f"{ICON_CHECK:>4}", style="green")
-            elif status == "in_progress":
-                line.append(f"{ICON_ARROW:>4}", style="cyan")
-            else:
-                line.append(f"{ICON_ERROR:>4}", style="red bold")
-            self.console.print(line)
+            self.console.print()
+            # Substage header
+            step_str = f"[{step}/{total_steps}]"
+            header = Text()
+            header.append(f"  {step_str} ", style="sulu.accent")
+            header.append(title, style="sulu.title")
+            if detail:
+                header.append("  ", style="sulu.stroke_subtle")
+                header.append(detail, style="sulu.dim")
+            self.console.print(header)
+
+            # Reset progress state
+            self._transfer_last_line_count = 0
+            self._last_progress_time = 0.0
         else:
-            status_str = ICON_CHECK if status == "ok" else (ICON_ARROW if status == "in_progress" else ICON_ERROR)
-            self._log_fn(f" {step_str:<8} {act_t:<40} {det_t:<18} {status_str}")
+            self._log_fn(f"\n[{step}/{total_steps}] {title} {detail}")
+
+    def _build_progress_panel(self, cur: int, total: int) -> Any:
+        """Build a progress bar panel renderable."""
+        if not self.console or Text is None:
+            return ""
+
+        width = 80
+        try:
+            width = int(self.console.width or 80)
+        except Exception:
+            width = 80
+
+        # Calculate bar width (account for panel borders and padding)
+        bar_width = max(20, width - 8)
+
+        if total > 0:
+            pct = cur / max(total, 1)
+            filled = int(bar_width * pct)
+            empty = bar_width - filled
+
+            # Build the progress bar with blue fill
+            bar = Text()
+            bar.append("█" * filled, style="sulu.accent")
+            bar.append("░" * empty, style="sulu.stroke_subtle")
+
+            # Stats line
+            stats = Text()
+            stats.append(f"{pct * 100:5.1f}%", style="sulu.accent")
+            stats.append("  ", style="sulu.stroke_subtle")
+            stats.append(f"{format_size(cur)}", style="sulu.fg")
+            stats.append(" / ", style="sulu.dim")
+            stats.append(f"{format_size(total)}", style="sulu.muted")
+        else:
+            # Indeterminate - pulsing effect
+            bar = Text("░" * bar_width, style="sulu.stroke_subtle")
+            stats = Text()
+            stats.append(f"{format_size(cur)}", style="sulu.fg")
+            stats.append(" transferred", style="sulu.dim")
+
+        # Combine bar and stats
+        body = Text()
+        body.append(bar)
+        body.append("\n")
+        body.append(stats)
+
+        return self._panel(
+            body,
+            border_style="sulu.accent",
+            style="sulu.well",
+            padding=(0, 1),
+        )
+
+    def transfer_progress(self, cur: int, total: int) -> None:
+        """Update the transfer progress bar."""
+        self._transfer_cur = cur
+        self._transfer_total = total
+
+        if self.console and Text is not None:
+            self._render_progress_bar(cur, total)
+        else:
+            # Plain text fallback
+            if total > 0:
+                pct = (cur / max(total, 1)) * 100
+                sys.stderr.write(f"\r  {format_size(cur)} / {format_size(total)} ({pct:.1f}%) ")
+                sys.stderr.flush()
+
+    def _render_progress_bar(self, cur: int, total: int) -> None:
+        """Render/update the progress bar panel with rate limiting to reduce flicker."""
+        if not self.console or Text is None:
+            return
+
+        # Rate limit: only update ~10 times per second to reduce flicker
+        now = time.time()
+        if self._transfer_last_line_count > 0 and (now - self._last_progress_time) < 0.1:
+            return
+        self._last_progress_time = now
+
+        panel = self._build_progress_panel(cur, total)
+
+        # Clear previous lines and render
+        if self._transfer_last_line_count > 0:
+            # Hide cursor, move up, clear, print, show cursor - all in one write
+            self.console.file.write(f"\033[?25l\033[{self._transfer_last_line_count}A\033[J")
+            self.console.file.flush()
+
+        self.console.print(panel)
+
+        # Show cursor again
+        self.console.file.write("\033[?25h")
+        self.console.file.flush()
+
+        self._transfer_last_line_count = 4
+
+    def upload_complete(self, title: str) -> None:
+        """Mark current transfer substage as complete."""
+        self._transfer_active = False
+
+        if self.console and Text is not None:
+            # Clear the progress bar
+            if self._transfer_last_line_count > 0:
+                self.console.file.write(f"\033[{self._transfer_last_line_count}A\033[J")
+                self.console.file.flush()
+                self._transfer_last_line_count = 0
+
+            # Show completion with stats
+            body = Text()
+            body.append(f"{GLYPH_OK} ", style="sulu.ok_b")
+            body.append(title, style="sulu.fg")
+            if self._transfer_total > 0:
+                body.append("  ", style="sulu.stroke_subtle")
+                body.append(f"{format_size(self._transfer_total)}", style="sulu.dim")
+
+            panel = self._panel(
+                body,
+                border_style="sulu.ok",
+                style="sulu.well",
+                padding=(0, 1),
+            )
+            self.console.print(panel)
+        else:
+            sys.stderr.write("\n")
+            sys.stderr.flush()
+            self._log_fn(f"  {GLYPH_OK} {title}")
 
     def upload_end(self, elapsed: float) -> None:
-        """Print upload completion as a styled Panel."""
-        if self.console and Panel is not None:
-            panel = Panel(
-                f"{ICON_CHECK} All files transferred  |  {elapsed:.1f}s",
-                title=f"[bold green]{ICON_SUCCESS} Upload Complete[/]",
-                border_style="green",
-                padding=(0, 2),
+        """Final upload completion message."""
+        if self.console and Text is not None:
+            self.console.print()
+            body = Text()
+            body.append(f"{GLYPH_OK} ", style="sulu.ok_b")
+            body.append("Transfer complete", style="sulu.title")
+            body.append("  ·  ", style="sulu.stroke_subtle")
+            body.append(f"{elapsed:.1f}s", style="sulu.muted")
+
+            panel = self._panel(
+                body,
+                title=Text(f"{GLYPH_HEX}  UPLOAD", style="sulu.dim"),
+                border_style="sulu.ok",
+                style="sulu.well",
+            )
+            self.console.print(panel)
+        else:
+            self._log_fn(f"\nTransfer complete in {elapsed:.1f}s")
+
+    # ───────────────────── general messages ─────────────────────
+
+    def info(self, msg: str) -> None:
+        if self.console:
+            self.console.print(f"[sulu.dim]{GLYPH_INFO}[/] [sulu.muted]{msg}[/]")
+        else:
+            self._log_fn(f"[i] {msg}")
+
+    def success(self, msg: str) -> None:
+        if self.console:
+            self.console.print(f"[sulu.ok_b]{GLYPH_OK}[/] [sulu.fg]{msg}[/]")
+        else:
+            self._log_fn(f"{GLYPH_OK} {msg}")
+
+    def warning(self, msg: str) -> None:
+        if self.console:
+            self.console.print(f"[sulu.warn_b]{GLYPH_WARN}[/] [sulu.warn]{msg}[/]")
+        else:
+            self._log_fn(f"! {msg}")
+
+    def error(self, msg: str) -> None:
+        if self.console:
+            self.console.print(f"[sulu.err_b]{GLYPH_FAIL}[/] [sulu.err]{msg}[/]")
+        else:
+            self._log_fn(f"X {msg}")
+
+    def log(self, msg: str) -> None:
+        self._print(msg)
+
+    # ───────────────────── warn / prompt / fatal ─────────────────────
+
+    def warn_block(self, message: str, severity: str = "warning") -> None:
+        """Render a styled Panel for warnings/errors. Does NOT exit."""
+        if not self.console or Panel is None or Text is None:
+            tag = "WARNING" if severity == "warning" else "ERROR"
+            self._log_fn(f"{tag}: {message}")
+            return
+
+        border = "sulu.warn" if severity == "warning" else "sulu.err"
+        glyph = GLYPH_WARN if severity == "warning" else GLYPH_FAIL
+        title = Text(f"{glyph}  {severity.upper()}", style="sulu.muted")
+        panel = self._panel(
+            Text(str(message), style="sulu.fg"),
+            title=title,
+            border_style=border,
+            style="sulu.well",
+        )
+        self.console.print()
+        self.console.print(panel)
+
+    def prompt(self, question: str, default: str = "") -> str:
+        """Styled input prompt. Returns the user's answer."""
+        if self.console:
+            # Render question once; avoid duplicate prompt from input()
+            self.console.print(f"[sulu.dim]{GLYPH_INFO}[/] [sulu.fg]{question}[/]", end="")
+        else:
+            self._log_fn(question)
+        return self._input_fn("", default)
+
+    def fatal(self, message: str) -> None:
+        """Print error, prompt to close, then exit."""
+        # Use a block for fatal errors
+        self.warn_block(message, severity="error")
+        try:
+            self._input_fn("\nPress ENTER to close this window...", "")
+        except Exception:
+            pass
+        sys.exit(1)
+
+    def version_update(self, url: str, instructions: List[str]) -> None:
+        """Panel with URL + steps for addon updates."""
+        if self.console and Panel is not None and Text is not None:
+            body = Text()
+            body.append(str(url), style="sulu.link")
+            for line in instructions:
+                body.append("\n")
+                body.append(f"{GLYPH_BULLET} ", style="sulu.dim")
+                body.append(str(line), style="sulu.fg")
+
+            panel = self._panel(
+                body,
+                title=Text(f"{GLYPH_INFO}  UPDATE AVAILABLE", style="sulu.muted"),
+                border_style="sulu.accent",
+                style="sulu.panel",
             )
             self.console.print()
             self.console.print(panel)
         else:
-            self._log_fn("")
-            self._log_fn(f"{ICON_SUCCESS}  Upload complete in {elapsed:.1f}s")
+            self._log_fn(f"Update available: {url}")
+            for line in instructions:
+                self._log_fn(f" - {line}")
 
-    # ─── Test report ─────────────────────────────────────────────────────────
+    # ───────────────────── storage connection ─────────────────────
+
+    def storage_connect(self, status: str = "connecting") -> None:
+        """Log storage connection status."""
+        if status == "connecting":
+            self.info("Connecting to storage…")
+        else:
+            if self.console:
+                self.console.print(f"[sulu.ok_b]{GLYPH_OK}[/] [sulu.fg]Storage connected[/]")
+            else:
+                self._log_fn("Storage connected")
+
+    # ───────────────────── job complete ─────────────────────
+
+    def job_complete(self, web_url: str) -> None:
+        """Log that the job page was opened in the browser."""
+        if self.console and Panel is not None and Text is not None:
+            body = Text()
+            body.append(str(web_url), style="sulu.link")
+            panel = self._panel(
+                body,
+                title=Text(f"{GLYPH_LINK}  OPENED IN BROWSER", style="sulu.muted"),
+                border_style="sulu.ok",
+                style="sulu.panel",
+            )
+            self.console.print(panel)
+        else:
+            self._log_fn(f"Opened in browser: {web_url}")
+
+    # ───────────────────── reports (test / no-submit) ─────────────────────
 
     def test_report(
         self,
@@ -981,134 +1149,85 @@ class SubmitLogger:
         report_path: Optional[str] = None,
         shorten_fn: Optional[Callable[[str], str]] = None,
     ) -> None:
-        """Render the full test-mode report."""
-        _sh = shorten_fn or str
+        """Render the full test-mode report (kept for compatibility)."""
+        _sh = shorten_fn or (lambda s: s)
         blend_size = 0
         try:
             blend_size = os.path.getsize(blend_path)
         except Exception:
             pass
 
-        # Header
-        if self.console and Panel is not None:
-            panel = Panel(
-                f"Upload type: {upload_type}",
-                title=f"[bold yellow]{ICON_SEARCH} SUBMISSION TEST MODE[/]",
-                border_style="yellow",
-                padding=(0, 2),
+        if self.console and Panel is not None and Text is not None:
+            panel = self._panel(
+                Text(f"Upload type: {upload_type}", style="sulu.fg"),
+                title=Text(f"{GLYPH_INFO}  TEST MODE", style="sulu.muted"),
+                border_style="sulu.warn",
+                style="sulu.panel",
             )
             self.console.print()
             self.console.print(panel)
         else:
-            self._log_fn("")
-            self._log_fn("=" * 70)
-            self._log_fn(f"  SUBMISSION TEST MODE - {upload_type}")
-            self._log_fn("=" * 70)
+            self._log_fn(f"TEST MODE — {upload_type}")
 
-        # Info lines
-        self.info(f"Blend file: {Path(blend_path).name}  ({format_size(blend_size)})")
-        self.info(f"Dependencies traced: {dep_count}")
+        self.info(f"Blend: {Path(blend_path).name} ({format_size(blend_size)})")
+        self.info(f"Dependencies: {dep_count}")
         self.info(f"Project root: {_sh(project_root)}")
-        self.info(f"Same-drive: {same_drive}  |  Cross-drive: {cross_drive}")
+        self.info(f"Same-drive: {same_drive}  ·  Cross-drive: {cross_drive}")
 
-        # Breakdown table
+        # Breakdown table (minimal)
         if self.console and Table is not None:
             table = Table(
-                title="Dependency Breakdown",
+                title="Dependency breakdown",
                 show_header=True,
-                header_style="bold cyan",
-                border_style="dim",
-                box=box.SIMPLE_HEAD if box else None,
+                header_style="sulu.muted",
+                border_style="sulu.stroke_subtle",
+                box=SULU_TABLE_BOX,
                 padding=(0, 1),
                 show_edge=False,
+                expand=True,
             )
-            table.add_column("Extension", style="white")
-            table.add_column("Count", justify="right", style="cyan")
+            table.add_column("Ext", style="sulu.fg")
+            table.add_column("Count", justify="right", style="sulu.muted")
             for ext, cnt in sorted(by_ext.items(), key=lambda x: -x[1]):
                 table.add_row(ext, str(cnt))
             table.add_row("", "")
-            table.add_row("Total size", format_size(total_size), style="bold")
+            table.add_row("Total", format_size(total_size))
             self.console.print()
             self.console.print(table)
         else:
-            self._log_fn("")
-            self._log_fn("  Dependency breakdown:")
+            self._log_fn("Dependency breakdown:")
             for ext, cnt in sorted(by_ext.items(), key=lambda x: -x[1]):
-                self._log_fn(f"    {ext:12} : {cnt:4} files")
-            self._log_fn(f"    Total size: {format_size(total_size)}")
+                self._log_fn(f"  {ext:12} : {cnt:4} files")
+            self._log_fn(f"  Total size: {format_size(total_size)}")
 
-        # Issues
+        # Issues block
         has_issues = bool(missing or unreadable or cross_drive_files)
         if has_issues:
-            issues_lines: List[str] = []
+            lines: List[str] = []
             if missing:
-                issues_lines.append(f"MISSING ({len(missing)}):")
+                lines.append(f"MISSING ({len(missing)}):")
                 for p in missing:
-                    issues_lines.append(f"  - {_sh(p)}")
+                    lines.append(f"  - {_sh(p)}")
             if unreadable:
-                issues_lines.append(f"UNREADABLE ({len(unreadable)}):")
+                if lines:
+                    lines.append("")
+                lines.append(f"UNREADABLE ({len(unreadable)}):")
                 for p, err in unreadable:
-                    issues_lines.append(f"  - {_sh(p)}")
-                    issues_lines.append(f"    {err}")
+                    lines.append(f"  - {_sh(p)}")
+                    lines.append(f"    {err}")
             if cross_drive_files:
-                issues_lines.append(f"CROSS-DRIVE ({len(cross_drive_files)}):")
+                if lines:
+                    lines.append("")
+                lines.append(f"CROSS-DRIVE ({len(cross_drive_files)}):")
                 for p in cross_drive_files:
-                    issues_lines.append(f"  - {_sh(p)}")
-            if self.console and Panel is not None:
-                panel = Panel(
-                    "\n".join(issues_lines),
-                    title=f"[bold yellow]{ICON_WARN} Issues[/]",
-                    border_style="yellow",
-                    padding=(0, 2),
-                )
-                self.console.print()
-                self.console.print(panel)
-            else:
-                self._log_fn("")
-                self._log_fn(f"{ICON_WARN}  Issues:")
-                for line in issues_lines:
-                    self._log_fn(f"  {line}")
+                    lines.append(f"  - {_sh(p)}")
 
-        # Report path
+            self.warn_block("\n".join(lines), severity="warning")
+
         if report_path:
             self.info(f"Report saved: {report_path}")
 
-        # Summary
-        total_issues = len(missing) + len(unreadable) + len(cross_drive_files)
-        if self.console and Panel is not None:
-            if total_issues == 0:
-                body = f"[green]{ICON_CHECK} No issues detected. Ready for submission.[/]"
-            else:
-                parts = []
-                if missing:
-                    parts.append(f"{len(missing)} missing")
-                if unreadable:
-                    parts.append(f"{len(unreadable)} unreadable")
-                if cross_drive_files and upload_type == "PROJECT":
-                    parts.append(f"{len(cross_drive_files)} cross-drive (excluded)")
-                body = f"[yellow]{ICON_WARN} {total_issues} issue(s): {', '.join(parts)}[/]"
-            body += f"\n[dim]TEST MODE - No actual submission performed.[/]"
-            panel = Panel(
-                body,
-                title="[bold white]SUMMARY[/]",
-                border_style="bright_blue",
-                padding=(0, 2),
-            )
-            self.console.print()
-            self.console.print(panel)
-        else:
-            self._log_fn("")
-            self._log_fn("=" * 70)
-            self._log_fn("  SUMMARY")
-            self._log_fn("=" * 70)
-            if total_issues == 0:
-                self._log_fn(f"  {ICON_CHECK} No issues detected. Ready for submission.")
-            else:
-                self._log_fn(f"  {ICON_WARN} {total_issues} issue(s) to review")
-            self._log_fn("  [TEST MODE] No actual submission performed.")
-            self._log_fn("=" * 70)
-
-    # ─── No-submit report ────────────────────────────────────────────────────
+        self.warn_block("TEST MODE — no upload or job registration performed.", severity="warning")
 
     def no_submit_report(
         self,
@@ -1128,119 +1247,58 @@ class SubmitLogger:
         if upload_type == "PROJECT":
             lines.append(f"Project root: {common_path}")
             lines.append(f"Dependencies: {rel_manifest_count}")
-            lines.append(f"Main blend S3 key: {main_blend_s3}")
+            lines.append(f"Main blend key: {main_blend_s3}")
         else:
-            lines.append(f"Zip file: {zip_file}")
+            lines.append(f"Archive: {zip_file}")
             if zip_size:
-                lines.append(f"Zip size: {format_size(zip_size)}")
+                lines.append(f"Archive size: {format_size(zip_size)}")
         lines.append(f"Storage estimate: {format_size(required_storage)}")
         lines.append("")
         lines.append("Skipping upload and job registration.")
 
-        if self.console and Panel is not None:
-            panel = Panel(
-                "\n".join(lines),
-                title=f"[bold yellow]{ICON_INFO} NO-SUBMIT MODE[/]",
-                border_style="yellow",
-                padding=(0, 2),
+        if self.console and Panel is not None and Text is not None:
+            panel = self._panel(
+                Text("\n".join(lines), style="sulu.fg"),
+                title=Text(f"{GLYPH_INFO}  NO-SUBMIT MODE", style="sulu.muted"),
+                border_style="sulu.warn",
+                style="sulu.panel",
             )
             self.console.print()
             self.console.print(panel)
         else:
-            self._log_fn("")
-            self._log_fn("=" * 70)
-            self._log_fn("  NO-SUBMIT MODE")
-            self._log_fn("=" * 70)
+            self._log_fn("NO-SUBMIT MODE")
             for line in lines:
                 self._log_fn(f"  {line}")
-            self._log_fn("=" * 70)
 
-    # ─── Missing/unreadable summary ──────────────────────────────────────────
+    # Compatibility aliases (older names)
+    def pack_file(self, index: int, total: int, filepath: str, size: Optional[int] = None, status: str = "ok") -> None:
+        self.pack_entry(index, filepath, size=size, status=status)
 
-    def missing_unreadable_summary(
+    def pack_summary(
         self,
-        missing: List[str],
-        unreadable: List[Tuple[str, str]],
-        header: str = "Dependency check",
-        mac_permission_help: Optional[str] = None,
+        ok_count: int,
+        missing_count: int = 0,
+        unreadable_count: int = 0,
+        cross_drive_count: int = 0,
+        total_size: int = 0,
     ) -> None:
-        """Styled Panel listing missing/unreadable issues."""
-        if not missing and not unreadable:
-            return
-
-        lines: List[str] = []
-        if missing:
-            lines.append(f"Missing files: {len(missing)}")
-            for p in missing:
-                lines.append(f"  - {p}")
-        if unreadable:
-            if lines:
-                lines.append("")
-            lines.append(f"Unreadable files: {len(unreadable)}")
-            for p, err in unreadable:
-                lines.append(f"  - {p}")
-                lines.append(f"    {err}")
-        if mac_permission_help:
-            lines.append("")
-            lines.append(mac_permission_help)
-
-        if self.console and Panel is not None:
-            panel = Panel(
-                "\n".join(lines),
-                title=f"[bold yellow]{ICON_WARN} {header}[/]",
-                border_style="yellow",
-                padding=(0, 2),
-            )
-            self.console.print()
-            self.console.print(panel)
-        else:
-            self._log_fn("")
-            self._log_fn(f"{ICON_WARN}  {header}: issues detected")
-            for line in lines:
-                self._log_fn(f"  {line}")
-
-    # ─── Storage connection ──────────────────────────────────────────────────
-
-    def storage_connect(self, status: str = "connecting") -> None:
-        """Log storage connection status with a key icon."""
-        if status == "connecting":
-            if self.console and Text is not None:
-                line = Text()
-                line.append(f" {ICON_KEY} ", style="yellow")
-                line.append("Connecting to storage...", style="dim")
-                self.console.print(line)
-            else:
-                self._log_fn(f" {ICON_KEY}  Connecting to storage...")
-        else:
-            if self.console and Text is not None:
-                line = Text()
-                line.append(f" {ICON_KEY} ", style="green")
-                line.append("Connected to storage", style="green")
-                self.console.print(line)
-            else:
-                self._log_fn(f" {ICON_KEY}  Connected to storage")
-
-    # ─── Job complete ────────────────────────────────────────────────────────
-
-    def job_complete(self, web_url: str) -> None:
-        """Log that the job page was opened in the browser."""
-        if self.console and Panel is not None:
-            panel = Panel(
-                f"[cyan]{web_url}[/]",
-                title=f"[bold green]{ICON_CHECK} Opened in Browser[/]",
-                border_style="green",
-                padding=(0, 2),
-            )
-            self.console.print(panel)
-        else:
-            self._log_fn(f"{ICON_CHECK}  Opened {web_url} in your browser.")
+        # Keep old behavior: print as a warning block if issues exist
+        if missing_count or unreadable_count or cross_drive_count:
+            parts = []
+            if cross_drive_count:
+                parts.append(f"{cross_drive_count} cross-drive excluded")
+            if missing_count:
+                parts.append(f"{missing_count} missing")
+            if unreadable_count:
+                parts.append(f"{unreadable_count} unreadable")
+            self.warn_block("Issues: " + ", ".join(parts), severity="warning")
+        self.pack_end(ok_count=ok_count, total_size=total_size, title="Packing complete")
 
 
-# ─── Factory function ─────────────────────────────────────────────────────────
+# ─────────────────────────── Factory ───────────────────────────
 
 def create_logger(
     log_fn: Optional[Callable[[str], None]] = None,
     input_fn: Optional[Callable[[str, str], str]] = None,
 ) -> SubmitLogger:
-    """Create a SubmitLogger instance."""
     return SubmitLogger(log_fn, input_fn=input_fn)
