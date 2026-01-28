@@ -179,33 +179,60 @@ GLYPH_LINK = "⟐" if _UNICODE else "*"
 
 # NOTE: Logo lines must have NO trailing whitespace to prevent wrapping issues.
 # The _normalize_logo_mark function also strips as a safety measure.
-LOGO_MARK = "\n".join([
-    "                                        ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀",
-    "                                    ▄▖█▌█▌█▌█▌▀▘",
-    "                                  █▌█▌█▌█▌",
-    "                                █▌█▌█▌▀▘",
-    "                              █▌█▌█▌█▌",
-    "                            █▌█▌█▌█▌        █▌",
-    "  █████████  █████  █████   █▌█▌█▌          █▌   █████       █████  █████",
-    " ███░░░░░███░░███  ░░███    █▌█▌█▌          █▌  ░░███       ░░███  ░░███",
-    "░███    ░░░  ░███   ░███    █▌█▌            █▌   ░███        ░███   ░███",
-    "░░█████████  ░███   ░███    █▌█▌          █▌█▌   ░███        ░███   ░███",
-    " ░░░░░░░░███ ░███   ░███    █▌▀▘          █▌█▌   ░███        ░███   ░███",
-    " ███    ░███ ░███   ░███    █▌          ▄▖█▌█▌   ░███      █ ░███   ░███",
-    "░░█████████  ░░████████     █▌          █▌█▌█▌   ███████████ ░░████████",
-    " ░░░░░░░░░    ░░░░░░░░      █▌        █▌█▌█▌█▌  ░░░░░░░░░░░   ░░░░░░░░",
-    "                                The Superluminal Computing Corporation",
-    "                                  ▄▖█▌█▌█▌▀▘",
-    "                                ▄▖█▌█▌█▌▀▘",
-    "                            ▄▖█▌█▌█▌▀▘",
-    "                ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀▘",
-])
+LOGO_MARK = "\n".join(
+    [
+        "                                        ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀",
+        "                                    ▄▖█▌█▌█▌█▌▀▘",
+        "                                  █▌█▌█▌█▌",
+        "                                █▌█▌█▌▀▘",
+        "                              █▌█▌█▌█▌",
+        "                            █▌█▌█▌█▌        █▌",
+        "  █████████  █████  █████   █▌█▌█▌          █▌   █████       █████  █████",
+        " ███░░░░░███░░███  ░░███    █▌█▌█▌          █▌  ░░███       ░░███  ░░███",
+        "░███    ░░░  ░███   ░███    █▌█▌            █▌   ░███        ░███   ░███",
+        "░░█████████  ░███   ░███    █▌█▌          █▌█▌   ░███        ░███   ░███",
+        " ░░░░░░░░███ ░███   ░███    █▌▀▘          █▌█▌   ░███        ░███   ░███",
+        " ███    ░███ ░███   ░███    █▌          ▄▖█▌█▌   ░███      █ ░███   ░███",
+        "░░█████████  ░░████████     █▌          █▌█▌█▌   ███████████ ░░████████",
+        " ░░░░░░░░░    ░░░░░░░░      █▌        █▌█▌█▌█▌  ░░░░░░░░░░░   ░░░░░░░░",
+        "                                The Superluminal Computing Corporation",
+        "                                  ▄▖█▌█▌█▌▀▘",
+        "                                ▄▖█▌█▌█▌▀▘",
+        "                            ▄▖█▌█▌█▌▀▘",
+        "                ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀▘",
+    ]
+)
 
 # A conservative ASCII fallback for legacy terminals that don't reliably render
 # the block glyphs above.
-LOGO_MARK_ASCII = "\n".join([
-    "  SUPERLUMINAL COMPUTING CORPORATION",
-    "  S U L U   S U B M I T T E R",
+LOGO_MARK_ASCII = "\n".join(
+    [
+        "  SUPERLUMINAL COMPUTING CORPORATION",
+        "  S U L U   S U B M I T T E R",
+    ]
+)
+
+# Wide logo variant (prefer this when terminal is wide enough to show it).
+LOGO_WIDE = "\n".join([
+    "                                                                              ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀",
+    "                                                                          ▄▖█▌█▌█▌█▌▀▘",
+    "                                                                        █▌█▌█▌█▌",
+    "                                                                      █▌█▌█▌▀▘",
+    "                                                                    █▌█▌█▌█▌",
+    "                                                                  █▌█▌█▌█▌        █▌",
+    "  █████████  █████  ████████████████  ██████████ ███████████      █▌█▌█▌          █▌   █████      █████  ███████████   █████████████████   █████  █████████  █████",
+    " ███░░░░░███░░███  ░░███░░███░░░░░███░░███░░░░░█░░███░░░░░███     █▌█▌█▌          █▌  ░░███      ░░███  ░░███░░██████ ██████░░███░░██████ ░░███  ███░░░░░███░░███",
+    "░███    ░░░  ░███   ░███ ░███    ░███ ░███  █ ░  ░███    ░███     █▌█▌            █▌   ░███       ░███   ░███ ░███░█████░███ ░███ ░███░███ ░███ ░███    ░███ ░███",
+    "░░█████████  ░███   ░███ ░██████████  ░██████    ░██████████      █▌█▌          █▌█▌   ░███       ░███   ░███ ░███░░███ ░███ ░███ ░███░░███░███ ░███████████ ░███",
+    " ░░░░░░░░███ ░███   ░███ ░███░░░░░░   ░███░░█    ░███░░░░░███     █▌▀▘          █▌█▌   ░███       ░███   ░███ ░███ ░░░  ░███ ░███ ░███ ░░██████ ░███░░░░░███ ░███",
+    " ███    ░███ ░███   ░███ ░███         ░███ ░   █ ░███    ░███     █▌          ▄▖█▌█▌   ░███      █░███   ░███ ░███      ░███ ░███ ░███  ░░█████ ░███    ░███ ░███      █",
+    "░░█████████  ░░████████  █████        ██████████ █████   █████    █▌          █▌█▌█▌   ███████████░░████████  █████     ███████████████  ░░██████████   ████████████████",
+    " ░░░░░░░░░    ░░░░░░░░  ░░░░░        ░░░░░░░░░░ ░░░░░   ░░░░░     █▌        █▌█▌█▌█▌  ░░░░░░░░░░░  ░░░░░░░░  ░░░░░     ░░░░░░░░░░░░░░░    ░░░░░░░░░░   ░░░░░░░░░░░░░░░░",
+    "                                                                          ▄▖█▌█▌█▌",
+    "                                                                        ▄▖█▌█▌█▌▀▘    The Superluminal Computing Corporation",
+    "                                                                      ▄▖█▌█▌█▌▀▘",
+    "                                                                  ▄▖█▌█▌█▌▀▘",
+    "                                                      ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀▘",
 ])
 
 
@@ -219,7 +246,7 @@ def _normalize_logo_mark(raw: str) -> str:
     while lines and not lines[-1].strip():
         lines.pop()
 
-    # Strip trailing whitespace per line (keeps geometry, avoids panel wrapping)
+    # Strip trailing whitespace per line (keeps geometry, avoids wrapping)
     lines = [ln.rstrip() for ln in lines]
     return "\n".join(lines)
 
@@ -230,15 +257,33 @@ def _get_logo_width(raw: str) -> int:
     return max((len(ln) for ln in lines), default=0)
 
 
-# Minimum terminal width to show the full logo (with some padding for panel borders)
-LOGO_MIN_WIDTH = 84
+# Pre-normalize logos once (prevents accidental trailing whitespace issues).
+_LOGO_MARK_NORM = _normalize_logo_mark(LOGO_MARK)
+_LOGO_WIDE_NORM = _normalize_logo_mark(LOGO_WIDE)
+_LOGO_ASCII_NORM = _normalize_logo_mark(LOGO_MARK_ASCII)
+
+_LOGO_MARK_WIDTH = _get_logo_width(_LOGO_MARK_NORM)
+_LOGO_WIDE_WIDTH = _get_logo_width(_LOGO_WIDE_NORM)
+_LOGO_ASCII_WIDTH = _get_logo_width(_LOGO_ASCII_NORM)
+
+# Minimum terminal width to show the regular logo (kept conservative for safety).
+LOGO_MIN_WIDTH = max(84, _LOGO_MARK_WIDTH, _LOGO_ASCII_WIDTH)
+
+# Prefer wide logo when we can show it fully (Unicode terminals only).
+LOGO_WIDE_MIN_WIDTH = max(_LOGO_WIDE_WIDTH, LOGO_MIN_WIDTH)
 
 
 def _get_logo_mark(terminal_width: int = 120) -> str:
     """Return the appropriate logo mark text, or empty string if terminal too narrow."""
     if terminal_width < LOGO_MIN_WIDTH:
         return ""  # Skip logo entirely for narrow terminals
-    return _normalize_logo_mark(LOGO_MARK if _UNICODE else LOGO_MARK_ASCII)
+
+    # Prefer wide logo when we can render it reliably and it fits.
+    if _UNICODE and terminal_width >= LOGO_WIDE_MIN_WIDTH:
+        return _LOGO_WIDE_NORM
+
+    # Otherwise, use the normal logo (Unicode) or ASCII fallback.
+    return _LOGO_MARK_NORM if _UNICODE else _LOGO_ASCII_NORM
 
 
 # ─────────────────────────── Sulu terminal theme ───────────────────────────
@@ -539,7 +584,9 @@ class SubmitLogger:
                 # Calculate left padding to center this line
                 padding = max(0, (width - max_len) // 2)
                 padded_line = " " * padding + line
-                self.console.print(Text(padded_line, style=style, no_wrap=True, overflow="crop"))
+                self.console.print(
+                    Text(padded_line, style=style, no_wrap=True, overflow="crop")
+                )
             self.console.print()
         else:
             self._log_fn("")
@@ -766,7 +813,12 @@ class SubmitLogger:
             if error_msg and status == "unreadable":
                 msg = self._trunc(error_msg, max(20, cols["total"] - 8))
                 self.console.print(
-                    Text(f"  {GLYPH_SEAM} {GLYPH_ARROW} {msg}", style="sulu.dim", no_wrap=True, overflow="crop")
+                    Text(
+                        f"  {GLYPH_SEAM} {GLYPH_ARROW} {msg}",
+                        style="sulu.dim",
+                        no_wrap=True,
+                        overflow="crop",
+                    )
                 )
         else:
             status_str = (
@@ -860,7 +912,12 @@ class SubmitLogger:
             header.append(f"{'':>3}", style="sulu.muted")
             self.console.print(header)
             self.console.print(
-                Text("  " + (GLYPH_DASH * (max(0, w - 2))), style="sulu.stroke_subtle", no_wrap=True, overflow="crop")
+                Text(
+                    "  " + (GLYPH_DASH * (max(0, w - 2))),
+                    style="sulu.stroke_subtle",
+                    no_wrap=True,
+                    overflow="crop",
+                )
             )
         else:
             self._log_fn("")
@@ -953,7 +1010,12 @@ class SubmitLogger:
             header.append(f"{'Mode':>16}", style="sulu.muted")
             self.console.print(header)
             self.console.print(
-                Text("  " + (GLYPH_DASH * (max(0, w - 2))), style="sulu.stroke_subtle", no_wrap=True, overflow="crop")
+                Text(
+                    "  " + (GLYPH_DASH * (max(0, w - 2))),
+                    style="sulu.stroke_subtle",
+                    no_wrap=True,
+                    overflow="crop",
+                )
             )
         else:
             self._log_fn("")
@@ -1067,11 +1129,7 @@ class SubmitLogger:
         self._stop_live_progress()
 
     def upload_step(
-        self,
-        step: int,
-        total_steps: int,
-        title: str,
-        detail: str = "",
+        self, step: int, total_steps: int, title: str, detail: str = ""
     ) -> None:
         """Start a transfer substage - shows title and prepares for progress bar."""
         # Ensure any previous live region is stopped before printing a new header
@@ -1130,7 +1188,12 @@ class SubmitLogger:
             stats.append(f"{format_size(total)}", style="sulu.muted")
         else:
             # Indeterminate
-            bar = Text("░" * bar_width, style="sulu.stroke_subtle", no_wrap=True, overflow="crop")
+            bar = Text(
+                "░" * bar_width,
+                style="sulu.stroke_subtle",
+                no_wrap=True,
+                overflow="crop",
+            )
             stats = Text(no_wrap=True, overflow="crop")
             stats.append(f"{format_size(cur)}", style="sulu.fg")
             stats.append(" transferred", style="sulu.dim")
