@@ -57,7 +57,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
     )
     use_current_scene_frame: BoolProperty(
         name="Use Current Scene Frame",
-        description="If enabled, render the scene's current frame",
+        description="Render the scene's current frame",
         default=True,
     )
     frame: IntProperty(
@@ -100,7 +100,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         addon_dir = get_addon_dir()
 
         if not bpy.data.filepath:
-            self.report({"ERROR"}, "Please save your .blend file first.")
+            self.report({"ERROR"}, "Save the .blend file first.")
             return {"CANCELLED"}
 
         # Ensure we have a logged-in session with a project
@@ -121,7 +121,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         if not project:
             self.report(
                 {"ERROR"},
-                "No project selected or projects not loaded. Please log in and select a project.",
+                "No project selected. Sign in and select a project.",
             )
             return {"CANCELLED"}
 

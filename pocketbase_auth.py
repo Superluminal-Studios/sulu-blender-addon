@@ -59,7 +59,7 @@ def authorized_request(
                     headers["Authorization"] = token
                     
             else:
-                raise NotAuthenticated("Failed to set new token, please log in again")
+                raise NotAuthenticated("Could not refresh token. Sign in again.")
     try:
         res = Storage.session.request(
             method,
@@ -71,7 +71,7 @@ def authorized_request(
 
         if res.status_code == 401:
             Storage.clear()
-            raise NotAuthenticated("Session expired - please log in again")
+            raise NotAuthenticated("Session expired. Sign in again.")
 
         if res.status_code >= 404:
             raise NotAuthenticated("Resource not found")

@@ -191,10 +191,10 @@ def _value_row(layout: UILayout, *, align: bool = False) -> UILayout:
 
 # Operators
 class ToggleAddonSelectionOperator(bpy.types.Operator):
-    """Tick / untick an add-on for inclusion in the upload zip"""
+    """Select or deselect an add-on for inclusion in the upload"""
 
     bl_idname = "superluminal.toggle_addon_selection"
-    bl_label = "Toggle Add-on Selection"
+    bl_label = "Toggle add-on selection"
 
     addon_name: bpy.props.StringProperty()
 
@@ -274,15 +274,15 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         # Job name toggle + field
         box = layout.box()
         col = box.column()
-        col.prop(props, "use_file_name", text="Use File Name")
+        col.prop(props, "use_file_name", text="Use file name")
         sub = col.column()
         sub.active = not props.use_file_name
-        sub.prop(props, "job_name", text="Job Name")
+        sub.prop(props, "job_name", text="Job name")
 
         # Frame range controls (apply to Animation submissions)
         box = layout.box()
         col = box.column()
-        col.prop(props, "use_scene_frame_range", text="Use Scene Frame Range")
+        col.prop(props, "use_scene_frame_range", text="Use scene frame range")
 
         sub = col.column()
         range_col = sub.column(align=True)
@@ -298,7 +298,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             sub.prop(props, "frame_stepping_size", text="Stepping")
 
         row = layout.row(align=True)
-        row.prop(props, "image_format", text="Image Format")
+        row.prop(props, "image_format", text="Image format")
 
         # Submit buttons — same formatting as Download button (plain row)
         VIDEO_FORMATS = {"FFMPEG", "AVI_JPEG", "AVI_RAW"}
@@ -331,12 +331,12 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             r.alert = True  # make warning red
             if props.image_format == "SCENE":
                 r.label(
-                    text=f"Video formats are not supported for rendering. Scene output is set to {scene.render.image_settings.file_format}.",
+                    text=f"Video formats not supported. Scene output is {scene.render.image_settings.file_format}.",
                     icon="ERROR",
                 )
             else:
                 r.label(
-                    text=f"Video formats are not supported for rendering ({effective_format}).",
+                    text=f"Video formats not supported ({effective_format}).",
                     icon="ERROR",
                 )
 
@@ -345,7 +345,7 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         if bpy.data.is_dirty:
             warn_row.alert = True  # make warning red
             warn_row.label(
-                text="You have unsaved changes. Some changes may not be included in the render job.",
+                text="Unsaved changes may not be included in the render job.",
                 icon="ERROR",
             )
         else:
@@ -370,7 +370,7 @@ class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
         props = context.scene.superluminal_settings
 
         # Upload type selector (always visible)
-        layout.prop(props, "upload_type", text="Upload Type")
+        layout.prop(props, "upload_type", text="Upload type")
 
         # Cross-drive dependency warning (only relevant to Project uploads)
         if props.upload_type == "PROJECT":
@@ -379,18 +379,18 @@ class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
                 info_row = layout.row()
                 info_row.alert = True  # treat as warning for visibility
                 info_row.label(
-                    text="Save your .blend to enable accurate project root detection.",
+                    text="Save your .blend for accurate project root detection.",
                     icon="ERROR",
                 )
             if has_cross:
                 box = layout.box()
                 box.alert = True  # make warning red
                 box.label(
-                    text="Some dependencies are on a different drive and will be EXCLUDED from Project uploads.",
+                    text="Some dependencies are on a different drive and are excluded from Project uploads.",
                     icon="ERROR",
                 )
                 box.label(
-                    text="Move assets onto the same drive, or switch Upload Type to Zip."
+                    text="Move assets to the same drive, or switch upload type to Zip."
                 )
                 # show a few examples
                 for p in summary.examples_other_roots(3):
@@ -414,7 +414,7 @@ class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
                     warn_box = col.box()
                     warn_row = warn_box.row()
                     warn_row.alert = True
-                    warn_row.label(text="Custom Project Path is empty. Either enable Automatic Project Path or specify a valid folder.", icon="ERROR")
+                    warn_row.label(text="Custom project path is empty. Turn on automatic project path or select a folder.", icon="ERROR")
 
 
 class SUPERLUMINAL_PT_IncludeAddons(bpy.types.Panel):
@@ -437,7 +437,7 @@ class SUPERLUMINAL_PT_IncludeAddons(bpy.types.Panel):
         _rebuild_enabled_addons_ui_cache(context)
 
         if len(wm.superluminal_ui_addons) == 0:
-            layout.label(text="No Add-ons Enabled", icon="INFO")
+            layout.label(text="No add-ons enabled", icon="INFO")
             return
 
         # Scrollable list (built-in search + sort controls appear automatically,
@@ -505,9 +505,9 @@ class SUPERLUMINAL_PT_RenderNode_Experimental(bpy.types.Panel):
         props = context.scene.superluminal_settings
 
         col = layout.column()
-        col.prop(props, "ignore_errors", text="Finish Frame When Errored")
-        col.prop(props, "use_bserver", text="Persistence Engine")
-        col.prop(props, "use_async_upload", text="Async Frame Upload")
+        col.prop(props, "ignore_errors", text="Finish frame when errored")
+        col.prop(props, "use_bserver", text="Persistence engine")
+        col.prop(props, "use_async_upload", text="Async frame upload")
 
 
 class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
@@ -539,7 +539,7 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
         tools.use_property_split = False
         tools.use_property_decorate = False
         tools.separator_spacer()
-        tools.prop(wm_props, "live_job_updates", text="Auto Refresh")
+        tools.prop(wm_props, "live_job_updates", text="Auto refresh")
         tools.operator("superluminal.fetch_project_jobs", text="", icon="FILE_REFRESH")
         tools.separator()
         tools.menu("SUPERLUMINAL_MT_job_columns", text="", icon="DOWNARROW_HLT")
@@ -552,7 +552,7 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
             box = col.box()
             if not logged_in:
                 box.alert = True
-                box.label(text="Log in to see your jobs.", icon="ERROR")
+                box.label(text="Sign in to see your jobs.", icon="ERROR")
             elif not jobs_ok:
                 box.label(text="No jobs found in selected project.", icon="INFO")
             return
@@ -601,12 +601,12 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
         op.project_id = prefs.project_id
 
         # Download path + button
-        layout.prop(props, "download_path", text="Download Path")
+        layout.prop(props, "download_path", text="Download path")
 
         row = layout.row()
         row.enabled = logged_in and jobs_ok and bool(job_name) and job_id != ""
         op2 = row.operator(
-            "superluminal.download_job", text="Download Job Output", icon="SORT_ASC"
+            "superluminal.download_job", text="Download job output", icon="SORT_ASC"
         )
         op2.job_id = job_id
         op2.job_name = job_name

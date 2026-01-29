@@ -84,7 +84,7 @@ def first_login(token):
 class SUPERLUMINAL_OT_Login(bpy.types.Operator):
     """Sign in to Superluminal"""
     bl_idname = "superluminal.login"
-    bl_label = "Log in to Superluminal"
+    bl_label = "Sign In"
 
     def execute(self, context):
         prefs = context.preferences.addons[__package__].preferences
@@ -92,7 +92,7 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
         creds = getattr(wm, "sulu_wm", None)
 
         if creds is None:
-            self.report({"ERROR"}, "Internal error: auth props not registered.")
+            self.report({"ERROR"}, "Authentication not available. Restart Blender.")
             return {"CANCELLED"}
 
         url   = f"{POCKETBASE_URL}/api/collections/users/auth-with-password"
@@ -112,7 +112,7 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
                 first_login(token)
             if not token:
                 _flush_wm_password(wm)
-                self.report({"WARNING"}, "Login succeeded but no token returned.")
+                self.report({"WARNING"}, "Sign-in incomplete. Try again.")
                 return {"CANCELLED"}
 
 
@@ -123,26 +123,26 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
         _flush_wm_credentials(wm)
         _redraw_properties_ui()
 
-        self.report({"INFO"}, "Logged in and data preloaded.")
+        self.report({"INFO"}, "Signed in.")
         return {"FINISHED"}
 
 
 class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
-    """Log out of Superluminal"""
+    """Sign out of Superluminal"""
     bl_idname = "superluminal.logout"
-    bl_label = "Log out of Superluminal"
+    bl_label = "Sign Out"
 
     def execute(self, context):
         Storage.clear()
         _flush_wm_credentials(context.window_manager)
-        self.report({"INFO"}, "Logged out.")
+        self.report({"INFO"}, "Signed out.")
         return {"FINISHED"}
 
 
 class SUPERLUMINAL_OT_LoginBrowser(bpy.types.Operator):
-    """Sign in via your default browser (non-blocking)"""
+    """Sign in via your default browser"""
     bl_idname = "superluminal.login_browser"
-    bl_label = "Sign in with Browser"
+    bl_label = "Sign In with Browser"
 
     def execute(self, context):
         url = f"{POCKETBASE_URL}/api/cli/start"
@@ -157,7 +157,7 @@ class SUPERLUMINAL_OT_LoginBrowser(bpy.types.Operator):
 
         txn = data.get("txn", "")
         if not txn:
-            self.report({"ERROR"}, "Backend did not return a transaction id.")
+            self.report({"ERROR"}, "Sign-in unavailable. Try again later.")
             return {"CANCELLED"}
         
         verification_url = data.get("verification_uri_complete") or data.get("verification_uri")
@@ -173,14 +173,14 @@ class SUPERLUMINAL_OT_LoginBrowser(bpy.types.Operator):
         t.start()
 
 
-        self.report({"INFO"}, "Browser opened. Approve to connect; you can keep working.")
+        self.report({"INFO"}, "Browser opened. Approve the connection to continue.")
         return {"FINISHED"}
 
 
 class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
-    """Fetch the project list from Superluminal."""
+    """Refresh the project list"""
     bl_idname = "superluminal.fetch_projects"
-    bl_label = "Fetch Project List"
+    bl_label = "Refresh Projects"
 
     def execute(self, context):
         try:
@@ -199,14 +199,14 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
         Storage.data["projects"] = projects
         Storage.save()
 
-        self.report({"INFO"}, "Projects fetched.")
+        self.report({"INFO"}, "Projects updated.")
         return {"FINISHED"}
     
 
 class SUPERLUMINAL_OT_OpenProjectsWebPage(bpy.types.Operator):
-    """Fetch the project list from Superluminal."""
+    """Open projects page in browser"""
     bl_idname = "superluminal.open_projects_web_page"
-    bl_label = "Fetch Project List"
+    bl_label = "Open Projects Page"
 
     def execute(self, context):
         try:
@@ -214,14 +214,14 @@ class SUPERLUMINAL_OT_OpenProjectsWebPage(bpy.types.Operator):
         except Exception as exc:
             print("Could not open web browser.", exc)
 
-        self.report({"INFO"}, "Opened Web Browser")
+        self.report({"INFO"}, "Browser opened.")
         return {"FINISHED"}
 
 
 class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
-    """Fetch the job list for the selected project from Superluminal."""
+    """Refresh the job list for the selected project"""
     bl_idname = "superluminal.fetch_project_jobs"
-    bl_label = "Fetch Project Jobs"
+    bl_label = "Refresh Jobs"
 
     def execute(self, context):
         prefs = context.preferences.addons[__package__].preferences
@@ -233,7 +233,7 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
         org_id   = Storage.data.get("org_id")
         user_key = Storage.data.get("user_key")
         if not org_id or not user_key:
-            self.report({"ERROR"}, "Project info missing – log in again.")
+            self.report({"ERROR"}, "Project info missing. Sign in again.")
             return {"CANCELLED"}
 
         try:
@@ -259,9 +259,9 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
 
 
 class SUPERLUMINAL_OT_OpenBrowser(bpy.types.Operator):
-    """Open the job in the browser."""
+    """Open the job page in browser"""
     bl_idname = "superluminal.open_browser"
-    bl_label = "Open Job in Browser"
+    bl_label = "Open in Browser"
     job_id: bpy.props.StringProperty(name="Job ID")
     project_id: bpy.props.StringProperty(name="Project ID")
 

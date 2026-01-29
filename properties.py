@@ -81,17 +81,16 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         name="Automatic Project Path",
         default=True,
         description=(
-            "When enabled, the root of your project is automatically determined "
-            "based on the paths of the individual files this blend file has as "
-            "dependencies. (Only used if Upload Type is 'Project'.)"
+            "When on, the project root is determined automatically from your "
+            "blend file's dependencies. Only used with Project upload type."
         ),
     )
     custom_project_path: bpy.props.StringProperty(
         name="Custom Project Path",
         default="",
         description=(
-            "Specify the root of your project manually. "
-            "(Only used if Upload Type is 'Project' and Automatic Project Path is disabled.)"
+            "Specify the project root manually. "
+            "Only used with Project upload type when automatic path is off."
         ),
         subtype="DIR_PATH",
     )
@@ -109,7 +108,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         default=True,
         description=(
             "Use the current .blend file name as the render job name instead of "
-            "the custom name below."
+            "a custom name."
         ),
     )
 
@@ -159,7 +158,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     use_scene_frame_range: bpy.props.BoolProperty(
         name="Use Scene Frame Range",
         default=True,
-        description="Use the scene's start/end frame range instead of the values below.",
+        description="Use the scene's start and end frame range instead of custom values.",
     )
 
     # ------------------------------------------------------------
@@ -178,8 +177,8 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         name="Auto Determine Blender Version",
         default=True,
         description=(
-            "Determine the Blender version to use on the farm based on the one "
-            f"you're currently using. Right now you're using Blender {get_blender_version_string()}."
+            "Match the farm's Blender version to yours. "
+            f"You're currently using Blender {get_blender_version_string()}."
         ),
     )
 
@@ -215,12 +214,11 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     #  Ignore errors
     # ------------------------------------------------------------
     ignore_errors: bpy.props.BoolProperty(
-        name="Finish Frame When Errored",
+        name="Finish Frame On Error",
         default=False,
         description=(
-            "Consider a frame finished even if the render process errors on the "
-            "farm. This can be useful if you find that Blender often crashes after "
-            "the output file has already been written."
+            "Mark a frame as finished even if the render process stops unexpectedly. "
+            "Useful when Blender quits after the output file is already saved."
         ),
     )
 

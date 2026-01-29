@@ -193,13 +193,13 @@ def draw_login(layout):
     creds = getattr(wm, "sulu_wm", None)
     if creds is None:
         col = layout.column()
-        col.label(text="Internal error: auth props not registered.", icon='ERROR')
+        col.label(text="Authentication not available. Restart Blender.", icon='ERROR')
         return
 
     box = layout.box()
     box.prop(creds, "username", text="Email")
     box.prop(creds, "password", text="Password")
-    box.operator("superluminal.login", text="Log in")
+    box.operator("superluminal.login", text="Sign In")
 
 
 
@@ -229,7 +229,7 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
 
     show_password_login: bpy.props.BoolProperty(
         name="Show password sign-in",
-        description="Reveal email/password login fields",
+        description="Show email and password fields",
         default=False,                 # closed by default
         options={'SKIP_SAVE'},         # don't persist across sessions
     )
