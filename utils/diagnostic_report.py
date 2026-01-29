@@ -92,6 +92,7 @@ class DiagnosticReport:
                 "missing_files": [],
                 "unreadable_files": {},
                 "cross_drive_files": [],
+                "absolute_path_files": [],
             },
         }
 
@@ -304,6 +305,13 @@ class DiagnosticReport:
         """Add cross-drive files to the issues section."""
         with self._lock:
             self._data["issues"]["cross_drive_files"] = files
+            self._entries_since_flush += 1
+            self._maybe_flush()
+
+    def add_absolute_path_files(self, files: List[str]) -> None:
+        """Add absolute path files to the issues section."""
+        with self._lock:
+            self._data["issues"]["absolute_path_files"] = files
             self._entries_since_flush += 1
             self._maybe_flush()
 

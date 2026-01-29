@@ -980,6 +980,7 @@ class SubmitLogger:
         missing_files: Optional[List[str]] = None,
         unreadable_files: Optional[List[Tuple[str, str]]] = None,
         cross_drive_files: Optional[List[str]] = None,
+        absolute_path_files: Optional[List[str]] = None,
         shorten_fn: Optional[Callable[[str], str]] = None,
         automatic_project_path: bool = True,
     ) -> None:
@@ -993,6 +994,7 @@ class SubmitLogger:
             missing_files: List of missing file paths.
             unreadable_files: List of (path, error_msg) tuples.
             cross_drive_files: List of cross-drive file paths.
+            absolute_path_files: List of files with absolute paths in blend (won't work on farm).
             shorten_fn: Optional function to shorten paths for display.
             automatic_project_path: True if path was auto-detected, False if custom.
         """
@@ -1003,9 +1005,10 @@ class SubmitLogger:
         missing_files = missing_files or []
         unreadable_files = unreadable_files or []
         cross_drive_files = cross_drive_files or []
+        absolute_path_files = absolute_path_files or []
 
         has_issues = bool(
-            missing > 0 or unreadable > 0 or (cross_drive_excluded and cross_drive > 0)
+            missing > 0 or unreadable > 0 or (cross_drive_excluded and cross_drive > 0) or absolute_path_files
         )
 
         if self.console and Text is not None and Table is not None:
@@ -1136,6 +1139,40 @@ class SubmitLogger:
                     )
                     body.add_row(xdrive_panel)
 
+                # Absolute path dependencies (farm can't resolve these)
+                if absolute_path_files:
+                    if missing_files or unreadable_files or (cross_drive_excluded and cross_drive_files):
+                        body.add_row(Text(""))  # spacer
+
+                    abs_title = Text()
+                    abs_title.append(f"{GLYPH_WARN} ", style="sulu.warn_b")
+                    abs_title.append(
+                        f"{_count(len(absolute_path_files), 'dependency')} with absolute paths (excluded)",
+                        style="sulu.warn",
+                    )
+
+                    abs_body = Text()
+                    for i, p in enumerate(absolute_path_files[:10]):
+                        if i > 0:
+                            abs_body.append("\n")
+                        abs_body.append(f"{GLYPH_BULLET} ", style="sulu.dim")
+                        abs_body.append(_sh(str(p)), style="sulu.fg")
+                    if len(absolute_path_files) > 10:
+                        abs_body.append("\n")
+                        abs_body.append(
+                            f"   {ELLIPSIS} and {len(absolute_path_files) - 10} more",
+                            style="sulu.dim",
+                        )
+
+                    abs_panel = self._panel(
+                        abs_body,
+                        title=abs_title,
+                        border_style="sulu.warn",
+                        style="sulu.well",
+                        padding=(0, 1),
+                    )
+                    body.add_row(abs_panel)
+
             # Warning/help text
             if warning_text:
                 body.add_row(Text(""))  # spacer
@@ -1184,6 +1221,14 @@ class SubmitLogger:
                     self._log_fn(f"  - {_sh(str(p))}")
                 if len(cross_drive_files) > 10:
                     self._log_fn(f"  ... and {len(cross_drive_files) - 10} more")
+            if absolute_path_files:
+                self._log_fn(
+                    f"Dependencies with absolute paths ({len(absolute_path_files)}) - excluded:"
+                )
+                for p in absolute_path_files[:10]:
+                    self._log_fn(f"  - {_sh(str(p))}")
+                if len(absolute_path_files) > 10:
+                    self._log_fn(f"  ... and {len(absolute_path_files) - 10} more")
             if warning_text:
                 self._log_fn(warning_text)
 

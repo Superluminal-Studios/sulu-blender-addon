@@ -718,6 +718,19 @@ def main() -> None:
             Path(blend_path), logger=logger, hydrate=True, diagnostic_report=report
         )
 
+        # Detect absolute paths in the blend file (PROJECT mode requires relative paths)
+        absolute_path_deps: List[Path] = []
+        for usage in raw_usages:
+            try:
+                # Check if the path stored in the blend file is absolute (not //-relative)
+                if not usage.asset_path.is_blendfile_relative():
+                    abs_path = usage.abspath
+                    if abs_path not in missing_set and abs_path not in unreadable_dict:
+                        if abs_path not in absolute_path_deps:
+                            absolute_path_deps.append(abs_path)
+            except Exception:
+                pass  # Skip if we can't check the path
+
         ok_files_set = set(
             p for p in dep_paths if p not in missing_set and p not in unreadable_dict
         )
@@ -742,17 +755,24 @@ def main() -> None:
         report.set_metadata("project_root", common_path)
         if cross_drive_deps:
             report.add_cross_drive_files([str(p) for p in cross_drive_deps])
+        if absolute_path_deps:
+            report.add_absolute_path_files([str(p) for p in absolute_path_deps])
 
         # Build warning text for issues
         missing_files_list = [str(p) for p in sorted(missing_set)]
         unreadable_files_list = [
             (str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))
         ]
-        has_issues = bool(cross_drive_deps or missing_files_list or unreadable_files_list)
+        absolute_path_files_list = [str(p) for p in sorted(absolute_path_deps)]
+        has_issues = bool(cross_drive_deps or missing_files_list or unreadable_files_list or absolute_path_deps)
 
         warning_text = None
         if has_issues:
             parts: List[str] = []
+            if absolute_path_deps:
+                parts.append(
+                    f"{_count(len(absolute_path_deps), 'dependency')} with absolute paths (excluded)"
+                )
             if cross_drive_deps:
                 parts.append(
                     f"{_count(len(cross_drive_deps), 'dependency')} on another drive (not included in Project upload)"
@@ -767,14 +787,30 @@ def main() -> None:
                 for p, err in unreadable_files_list:
                     low = err.lower()
                     if "permission" in low or "operation not permitted" in low or "not permitted" in low:
-                        mac_extra = "\n\n" + _mac_permission_help(p, err)
+                        mac_extra = "\n" + _mac_permission_help(p, err)
                         break
 
-            warning_text = (
-                "This can lead to missing textures or other dependencies on the farm."
-                + "\nIf you need everything included, switch to Zip upload or choose a Project Path that contains all dependencies."
-                + mac_extra
-            )
+            # Build contextual warning text based on which issues are present
+            warning_parts = []
+
+            if absolute_path_deps:
+                warning_parts.append(
+                    "Farm can't resolve absolute paths. "
+                    "Make paths relative (File → External Data → Make All Paths Relative) or use Zip upload."
+                )
+
+            if cross_drive_deps:
+                warning_parts.append(
+                    "Cross-drive files excluded from Project upload. "
+                    "Use Zip upload or move files to the project drive."
+                )
+
+            if (missing_files_list or unreadable_files_list) and not absolute_path_deps and not cross_drive_deps:
+                warning_parts.append(
+                    "Missing or unreadable files excluded."
+                )
+
+            warning_text = "\n".join(warning_parts) + mac_extra if warning_parts else None
 
         logger.trace_summary(
             total=len(dep_paths),
@@ -787,6 +823,7 @@ def main() -> None:
             missing_files=missing_files_list,
             unreadable_files=unreadable_files_list,
             cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
+            absolute_path_files=absolute_path_files_list,
             shorten_fn=shorten_path,
             automatic_project_path=automatic_project_path,
         )
