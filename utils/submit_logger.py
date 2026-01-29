@@ -1,4 +1,3 @@
-
 """
 submit_logger.py — Rich-based logging utilities for the Sulu Submit worker.
 
@@ -37,18 +36,7 @@ box = None
 
 def _try_import_rich() -> None:
     """Try to import rich from various locations."""
-    global \
-        RICH_AVAILABLE, \
-        Console, \
-        Table, \
-        Panel, \
-        Text, \
-        Style, \
-        Rule, \
-        Theme, \
-        Align, \
-        Live, \
-        box
+    global RICH_AVAILABLE, Console, Table, Panel, Text, Style, Rule, Theme, Align, Live, box
 
     # Method 1: Relative import (works when imported as part of package)
     try:
@@ -699,7 +687,9 @@ class SubmitLogger:
 
                 if gradient_bg and num_lines > 1:
                     # Map line index to gradient color
-                    color_idx = int((i / max(num_lines - 1, 1)) * (len(bg_gradient) - 1))
+                    color_idx = int(
+                        (i / max(num_lines - 1, 1)) * (len(bg_gradient) - 1)
+                    )
                     bg_color = bg_gradient[color_idx]
                     # Pad line to full width for continuous background
                     padded_line = padded_line.ljust(width)
@@ -937,9 +927,9 @@ class SubmitLogger:
                 padding=(0, 1),
                 expand=True,
             )
-            table.add_column("Source", style="#7E828B", no_wrap=True, ratio=2)
-            table.add_column("Block", style="#D8DEEC", no_wrap=True, ratio=2)
-            table.add_column("Resolved", style="#D8DEEC", no_wrap=True, ratio=3)
+            table.add_column("Source File", style="#7E828B", no_wrap=True, ratio=2)
+            table.add_column("Data Block", style="#D8DEEC", no_wrap=True, ratio=2)
+            table.add_column("Found File", style="#D8DEEC", no_wrap=True, ratio=3)
             table.add_column("", justify="center", width=3)
 
             for entry in self._trace_entries:
@@ -1014,7 +1004,9 @@ class SubmitLogger:
         unreadable_files = unreadable_files or []
         cross_drive_files = cross_drive_files or []
 
-        has_issues = bool(missing > 0 or unreadable > 0 or (cross_drive_excluded and cross_drive > 0))
+        has_issues = bool(
+            missing > 0 or unreadable > 0 or (cross_drive_excluded and cross_drive > 0)
+        )
 
         if self.console and Text is not None and Table is not None:
             # Build the main body
@@ -1023,7 +1015,11 @@ class SubmitLogger:
 
             # Project path (at the top)
             if project_root:
-                path_label = "Detected project root path: " if automatic_project_path else "Using project root path: "
+                path_label = (
+                    "Detected project root path: "
+                    if automatic_project_path
+                    else "Using project root path: "
+                )
                 path_line = Text()
                 path_line.append(path_label, style="sulu.muted")
                 path_line.append(str(project_root), style="sulu.fg")
@@ -1044,7 +1040,10 @@ class SubmitLogger:
                 if missing_files:
                     missing_title = Text()
                     missing_title.append(f"{GLYPH_WARN} ", style="sulu.warn_b")
-                    missing_title.append(f"{_count(len(missing_files), 'dependency')} missing", style="sulu.warn")
+                    missing_title.append(
+                        f"{_count(len(missing_files), 'dependency')} missing",
+                        style="sulu.warn",
+                    )
 
                     missing_body = Text()
                     for i, p in enumerate(missing_files[:10]):  # limit to 10
@@ -1054,7 +1053,10 @@ class SubmitLogger:
                         missing_body.append(_sh(str(p)), style="sulu.fg")
                     if len(missing_files) > 10:
                         missing_body.append("\n")
-                        missing_body.append(f"   {ELLIPSIS} and {len(missing_files) - 10} more", style="sulu.dim")
+                        missing_body.append(
+                            f"   {ELLIPSIS} and {len(missing_files) - 10} more",
+                            style="sulu.dim",
+                        )
 
                     missing_panel = self._panel(
                         missing_body,
@@ -1072,7 +1074,10 @@ class SubmitLogger:
 
                     unread_title = Text()
                     unread_title.append(f"{GLYPH_FAIL} ", style="sulu.err_b")
-                    unread_title.append(f"{_count(len(unreadable_files), 'dependency')} not readable", style="sulu.err")
+                    unread_title.append(
+                        f"{_count(len(unreadable_files), 'dependency')} not readable",
+                        style="sulu.err",
+                    )
 
                     unread_body = Text()
                     for i, (p, err) in enumerate(unreadable_files[:10]):
@@ -1083,7 +1088,10 @@ class SubmitLogger:
                         unread_body.append(f"\n   {err}", style="sulu.dim")
                     if len(unreadable_files) > 10:
                         unread_body.append("\n")
-                        unread_body.append(f"   {ELLIPSIS} and {len(unreadable_files) - 10} more", style="sulu.dim")
+                        unread_body.append(
+                            f"   {ELLIPSIS} and {len(unreadable_files) - 10} more",
+                            style="sulu.dim",
+                        )
 
                     unread_panel = self._panel(
                         unread_body,
@@ -1101,7 +1109,10 @@ class SubmitLogger:
 
                     xdrive_title = Text()
                     xdrive_title.append(f"{GLYPH_INFO} ", style="sulu.accent")
-                    xdrive_title.append(f"{_count(len(cross_drive_files), 'dependency')} on another drive (not included)", style="sulu.muted")
+                    xdrive_title.append(
+                        f"{_count(len(cross_drive_files), 'dependency')} on another drive (not included)",
+                        style="sulu.muted",
+                    )
 
                     xdrive_body = Text()
                     for i, p in enumerate(cross_drive_files[:10]):
@@ -1111,7 +1122,10 @@ class SubmitLogger:
                         xdrive_body.append(_sh(str(p)), style="sulu.fg")
                     if len(cross_drive_files) > 10:
                         xdrive_body.append("\n")
-                        xdrive_body.append(f"   {ELLIPSIS} and {len(cross_drive_files) - 10} more", style="sulu.dim")
+                        xdrive_body.append(
+                            f"   {ELLIPSIS} and {len(cross_drive_files) - 10} more",
+                            style="sulu.dim",
+                        )
 
                     xdrive_panel = self._panel(
                         xdrive_body,
@@ -1141,7 +1155,11 @@ class SubmitLogger:
             # Plain text fallback
             self._log_fn("")
             if project_root:
-                path_label = "Detected project root path" if automatic_project_path else "Using project root path"
+                path_label = (
+                    "Detected project root path"
+                    if automatic_project_path
+                    else "Using project root path"
+                )
                 self._log_fn(f"{path_label}: {project_root}")
             self._log_fn(
                 f"Trace: {_count(total, 'dependency')} found (missing={missing}, unreadable={unreadable}, other_drives={cross_drive})"
@@ -1159,7 +1177,9 @@ class SubmitLogger:
                 if len(unreadable_files) > 10:
                     self._log_fn(f"  ... and {len(unreadable_files) - 10} more")
             if cross_drive_excluded and cross_drive_files:
-                self._log_fn(f"Dependencies on other drives ({len(cross_drive_files)}):")
+                self._log_fn(
+                    f"Dependencies on other drives ({len(cross_drive_files)}):"
+                )
                 for p in cross_drive_files[:10]:
                     self._log_fn(f"  - {_sh(str(p))}")
                 if len(cross_drive_files) > 10:
@@ -1260,7 +1280,9 @@ class SubmitLogger:
             self.console.print(panel)
         else:
             self._log_fn("")
-            self._log_fn(f"{title}: {_count(ok_count, 'file')}, {format_size(total_size)}")
+            self._log_fn(
+                f"{title}: {_count(ok_count, 'file')}, {format_size(total_size)}"
+            )
 
     # ───────────────────── zip callbacks (BAT) ─────────────────────
 
@@ -1272,15 +1294,17 @@ class SubmitLogger:
     def zip_entry(
         self, index: int, total: int, arcname: str, size: int, method: str
     ) -> None:
-        self._zip_entries.append({
-            "arcname": arcname,
-            "size": size,
-            "method": method,
-        })
+        self._zip_entries.append(
+            {
+                "arcname": arcname,
+                "size": size,
+                "method": method,
+            }
+        )
 
     def _render_zip_table(self) -> None:
         """Render the accumulated zip entries as a proper Rich table."""
-        if not hasattr(self, '_zip_entries') or not self._zip_entries:
+        if not hasattr(self, "_zip_entries") or not self._zip_entries:
             return
 
         if self.console and Table is not None and Text is not None:
@@ -1308,7 +1332,9 @@ class SubmitLogger:
             self._log_fn("-" * 70)
             for entry in self._zip_entries:
                 size_str = format_size(entry["size"]) if entry["size"] else ""
-                self._log_fn(f"  {entry['arcname']:<42} {size_str:>10} {entry['method']:>16}")
+                self._log_fn(
+                    f"  {entry['arcname']:<42} {size_str:>10} {entry['method']:>16}"
+                )
 
     def zip_done(
         self, zippath: str, total_files: int, total_bytes: int, elapsed: float
@@ -1862,7 +1888,12 @@ class SubmitLogger:
 
         Returns the selected option key, or empty string if no prompt.
         """
-        if self.console and Panel is not None and Text is not None and Table is not None:
+        if (
+            self.console
+            and Panel is not None
+            and Text is not None
+            and Table is not None
+        ):
             body = Table.grid(padding=(0, 0))
             body.add_column()
 
@@ -1900,7 +1931,9 @@ class SubmitLogger:
                     if i > 0:
                         row.append("   ", style="sulu.dim")
                     row.append(f" {key.upper()} ", style=style)
-                    row.append(f" {label}", style="sulu.fg" if is_default else "sulu.muted")
+                    row.append(
+                        f" {label}", style="sulu.fg" if is_default else "sulu.muted"
+                    )
                 body.add_row(row)
 
             panel = self._panel(
@@ -1919,7 +1952,9 @@ class SubmitLogger:
 
                 try:
                     answer = self._input_fn("", default)
-                    answer = answer.strip().lower() if answer.strip() else default.lower()
+                    answer = (
+                        answer.strip().lower() if answer.strip() else default.lower()
+                    )
                 except (EOFError, KeyboardInterrupt):
                     answer = default.lower()
                 return answer
@@ -1937,7 +1972,9 @@ class SubmitLogger:
                 self._log_fn(f"  {opts}")
                 try:
                     answer = self._input_fn(f" > [{default}] ", default)
-                    answer = answer.strip().lower() if answer.strip() else default.lower()
+                    answer = (
+                        answer.strip().lower() if answer.strip() else default.lower()
+                    )
                 except (EOFError, KeyboardInterrupt):
                     answer = default.lower()
                 return answer
@@ -2135,7 +2172,9 @@ class SubmitLogger:
         if missing_count or unreadable_count or cross_drive_count:
             parts = []
             if cross_drive_count:
-                parts.append(f"{_count(cross_drive_count, 'dependency')} on another drive")
+                parts.append(
+                    f"{_count(cross_drive_count, 'dependency')} on another drive"
+                )
             if missing_count:
                 parts.append(f"{_count(missing_count, 'missing dependency')}")
             if unreadable_count:

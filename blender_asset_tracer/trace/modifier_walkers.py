@@ -499,7 +499,7 @@ def modifier_nodes(
         if not directory:
             continue
 
-        bpath = bytes(directory.as_string(), "utf-8")
+        bpath = bpathlib.BlendPath(directory.as_bytes_string())
         bake_block_name = block_name + b".bakes[%d]" % bake_idx
 
         yield result.BlockUsage(

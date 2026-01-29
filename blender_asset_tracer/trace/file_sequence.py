@@ -109,17 +109,19 @@ def expand_sequence(path: pathlib.Path) -> typing.Iterator[pathlib.Path]:
             yield pathlib.Path(fname)
         return
 
+    # Check if it's a directory first - directories need different handling
+    if path.is_dir():
+        # Explode directory paths into separate files (recursively).
+        log.debug("expanding directory %s", path)
+        _prime_cloud_directory(path)
+        for subpath in path.rglob("*"):
+            if subpath.is_file():
+                yield subpath
+        return
+
     # For non-glob paths, try to open the file first (triggers cloud sync)
     # before falling back to exists() check
     if _try_open_file(path):
-        if path.is_dir():
-            # Explode directory paths into separate files.
-            _prime_cloud_directory(path)
-            for subpath in path.rglob("*"):
-                if subpath.is_file():
-                    yield subpath
-            return
-
         log.debug("expanding file sequence %s", path)
 
         import string
@@ -141,3 +143,7 @@ def expand_sequence(path: pathlib.Path) -> typing.Iterator[pathlib.Path]:
     # File doesn't exist or can't be opened
     if not path.exists():
         raise DoesNotExist(path)
+
+    # Path exists but couldn't be opened (permissions, locked file, etc.)
+    # Still yield it so the caller can handle/report the issue
+    yield path

@@ -20,6 +20,12 @@ addons_to_send: list[str] = []
 # Enabled add-ons UI (sorted + scrollable, uses built-in UIList search)
 # -----------------------------------------------------------------------------
 
+# Cache for enabled addons list to avoid expensive rebuilds on every draw
+_addon_cache: dict = {
+    "enabled_set": None,  # frozenset of enabled addon module names
+    "addon_list": [],     # list of (module_name, pretty_label) tuples
+}
+
 
 class SUPERLUMINAL_PG_AddonItem(bpy.types.PropertyGroup):
     module: bpy.props.StringProperty()
@@ -27,8 +33,14 @@ class SUPERLUMINAL_PG_AddonItem(bpy.types.PropertyGroup):
 
 
 def _gather_enabled_addons_sorted() -> list[tuple[str, str]]:
-    """Return enabled add-ons as (module_name, pretty_label), sorted by pretty_label."""
+    """Return enabled add-ons as (module_name, pretty_label), sorted by pretty_label.
+
+    Uses a module lookup dict for O(n+m) instead of O(n*m) performance.
+    """
     enabled: list[tuple[str, str]] = []
+
+    # Build a lookup dict from module name -> module object (O(m) once)
+    module_lookup: dict = {m.__name__: m for m in addon_utils.modules()}
 
     for addon in bpy.context.preferences.addons:
         mod_name = addon.module
@@ -38,7 +50,7 @@ def _gather_enabled_addons_sorted() -> list[tuple[str, str]]:
         if mod_name in DEFAULT_ADDONS:
             continue
 
-        mod = next((m for m in addon_utils.modules() if m.__name__ == mod_name), None)
+        mod = module_lookup.get(mod_name)
         pretty = (
             addon_utils.module_bl_info(mod).get("name", mod_name) if mod else mod_name
         )
@@ -51,13 +63,30 @@ def _gather_enabled_addons_sorted() -> list[tuple[str, str]]:
 
 
 def _rebuild_enabled_addons_ui_cache(context) -> None:
-    """Rebuild WindowManager cache collection for the UIList (no filtering here)."""
+    """Rebuild WindowManager cache collection for the UIList.
+
+    Only rebuilds if the set of enabled addons has changed since last call.
+    """
+    # Build current set of enabled addon names (fast check)
+    current_enabled = frozenset(
+        addon.module for addon in bpy.context.preferences.addons
+        if addon.module != __package__ and addon.module not in DEFAULT_ADDONS
+    )
+
+    # Skip rebuild if nothing changed
+    if current_enabled == _addon_cache["enabled_set"]:
+        return
+
+    # Cache miss - rebuild the list
+    _addon_cache["enabled_set"] = current_enabled
+    _addon_cache["addon_list"] = _gather_enabled_addons_sorted()
+
     wm = context.window_manager
     items = wm.superluminal_ui_addons
 
     items.clear()
 
-    for mod_name, pretty in _gather_enabled_addons_sorted():
+    for mod_name, pretty in _addon_cache["addon_list"]:
         it = items.add()
         it.module = mod_name
         it.label = pretty
