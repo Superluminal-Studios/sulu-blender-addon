@@ -175,7 +175,11 @@ GLYPH_DASH = "┄" if _UNICODE else "-"
 GLYPH_HEX = "⬡" if _UNICODE else "#"
 GLYPH_LINK = "⟐" if _UNICODE else "*"
 
-# ─────────────────────────── Superluminal logo mark ───────────────────────────
+# Progress bar glyphs (no emoji)
+BAR_FULL = "█" if _UNICODE else "#"
+BAR_EMPTY = "░" if _UNICODE else "-"
+
+# ─────────────────────────── Superluminal logo marks ───────────────────────────
 
 # NOTE: Logo lines must have NO trailing whitespace to prevent wrapping issues.
 # The _normalize_logo_mark function also strips as a safety measure.
@@ -203,8 +207,19 @@ LOGO_MARK = "\n".join(
     ]
 )
 
-# A conservative ASCII fallback for legacy terminals that don't reliably render
-# the block glyphs above.
+# Tiny logo for narrow terminals that can't show LOGO_MARK.
+LOGO_TINY = "\n".join(
+    [
+        "                  ▖▖▌▘▘▘",
+        "╔═╗╦ ╦╔═╗╔═╗╦═╗ ▖▌▌▘ ▖ ╦  ╦ ╦╔╦╗╦╔╗╔╔═╗╦",
+        "╚═╗║ ║╠═╝║╣ ╠╦╝ ▌▌▘ ▖▌ ║  ║ ║║║║║║║║╠═╣║",
+        "╚═╝╚═╝╩  ╚═╝╩╚═ ▌▘  ▌▌ ╩═╝╚═╝╩ ╩╩╝╚╝╩ ╩╩═╝",
+        "                ▘ ▖▌▌▘",
+        "             ▖▖▖▖▖▘▘",
+    ]
+)
+
+# A conservative ASCII fallback for legacy terminals that don't reliably render Unicode.
 LOGO_MARK_ASCII = "\n".join(
     [
         "  SUPERLUMINAL COMPUTING CORPORATION",
@@ -213,40 +228,40 @@ LOGO_MARK_ASCII = "\n".join(
 )
 
 # Wide logo variant (prefer this when terminal is wide enough to show it).
-LOGO_WIDE = "\n".join([
-    "                                                                              ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀",
-    "                                                                          ▄▖█▌█▌█▌█▌▀▘",
-    "                                                                        █▌█▌█▌█▌",
-    "                                                                      █▌█▌█▌▀▘",
-    "                                                                    █▌█▌█▌█▌",
-    "                                                                  █▌█▌█▌█▌        █▌",
-    "  █████████  █████  ████████████████  ██████████ ███████████      █▌█▌█▌          █▌   █████      █████  ███████████   █████████████████   █████  █████████  █████",
-    " ███░░░░░███░░███  ░░███░░███░░░░░███░░███░░░░░█░░███░░░░░███     █▌█▌█▌          █▌  ░░███      ░░███  ░░███░░██████ ██████░░███░░██████ ░░███  ███░░░░░███░░███",
-    "░███    ░░░  ░███   ░███ ░███    ░███ ░███  █ ░  ░███    ░███     █▌█▌            █▌   ░███       ░███   ░███ ░███░█████░███ ░███ ░███░███ ░███ ░███    ░███ ░███",
-    "░░█████████  ░███   ░███ ░██████████  ░██████    ░██████████      █▌█▌          █▌█▌   ░███       ░███   ░███ ░███░░███ ░███ ░███ ░███░░███░███ ░███████████ ░███",
-    " ░░░░░░░░███ ░███   ░███ ░███░░░░░░   ░███░░█    ░███░░░░░███     █▌▀▘          █▌█▌   ░███       ░███   ░███ ░███ ░░░  ░███ ░███ ░███ ░░██████ ░███░░░░░███ ░███",
-    " ███    ░███ ░███   ░███ ░███         ░███ ░   █ ░███    ░███     █▌          ▄▖█▌█▌   ░███      █░███   ░███ ░███      ░███ ░███ ░███  ░░█████ ░███    ░███ ░███      █",
-    "░░█████████  ░░████████  █████        ██████████ █████   █████    █▌          █▌█▌█▌   ███████████░░████████  █████     ███████████████  ░░██████████   ████████████████",
-    " ░░░░░░░░░    ░░░░░░░░  ░░░░░        ░░░░░░░░░░ ░░░░░   ░░░░░     █▌        █▌█▌█▌█▌  ░░░░░░░░░░░  ░░░░░░░░  ░░░░░     ░░░░░░░░░░░░░░░    ░░░░░░░░░░   ░░░░░░░░░░░░░░░░",
-    "                                                                          ▄▖█▌█▌█▌",
-    "                                                                        ▄▖█▌█▌█▌▀▘    The Superluminal Computing Corporation",
-    "                                                                      ▄▖█▌█▌█▌▀▘",
-    "                                                                  ▄▖█▌█▌█▌▀▘",
-    "                                                      ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀▘",
-])
+LOGO_WIDE = "\n".join(
+    [
+        "                                                                              ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀",
+        "                                                                          ▄▖█▌█▌█▌█▌▀▘",
+        "                                                                        █▌█▌█▌█▌",
+        "                                                                      █▌█▌█▌▀▘",
+        "                                                                    █▌█▌█▌█▌",
+        "                                                                  █▌█▌█▌█▌        █▌",
+        "  █████████  █████  ████████████████  ██████████ ███████████      █▌█▌█▌          █▌   █████      █████  ███████████   █████████████████   █████  █████████  █████",
+        " ███░░░░░███░░███  ░░███░░███░░░░░███░░███░░░░░█░░███░░░░░███     █▌█▌█▌          █▌  ░░███      ░░███  ░░███░░██████ ██████░░███░░██████ ░░███  ███░░░░░███░░███",
+        "░███    ░░░  ░███   ░███ ░███    ░███ ░███  █ ░  ░███    ░███     █▌█▌            █▌   ░███       ░███   ░███ ░███░█████░███ ░███ ░███░███ ░███ ░███    ░███ ░███",
+        "░░█████████  ░███   ░███ ░██████████  ░██████    ░██████████      █▌█▌          █▌█▌   ░███       ░███   ░███ ░███░░███ ░███ ░███ ░███░░███░███ ░███████████ ░███",
+        " ░░░░░░░░███ ░███   ░███ ░███░░░░░░   ░███░░█    ░███░░░░░███     █▌▀▘          █▌█▌   ░███       ░███   ░███ ░███ ░░░  ░███ ░███ ░███ ░░██████ ░███░░░░░███ ░███",
+        " ███    ░███ ░███   ░███ ░███         ░███ ░   █ ░███    ░███     █▌          ▄▖█▌█▌   ░███      █░███   ░███ ░███      ░███ ░███ ░███  ░░█████ ░███    ░███ ░███      █",
+        "░░█████████  ░░████████  █████        ██████████ █████   █████    █▌          █▌█▌█▌   ███████████░░████████  █████     ███████████████  ░░██████████   ████████████████",
+        " ░░░░░░░░░    ░░░░░░░░  ░░░░░        ░░░░░░░░░░ ░░░░░   ░░░░░     █▌        █▌█▌█▌█▌  ░░░░░░░░░░░  ░░░░░░░░  ░░░░░     ░░░░░░░░░░░░░░░    ░░░░░░░░░░   ░░░░░░░░░░░░░░░░",
+        "                                                                          ▄▖█▌█▌█▌",
+        "                                                                        ▄▖█▌█▌█▌▀▘    The Superluminal Computing Corporation",
+        "                                                                      ▄▖█▌█▌█▌▀▘",
+        "                                                                  ▄▖█▌█▌█▌▀▘",
+        "                                                      ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀▘",
+    ]
+)
 
 
 def _normalize_logo_mark(raw: str) -> str:
     """Normalize logo mark for terminal rendering (prevent unwanted wrapping)."""
     lines = raw.splitlines()
 
-    # Trim leading/trailing completely blank lines
     while lines and not lines[0].strip():
         lines.pop(0)
     while lines and not lines[-1].strip():
         lines.pop()
 
-    # Strip trailing whitespace per line (keeps geometry, avoids wrapping)
     lines = [ln.rstrip() for ln in lines]
     return "\n".join(lines)
 
@@ -260,30 +275,45 @@ def _get_logo_width(raw: str) -> int:
 # Pre-normalize logos once (prevents accidental trailing whitespace issues).
 _LOGO_MARK_NORM = _normalize_logo_mark(LOGO_MARK)
 _LOGO_WIDE_NORM = _normalize_logo_mark(LOGO_WIDE)
+_LOGO_TINY_NORM = _normalize_logo_mark(LOGO_TINY)
 _LOGO_ASCII_NORM = _normalize_logo_mark(LOGO_MARK_ASCII)
 
 _LOGO_MARK_WIDTH = _get_logo_width(_LOGO_MARK_NORM)
 _LOGO_WIDE_WIDTH = _get_logo_width(_LOGO_WIDE_NORM)
+_LOGO_TINY_WIDTH = _get_logo_width(_LOGO_TINY_NORM)
 _LOGO_ASCII_WIDTH = _get_logo_width(_LOGO_ASCII_NORM)
-
-# Minimum terminal width to show the regular logo (kept conservative for safety).
-LOGO_MIN_WIDTH = max(84, _LOGO_MARK_WIDTH, _LOGO_ASCII_WIDTH)
-
-# Prefer wide logo when we can show it fully (Unicode terminals only).
-LOGO_WIDE_MIN_WIDTH = max(_LOGO_WIDE_WIDTH, LOGO_MIN_WIDTH)
 
 
 def _get_logo_mark(terminal_width: int = 120) -> str:
-    """Return the appropriate logo mark text, or empty string if terminal too narrow."""
-    if terminal_width < LOGO_MIN_WIDTH:
-        return ""  # Skip logo entirely for narrow terminals
+    """
+    Return the appropriate logo mark text, or empty string if terminal too narrow.
 
-    # Prefer wide logo when we can render it reliably and it fits.
-    if _UNICODE and terminal_width >= LOGO_WIDE_MIN_WIDTH:
-        return _LOGO_WIDE_NORM
+    Selection rules:
+      - If Unicode is supported:
+          wide (if it fits) → normal mark (if it fits) → tiny (if it fits) → ASCII (if it fits)
+      - If Unicode is not supported:
+          ASCII (if it fits) → empty
+    """
+    if terminal_width <= 0:
+        terminal_width = 80
 
-    # Otherwise, use the normal logo (Unicode) or ASCII fallback.
-    return _LOGO_MARK_NORM if _UNICODE else _LOGO_ASCII_NORM
+    # Unicode terminals: prefer the nicest mark that fully fits.
+    if _UNICODE:
+        if terminal_width >= _LOGO_WIDE_WIDTH and _LOGO_WIDE_NORM:
+            return _LOGO_WIDE_NORM
+        if terminal_width >= _LOGO_MARK_WIDTH and _LOGO_MARK_NORM:
+            return _LOGO_MARK_NORM
+        # Use tiny for terminals that can't show LOGO_MARK.
+        if terminal_width >= _LOGO_TINY_WIDTH and _LOGO_TINY_NORM:
+            return _LOGO_TINY_NORM
+        if terminal_width >= _LOGO_ASCII_WIDTH and _LOGO_ASCII_NORM:
+            return _LOGO_ASCII_NORM
+        return ""
+
+    # Non-Unicode terminals: ASCII only.
+    if terminal_width >= _LOGO_ASCII_WIDTH and _LOGO_ASCII_NORM:
+        return _LOGO_ASCII_NORM
+    return ""
 
 
 # ─────────────────────────── Sulu terminal theme ───────────────────────────
@@ -292,36 +322,30 @@ def _get_logo_mark(terminal_width: int = 120) -> str:
 def _build_sulu_theme():
     if Theme is None:
         return None
-    # These are terminal-appropriate matches of the CSS semantic theme.
     return Theme(
         {
-            # Text roles
             "sulu.fg": "#D8DEEC",
             "sulu.muted": "#A2A6AF",
             "sulu.dim": "#7E828B",
-            # Meaning colors (color = meaning only)
             "sulu.accent": "#5250FF",
             "sulu.ring": "#757EFF",
             "sulu.ok": "#1EA138",
             "sulu.warn": "#E17100",
             "sulu.err": "#FF2056",
-            # Strokes / seams
             "sulu.stroke": "#454A56",
             "sulu.stroke_subtle": "#3A3E48",
             "sulu.stroke_strong": "#545A69",
-            # Surfaces (used sparingly for panels)
+            # panel fills (require truecolor to be distinct on Windows)
             "sulu.panel": "on #1E2027",
             "sulu.well": "on #21232B",
             "sulu.control": "on #24272E",
             "sulu.overlay": "on #2C2F36",
-            # Composite helpers
             "sulu.title": "bold #D8DEEC",
             "sulu.stage": "bold #5250FF",
             "sulu.ok_b": "bold #1EA138",
             "sulu.warn_b": "bold #E17100",
             "sulu.err_b": "bold #FF2056",
             "sulu.link": "underline #5250FF",
-            # Pills / tags
             "sulu.pill": "#A2A6AF on #24272E",
         }
     )
@@ -329,36 +353,71 @@ def _build_sulu_theme():
 
 SULU_TUI_THEME = _build_sulu_theme()
 
-# Geometry (machined: square, minimal)
 SULU_PANEL_BOX = getattr(box, "SQUARE", None) if box is not None else None
 SULU_TABLE_BOX = getattr(box, "SIMPLE_HEAD", None) if box is not None else None
 
-# Consistent padding across all panels
 PANEL_PADDING = (0, 2)
 
 # ─────────────────────────── Console setup ───────────────────────────
 
 
 def get_console() -> Any:
-    """Get a rich Console instance or a fallback (None)."""
+    """
+    Get a rich Console instance or a fallback (None).
+
+    Windows note:
+      - Forcing legacy_windows=True collapses hex colors into the 16‑color palette.
+        Dark “on #1E2027” often becomes “on black”, making panel fills look absent.
+      - Prefer ANSI Truecolor on modern Windows terminals so panel backgrounds render.
+    """
     if not (RICH_AVAILABLE and Console is not None):
         return None
 
     theme = SULU_TUI_THEME
-    kwargs = dict(
+
+    kwargs: Dict[str, Any] = dict(
         force_terminal=True,
         highlight=False,
-        legacy_windows=True,
         color_system="auto",
     )
     if theme is not None:
         kwargs["theme"] = theme
 
-    # emoji=False is available on modern Rich; keep compatibility.
-    try:
-        return Console(**kwargs, emoji=False)
-    except TypeError:
-        return Console(**kwargs)
+    # On Windows: default to modern ANSI truecolor so our "on #xxxxxx" backgrounds work.
+    if sys.platform == "win32":
+        legacy_env = os.environ.get("SULU_LEGACY_WINDOWS", "").strip().lower()
+        use_legacy = legacy_env in ("1", "true", "yes", "on")
+
+        if not use_legacy:
+            kwargs["color_system"] = "truecolor"
+        kwargs["legacy_windows"] = use_legacy
+
+    def _try_console(k: Dict[str, Any]) -> Any:
+        try:
+            return Console(**k, emoji=False)
+        except TypeError:
+            try:
+                return Console(**k)
+            except TypeError:
+                return None
+
+    con = _try_console(kwargs)
+    if con is not None:
+        return con
+
+    k2 = dict(kwargs)
+    k2.pop("legacy_windows", None)
+    con = _try_console(k2)
+    if con is not None:
+        return con
+
+    k3 = dict(k2)
+    k3.pop("color_system", None)
+    con = _try_console(k3)
+    if con is not None:
+        return con
+
+    return None
 
 
 # ─────────────────────────── Size formatting ───────────────────────────
@@ -402,7 +461,6 @@ class TraceEntry:
         self.error_msg = error_msg
 
 
-# Human-readable block type names (kept, but we no longer rainbow-color them)
 BLOCK_TYPE_NAMES = {
     "Library": "Library",
     "Image": "Image",
@@ -451,7 +509,6 @@ class SubmitLogger:
         self._input_fn = input_fn or (lambda prompt, default="": input(prompt))
 
         self._trace_entries: List[TraceEntry] = []
-
         self._pack_entries: List[Dict[str, Any]] = []
 
         # Zip state
@@ -465,51 +522,34 @@ class SubmitLogger:
         self._transfer_detail = ""
         self._transfer_cur = 0
         self._transfer_total = 0
-        self._live = None  # Rich Live context for flicker-free progress
-        self._last_progress_time = 0.0  # For rate limiting updates
+
+        # Live region for in-place progress (single line; no frame flicker)
+        self._live = None
+        self._last_progress_time = 0.0  # rate limiting
+        self._progress_bar_width = 0
+        self._inline_progress_active = False  # fallback path if Live can't start
 
     # ───────────────────── internal helpers ─────────────────────
 
-    # Minimum usable terminal width for table display
     MIN_TABLE_WIDTH = 60
 
     def _compute_cols(self) -> Dict[str, int]:
         """Compute column widths based on console width."""
         width = self._get_width()
-        # Clamp to minimum to avoid broken layouts
         width = max(self.MIN_TABLE_WIDTH, width)
 
-        # status column is a single glyph + 2 spaces; keep a tiny fixed width
         status_w = 3
-        gaps = 3  # spaces between main columns
-        lead = 2  # leading indent
+        gaps = 3
+        lead = 2
         usable = max(30, width - lead - gaps - status_w)
         col_w = max(10, usable // 3)
         return {"col": col_w, "status": status_w, "total": width}
-
-    def _table_line(self, initial: str = "  ") -> Any:
-        """Create a Text object for table-like output (no wrapping)."""
-        if Text is not None:
-            return Text(initial, no_wrap=True, overflow="crop")
-        return None
-
-    def _table_text(self, content: str, style: str = "") -> Any:
-        """Create a styled Text object that won't wrap."""
-        if Text is not None:
-            return Text(content, style=style, no_wrap=True, overflow="crop")
-        return None
 
     def _print(self, msg: str = "") -> None:
         if self.console:
             self.console.print(msg)
         else:
             self._log_fn(msg)
-
-    def _print_rich(self, *args, **kwargs) -> None:
-        if self.console:
-            self.console.print(*args, **kwargs)
-        else:
-            self._log_fn(" ".join(str(a) for a in args))
 
     def _rule(self, title: str = "") -> None:
         """Subtle divider."""
@@ -552,7 +592,6 @@ class SubmitLogger:
             return ""
         if len(s) <= mx:
             return s
-        # Keep last char as ellipsis-ish dot to reduce visual noise
         ell = "…" if _UNICODE else "."
         return s[: mx - 1] + ell
 
@@ -575,13 +614,11 @@ class SubmitLogger:
             return
 
         lines = logo_str.split("\n")
-        # Find the max line length for centering calculation
         max_len = max(len(line) for line in lines) if lines else 0
 
         if self.console and Text is not None:
             self.console.print()
             for line in lines:
-                # Calculate left padding to center this line
                 padding = max(0, (width - max_len) // 2)
                 padded_line = " " * padding + line
                 self.console.print(
@@ -616,23 +653,17 @@ class SubmitLogger:
         job_url: Optional[str] = None,
     ) -> None:
         """Logo mark + celebratory end panel (after job registration)."""
-        # Celebratory marks
         sparkle = "·:*" if _UNICODE else "***"
 
         if self.console and Text is not None and Align is not None:
-            # Print logo separately (white for celebration)
             self._print_logo(style="#FFFFFF")
 
-            # Build the success panel content (without logo)
             body = Text()
-
-            # Celebratory header (all green)
             body.append(f"{sparkle} ", style="bold #1EA138")
             body.append("SUBMISSION COMPLETE", style="bold #1EA138")
             body.append(f" {sparkle[::-1]}", style="bold #1EA138")
             body.append("\n\n")
 
-            # Job details
             body.append(
                 "Your render job is now queued and will begin rendering shortly.",
                 style="sulu.fg",
@@ -647,7 +678,6 @@ class SubmitLogger:
                 body.append("\n\n")
                 body.append(str(job_url), style="underline #5250FF")
 
-            # Panel title with time
             title = Text()
             title.append(f"{GLYPH_OK}  SUCCESS", style="sulu.ok_b")
             if elapsed is not None:
@@ -779,7 +809,6 @@ class SubmitLogger:
         src_t = self._trunc(source_blend, c)
         file_t = self._trunc(found_file, c)
 
-        # Block column: [Type] name
         type_part = f"[{type_name}]"
         name_max = max(0, c - len(type_part) - 1)
         name_t = self._trunc(block_name, name_max)
@@ -787,16 +816,13 @@ class SubmitLogger:
         if self.console and Text is not None:
             line = Text("  ", no_wrap=True, overflow="crop")
 
-            # Source
             line.append(f"{src_t:<{c}} ", style="sulu.dim")
 
-            # Block tag (as a machined "pill")
             tag = Text(type_part, style="sulu.pill")
             line.append_text(tag)
             line.append(" ", style="sulu.dim")
             line.append(f"{name_t:<{name_max}} ", style="sulu.fg")
 
-            # Resolved
             if status == "ok":
                 line.append(f"{file_t:<{c}} ", style="sulu.fg")
                 line.append(f"{GLYPH_OK:>{s}}", style="sulu.ok_b")
@@ -809,7 +835,6 @@ class SubmitLogger:
 
             self.console.print(line)
 
-            # Optional error detail line
             if error_msg and status == "unreadable":
                 msg = self._trunc(error_msg, max(20, cols["total"] - 8))
                 self.console.print(
@@ -858,7 +883,6 @@ class SubmitLogger:
                 body.append("Project root: ", style="sulu.muted")
                 body.append(str(project_root), style="sulu.fg")
 
-            # Inline issue summary
             if has_issues:
                 body.append("\n")
                 parts = []
@@ -1070,42 +1094,82 @@ class SubmitLogger:
 
     # ───────────────────── upload / transfer ─────────────────────
 
+    def _compute_progress_bar_width(self) -> int:
+        """Compute a stable progress bar width that won't hit the last terminal column."""
+        width = max(self.MIN_TABLE_WIDTH, self._get_width())
+        reserved = 2 + 4 + 30  # indent + seams + stats
+        bar_w = max(18, width - reserved)
+        return min(60, bar_w)
+
     def _start_live_progress(self) -> None:
-        """Start a Rich Live region for progress (no manual ANSI clearing)."""
+        """
+        Start a Rich Live region for progress (single line).
+
+        Key anti-flicker choices:
+        - Single-line renderable (no panel frame to repaint)
+        - no_wrap + overflow="crop"
+        - auto_refresh=False: repaint only when we call update()
+        """
         if not self.console or Live is None:
             return
         if self._live is not None:
             return
 
-        renderable = self._build_progress_panel(
-            self._transfer_cur, self._transfer_total
-        )
+        renderable = self._build_progress_line(self._transfer_cur, self._transfer_total)
+
         try:
             self._live = Live(
                 renderable,
                 console=self.console,
                 refresh_per_second=10,
-                screen=False,  # keep transcript scrolling; no alt-buffer
-                transient=True,  # remove the live render when stopped
+                screen=False,
+                transient=True,
+                auto_refresh=False,
+                vertical_overflow="crop",
             )
         except TypeError:
-            # Very old Rich: be minimal
-            self._live = Live(renderable, console=self.console)
+            try:
+                self._live = Live(
+                    renderable,
+                    console=self.console,
+                    refresh_per_second=10,
+                    screen=False,
+                    transient=True,
+                    auto_refresh=False,
+                )
+            except TypeError:
+                self._live = Live(renderable, console=self.console)
 
         try:
-            self._live.start()
+            self._live.start(refresh=True)
+        except TypeError:
+            try:
+                self._live.start()
+            except Exception:
+                self._live = None
+                return
         except Exception:
             self._live = None
+            return
+
+        self._inline_progress_active = False
 
     def _stop_live_progress(self) -> None:
-        """Stop the Rich Live region if active."""
-        if self._live is None:
-            return
-        try:
-            self._live.stop()
-        except Exception:
-            pass
-        self._live = None
+        """Stop the Rich Live region if active (or clear inline fallback line)."""
+        if self._live is not None:
+            try:
+                self._live.stop()
+            except Exception:
+                pass
+            self._live = None
+
+        if self._inline_progress_active and self.console:
+            try:
+                self.console.file.write("\r\033[2K")
+                self.console.file.flush()
+            except Exception:
+                pass
+            self._inline_progress_active = False
 
     def _live_update(self, renderable: Any) -> None:
         """Update live renderable (version-tolerant)."""
@@ -1114,7 +1178,6 @@ class SubmitLogger:
         try:
             self._live.update(renderable, refresh=True)
         except TypeError:
-            # Older Rich may not accept refresh=
             try:
                 self._live.update(renderable)
             except Exception:
@@ -1126,13 +1189,14 @@ class SubmitLogger:
         self._upload_step = 0
         self._transfer_active = False
         self._last_progress_time = 0.0
+        self._progress_bar_width = 0
+        self._inline_progress_active = False
         self._stop_live_progress()
 
     def upload_step(
         self, step: int, total_steps: int, title: str, detail: str = ""
     ) -> None:
         """Start a transfer substage - shows title and prepares for progress bar."""
-        # Ensure any previous live region is stopped before printing a new header
         self._stop_live_progress()
 
         self._upload_step = step
@@ -1141,10 +1205,11 @@ class SubmitLogger:
         self._transfer_active = True
         self._transfer_cur = 0
         self._transfer_total = 0
+        self._progress_bar_width = self._compute_progress_bar_width()
+        self._last_progress_time = 0.0
 
         if self.console and Text is not None:
             self.console.print()
-            # Substage header
             step_str = f"[{step}/{total_steps}]"
             header = Text()
             header.append(f"  {step_str} ", style="sulu.accent")
@@ -1153,63 +1218,51 @@ class SubmitLogger:
                 header.append("  ", style="sulu.stroke_subtle")
                 header.append(detail, style="sulu.dim")
             self.console.print(header)
-
-            # Reset progress state
-            self._last_progress_time = 0.0
         else:
             self._log_fn(f"\n[{step}/{total_steps}] {title} {detail}")
 
-    def _build_progress_panel(self, cur: int, total: int) -> Any:
-        """Build a progress bar panel renderable."""
+    def _build_progress_line(self, cur: int, total: int) -> Any:
+        """Build a single-line progress renderable."""
         if not self.console or Text is None:
             return ""
 
-        width = max(self.MIN_TABLE_WIDTH, self._get_width())
+        bar_width = self._progress_bar_width or self._compute_progress_bar_width()
 
-        # Calculate bar width (account for panel borders and padding)
-        bar_width = max(20, width - 8)
+        line = Text(no_wrap=True, overflow="crop")
+        line.append("  ", style="sulu.dim")
+        line.append(f"{GLYPH_SEAM} ", style="sulu.stroke_subtle")
 
         if total > 0:
             pct = cur / max(total, 1)
+            pct = 0.0 if pct < 0.0 else (1.0 if pct > 1.0 else pct)
+
             filled = int(bar_width * pct)
-            empty = bar_width - filled
+            empty = max(0, bar_width - filled)
 
-            # Build the progress bar with blue fill
             bar = Text(no_wrap=True, overflow="crop")
-            bar.append("█" * filled, style="sulu.accent")
-            bar.append("░" * empty, style="sulu.stroke_subtle")
+            if filled:
+                bar.append(BAR_FULL * filled, style="sulu.accent")
+            if empty:
+                bar.append(BAR_EMPTY * empty, style="sulu.stroke_subtle")
+            line.append_text(bar)
 
-            # Stats line
-            stats = Text(no_wrap=True, overflow="crop")
-            stats.append(f"{pct * 100:5.1f}%", style="sulu.accent")
-            stats.append("  ", style="sulu.stroke_subtle")
-            stats.append(f"{format_size(cur)}", style="sulu.fg")
-            stats.append(" / ", style="sulu.dim")
-            stats.append(f"{format_size(total)}", style="sulu.muted")
+            line.append(f" {GLYPH_SEAM} ", style="sulu.stroke_subtle")
+
+            line.append(f"{pct * 100:5.1f}%", style="sulu.accent")
+            line.append("  ", style="sulu.stroke_subtle")
+            line.append(f"{format_size(cur)}", style="sulu.fg")
+            line.append(" / ", style="sulu.dim")
+            line.append(f"{format_size(total)}", style="sulu.muted")
         else:
-            # Indeterminate
             bar = Text(
-                "░" * bar_width,
-                style="sulu.stroke_subtle",
-                no_wrap=True,
-                overflow="crop",
+                BAR_EMPTY * bar_width, style="sulu.stroke_subtle", no_wrap=True, overflow="crop"
             )
-            stats = Text(no_wrap=True, overflow="crop")
-            stats.append(f"{format_size(cur)}", style="sulu.fg")
-            stats.append(" transferred", style="sulu.dim")
+            line.append_text(bar)
+            line.append(f" {GLYPH_SEAM} ", style="sulu.stroke_subtle")
+            line.append(f"{format_size(cur)}", style="sulu.fg")
+            line.append(" transferred", style="sulu.dim")
 
-        # Combine bar and stats (body allows the newline between them)
-        body = Text()
-        body.append_text(bar)
-        body.append("\n")
-        body.append_text(stats)
-
-        return self._panel(
-            body,
-            border_style="sulu.accent",
-            style="sulu.well",
-            padding=(0, 1),
-        )
+        return line
 
     def transfer_progress(self, cur: int, total: int) -> None:
         """Update the transfer progress bar."""
@@ -1219,7 +1272,6 @@ class SubmitLogger:
         if self.console and Text is not None:
             self._render_progress_bar(cur, total)
         else:
-            # Plain text fallback
             if total > 0:
                 pct = (cur / max(total, 1)) * 100
                 sys.stderr.write(
@@ -1228,34 +1280,47 @@ class SubmitLogger:
                 sys.stderr.flush()
 
     def _render_progress_bar(self, cur: int, total: int) -> None:
-        """Render/update the progress bar panel with rate limiting (no flicker)."""
-        if not self.console or Text is None:
+        """Render/update the progress line with rate limiting (no flicker, no new lines)."""
+        if not self.console or Text is not None and self.console is None:
+            return
+        if Text is None:
             return
 
-        # Rate limit ~10Hz
         now = time.time()
         if (now - self._last_progress_time) < 0.1:
             return
         self._last_progress_time = now
 
         self._start_live_progress()
-        panel = self._build_progress_panel(cur, total)
+        renderable = self._build_progress_line(cur, total)
 
         if self._live is not None:
-            self._live_update(panel)
-        else:
-            # If Live couldn't start (edge env), degrade to printing occasionally
-            self.console.print(panel)
+            self._live_update(renderable)
+            return
+
+        # Fallback: inline CR update, never prints a newline.
+        try:
+            self.console.file.write("\r\033[2K")
+            self.console.file.flush()
+        except Exception:
+            pass
+        try:
+            self.console.print(renderable, end="")
+            try:
+                self.console.file.flush()
+            except Exception:
+                pass
+            self._inline_progress_active = True
+        except Exception:
+            pass
 
     def upload_complete(self, title: str) -> None:
         """Mark current transfer substage as complete."""
         self._transfer_active = False
 
         if self.console and Text is not None:
-            # Stop live region so the completion panel prints cleanly
             self._stop_live_progress()
 
-            # Show completion with stats
             body = Text()
             body.append(f"{GLYPH_OK} ", style="sulu.ok_b")
             body.append(title, style="sulu.fg")
@@ -1278,7 +1343,6 @@ class SubmitLogger:
     def upload_end(self, elapsed: float) -> None:
         """Final upload completion message."""
         if self.console and Text is not None:
-            # Safety: ensure no Live region is still running
             self._stop_live_progress()
 
             self.console.print()
@@ -1344,29 +1408,13 @@ class SubmitLogger:
         options: List[Tuple[str, str, str]],
         default: str = "",
     ) -> str:
-        """
-        Render a chat-style dialog from SU⡾LU with selectable options.
-
-        Args:
-            question: The question to ask
-            options: List of (key, label, description) tuples
-                     e.g. [("y", "Yes", "Continue with submission"), ...]
-            default: Default key if user just presses Enter
-
-        Returns:
-            The selected key (lowercase)
-        """
         if self.console and Text is not None and Panel is not None:
             self.console.print()
 
-            # Build the chat message body
             body = Text()
-
-            # Question text
             body.append(question, style="sulu.fg")
             body.append("\n")
 
-            # Render options inline as compact chips
             for i, (key, label, desc) in enumerate(options):
                 is_default = key.lower() == default.lower()
                 key_style = (
@@ -1381,7 +1429,6 @@ class SubmitLogger:
                 if i < len(options) - 1:
                     body.append("   ", style="sulu.dim")
 
-            # Chat bubble panel with SU⡾LU branding
             sender = Text()
             sender.append("SU", style="bold #5250FF")
             sender.append("⡾", style="#757EFF")
@@ -1398,14 +1445,12 @@ class SubmitLogger:
             )
             self.console.print(panel)
 
-            # Input prompt line
             prompt_text = Text()
             prompt_text.append(" ❯ ", style="sulu.accent")
             if default:
                 prompt_text.append(f"[{default}] ", style="sulu.dim")
             self.console.print(prompt_text, end="")
 
-            # Get input
             try:
                 answer = self._input_fn("", default)
                 answer = answer.strip().lower() if answer.strip() else default.lower()
@@ -1414,7 +1459,6 @@ class SubmitLogger:
 
             return answer
         else:
-            # Plain text fallback
             self._log_fn("")
             self._log_fn(f"[SU⡾LU] {question}")
             opts = "  ".join(f"[{k}] {lbl}" for k, lbl, _ in options)
@@ -1455,7 +1499,6 @@ class SubmitLogger:
         if self.console and Text is not None and Panel is not None:
             self.console.print()
 
-            # Chat bubble with question
             body = Text(question, style="sulu.fg")
 
             sender = Text()
@@ -1474,7 +1517,6 @@ class SubmitLogger:
             )
             self.console.print(panel)
 
-            # Input prompt
             prompt_text = Text()
             prompt_text.append("  ❯ ", style="sulu.accent")
             self.console.print(prompt_text, end="")
@@ -1609,7 +1651,6 @@ class SubmitLogger:
         self.info(f"Project root: {_sh(project_root)}")
         self.info(f"Same-drive: {same_drive}  ·  Cross-drive: {cross_drive}")
 
-        # Breakdown table (minimal)
         if self.console and Table is not None:
             table = Table(
                 title="Dependency breakdown",
@@ -1635,7 +1676,6 @@ class SubmitLogger:
                 self._log_fn(f"  {ext:12} : {cnt:4} files")
             self._log_fn(f"  Total size: {format_size(total_size)}")
 
-        # Issues block
         has_issues = bool(missing or unreadable or cross_drive_files)
         if has_issues:
             lines: List[str] = []
@@ -1726,7 +1766,6 @@ class SubmitLogger:
         cross_drive_count: int = 0,
         total_size: int = 0,
     ) -> None:
-        # Keep old behavior: print as a warning block if issues exist
         if missing_count or unreadable_count or cross_drive_count:
             parts = []
             if cross_drive_count:
@@ -1736,9 +1775,7 @@ class SubmitLogger:
             if unreadable_count:
                 parts.append(f"{unreadable_count} unreadable")
             self.warn_block("Issues: " + ", ".join(parts), severity="warning")
-        self.pack_end(
-            ok_count=ok_count, total_size=total_size, title="Packing complete"
-        )
+        self.pack_end(ok_count=ok_count, total_size=total_size, title="Packing complete")
 
 
 # ─────────────────────────── Factory ───────────────────────────
