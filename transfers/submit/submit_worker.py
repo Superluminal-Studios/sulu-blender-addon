@@ -1,3 +1,4 @@
+
 # submit_worker.py
 """
 submit_worker.py – Sulu Submit worker (robust, with retries).
@@ -39,6 +40,39 @@ import webbrowser
 import requests
 
 
+# ─── Copy helpers (no '(s)' plurals) ─────────────────────────────
+
+
+def _plural_word(word: str) -> str:
+    w = str(word or "")
+    lw = w.lower()
+
+    if lw == "dependency":
+        return "dependencies"
+    if lw == "directory":
+        return "directories"
+
+    if lw.endswith(("s", "x", "z", "ch", "sh")):
+        return w + "es"
+    if lw.endswith("y") and len(lw) >= 2 and lw[-2] not in "aeiou":
+        return w[:-1] + "ies"
+    return w + "s"
+
+
+def _count(n: int, singular: str, plural: Optional[str] = None) -> str:
+    try:
+        n_int = int(n)
+    except Exception:
+        n_int = 0
+    if n_int == 1:
+        return f"{n_int} {singular}"
+    return f"{n_int} {plural or _plural_word(singular)}"
+
+
+def _debug_enabled() -> bool:
+    return os.environ.get("SULU_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _nfc(s: str) -> str:
     """Normalize string to NFC form (matches BAT's archive path normalization)."""
     return unicodedata.normalize("NFC", str(s))
@@ -50,6 +84,34 @@ def _is_interactive() -> bool:
         return sys.stdin.isatty()
     except Exception:
         return False
+
+
+
+def _supports_unicode() -> bool:
+    """Best-effort check whether Unicode output is safe in this terminal."""
+    try:
+        encoding = sys.stdout.encoding or ""
+        if "utf" in encoding.lower():
+            return True
+    except Exception:
+        pass
+
+    if "utf" in os.environ.get("PYTHONIOENCODING", "").lower():
+        return True
+
+    if sys.platform == "win32":
+        # Windows Terminal / VS Code terminal
+        if os.environ.get("WT_SESSION"):
+            return True
+        if os.environ.get("TERM_PROGRAM", "").lower() in ("vscode",):
+            return True
+        return False
+
+    return True
+
+
+_UNICODE = _supports_unicode()
+ELLIPSIS = "…" if _UNICODE else "..."
 
 
 def _safe_input(prompt: str, default: str = "") -> str:
@@ -181,18 +243,18 @@ def _looks_like_cloud_storage_path(p: str) -> bool:
 
 def _mac_permission_help(path: str, err: str) -> str:
     lines = [
-        "macOS blocked access to a file we need to upload/pack.",
+        "macOS blocked access to a dependency needed for submission.",
         "",
         "Fix:",
         "  - System Settings -> Privacy & Security -> Full Disk Access",
-        "  - Enable the app running this upload (Terminal/iTerm if you see this console; otherwise Blender).",
+        "  - Enable the app running this submission (Terminal/iTerm if you see this console; otherwise Blender).",
     ]
     if _looks_like_cloud_storage_path(path):
         lines += [
             "",
             "Cloud storage note:",
-            "  - This file is in a cloud-synced folder.",
-            "  - Make sure it's downloaded / available offline, then retry.",
+            "  - This dependency is in a cloud-synced folder.",
+            "  - Make sure it's downloaded and available offline, then try again.",
         ]
     lines += ["", f"Technical: {err}"]
     return "\n".join(lines)
@@ -204,7 +266,7 @@ def _probe_readable_file(
     """
     Returns (ok, error_message).
     - ok=True: file exists and can be opened for reading
-    - ok=False: missing or unreadable (permission / offline placeholder / etc.)
+    - ok=False: missing or not readable (permission / offline placeholder / etc.)
 
     If hydrate=True, reads the entire file to force cloud-mounted drives (OneDrive,
     Google Drive, iCloud, etc.) to fully download "dehydrated" placeholder files.
@@ -240,7 +302,7 @@ def _probe_readable_file(
                 f.read(1)
         return (True, None)
     except FileNotFoundError:
-        return (False, "File not found")
+        return (False, "not found")
     except PermissionError as exc:
         return (False, f"PermissionError: {exc}")
     except OSError as exc:
@@ -288,15 +350,20 @@ def _should_moveto_local_file(local_path: str, original_blend_path: str) -> bool
 
 
 def _format_size(size_bytes: int) -> str:
-    """Format bytes as human readable."""
-    if size_bytes < 1024:
+    """
+    Format bytes as human readable (decimal).
+
+    Uses decimal units for file/transfer size:
+      1 KB = 1000 B, 1 MB = 1000 KB, 1 GB = 1000 MB
+    """
+    if size_bytes < 1000:
         return f"{size_bytes} B"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    elif size_bytes < 1024 * 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    elif size_bytes < 1000 * 1000:
+        return f"{size_bytes / 1000:.1f} KB"
+    elif size_bytes < 1000 * 1000 * 1000:
+        return f"{size_bytes / (1000 * 1000):.1f} MB"
     else:
-        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+        return f"{size_bytes / (1000 * 1000 * 1000):.2f} GB"
 
 
 def _generate_report(
@@ -391,7 +458,7 @@ def _generate_report(
             json.dump(report, f, indent=2, default=str)
 
     except Exception as e:
-        _LOG(f"Warning: Could not save report: {e}")
+        _LOG(f"Warning: Could not save diagnostic report: {e}")
         report_path = None
 
     return report, report_path
@@ -521,31 +588,29 @@ def main() -> None:
             if latest_version:
                 latest_version = tuple(int(i) for i in latest_version.split("."))
                 if latest_version > tuple(data["addon_version"]):
-                    logger.version_update(
+                    answer = logger.version_update(
                         "https://superlumin.al/blender-addon",
                         [
-                            "Download the latest add-on zip from the link above.",
-                            "Uninstall the current version in Blender.",
-                            "Install the latest version in Blender.",
+                            "Download the add-on .zip file from the link.",
+                            "Uninstall the current add-on in the Blender preferences.",
+                            "Install the downloaded .zip file.",
                             "Restart Blender.",
                         ],
-                    )
-                    answer = logger.ask_choice(
-                        "A newer version of the add-on is available. Would you like to update now?",
-                        [
-                            ("y", "Yes", "Open download page and exit"),
-                            ("n", "No", "Continue with current version"),
+                        prompt="Update now?",
+                        options=[
+                            ("y", "Update", "Open the download page and close"),
+                            ("n", "Not now", "Continue with the current version"),
                         ],
                         default="n",
                     )
                     if answer == "y":
                         webbrowser.open("https://superlumin.al/blender-addon")
-                        logger.info_exit("Please complete the update and restart Blender.")
+                        logger.info_exit("Complete the update, then restart Blender.")
     except SystemExit:
         sys.exit(0)
     except Exception:
         logger.info(
-            "Skipped add-on update check (network not available or rate-limited). Continuing…"
+            f"Couldn't check for add-on updates (network not available or rate-limited). Continuing{ELLIPSIS}"
         )
 
     headers = {"Authorization": data["user_token"]}
@@ -554,7 +619,11 @@ def main() -> None:
     try:
         rclone_bin = ensure_rclone(logger=logger)
     except Exception as e:
-        logger.fatal(f"Couldn't prepare the uploader (rclone): {e}")
+        logger.fatal(
+            "Couldn't prepare the uploader (rclone). "
+            "Try restarting Blender. If the problem continues, reinstall the add-on.\n"
+            f"Technical: {e}"
+        )
 
     # Verify farm availability (nice error if org misconfigured)
     try:
@@ -564,18 +633,27 @@ def main() -> None:
             timeout=30,
         )
         if farm_status.status_code != 200:
-            logger.error(f"Farm status check failed: {farm_status.json()}")
+            # Keep the user-facing message calm; include details only in debug.
+            if _debug_enabled():
+                try:
+                    logger.error(f"Farm status check response: {farm_status.json()}")
+                except Exception:
+                    logger.error(f"Farm status check response: {farm_status.text}")
+
             logger.fatal(
-                "Please verify that you are logged in and a project is selected. "
-                "If the issue persists, try logging out and back in."
+                "Couldn't confirm farm availability.\n"
+                "Check that you're logged in and a project is selected. "
+                "If this keeps happening, log out and log back in."
             )
     except SystemExit:
         raise
     except Exception as exc:
-        logger.error(f"Farm status check failed: {exc}")
+        if _debug_enabled():
+            logger.error(f"Farm status check exception: {exc}")
         logger.fatal(
-            "Please verify that you are logged in and a project is selected. "
-            "If the issue persists, try logging out and back in."
+            "Couldn't confirm farm availability.\n"
+            "Check that you're logged in and a project is selected. "
+            "If this keeps happening, log out and log back in."
         )
 
     # Local paths / settings
@@ -619,15 +697,15 @@ def main() -> None:
     )
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # STAGE 1: TRACING - Discover all dependencies
+    # Stage 1: Tracing — discover dependencies
     # ═══════════════════════════════════════════════════════════════════════════
     logger.stage_header(
         1,
-        "TRACING DEPENDENCIES",
-        "Scanning blend file for external references",
+        "Tracing dependencies",
+        "Tracing external dependencies referenced by this blend file",
         details=[
             f"Main file: {Path(blend_path).name}",
-            "Resolving dependencies…",
+            f"Resolving dependencies{ELLIPSIS}",
         ],
     )
     logger.trace_start(blend_path)
@@ -650,7 +728,8 @@ def main() -> None:
         if not automatic_project_path:
             if not custom_project_path_str or not str(custom_project_path_str).strip():
                 logger.fatal(
-                    "Custom Project Path is empty. Either enable Automatic Project Path or set a valid folder."
+                    "Custom Project Path is empty.\n"
+                    "Turn on Automatic Project Path, or choose a valid folder."
                 )
             custom_root = Path(custom_project_path_str)
 
@@ -675,23 +754,25 @@ def main() -> None:
         if has_issues:
             parts: List[str] = []
             if cross_drive_deps:
-                parts.append(f"{len(cross_drive_deps)} file(s) on a different drive (excluded from Project upload)")
+                parts.append(
+                    f"{_count(len(cross_drive_deps), 'dependency')} on another drive (not included in Project upload)"
+                )
             if missing_files_list:
-                parts.append(f"{len(missing_files_list)} missing file(s)")
+                parts.append(f"{_count(len(missing_files_list), 'missing dependency')}")
             if unreadable_files_list:
-                parts.append(f"{len(unreadable_files_list)} unreadable file(s)")
+                parts.append(f"{_count(len(unreadable_files_list), 'dependency')} not readable")
 
             mac_extra = ""
             if _IS_MAC and unreadable_files_list:
                 for p, err in unreadable_files_list:
                     low = err.lower()
                     if "permission" in low or "operation not permitted" in low or "not permitted" in low:
-                        mac_extra = "\n" + _mac_permission_help(p, err)
+                        mac_extra = "\n\n" + _mac_permission_help(p, err)
                         break
 
             warning_text = (
-                "\n".join(f"  - {p}" for p in parts)
-                + "\nThis may cause missing textures or linked data on the farm."
+                "This can lead to missing textures or other dependencies on the farm."
+                + "\nIf you need everything included, switch to Zip upload or choose a Project Path that contains all dependencies."
                 + mac_extra
             )
 
@@ -702,6 +783,12 @@ def main() -> None:
             project_root=shorten_path(common_path),
             cross_drive=len(cross_drive_deps),
             warning_text=warning_text,
+            cross_drive_excluded=True,
+            missing_files=missing_files_list,
+            unreadable_files=unreadable_files_list,
+            cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
+            shorten_fn=shorten_path,
+            automatic_project_path=automatic_project_path,
         )
         report.complete_stage("trace")
 
@@ -747,28 +834,28 @@ def main() -> None:
                 report_path=str(test_report_path) if test_report_path else None,
                 shorten_fn=shorten_path,
             )
-            _safe_input("\nPress ENTER to close this window...", "")
+            _safe_input(f"\nPress Enter to close this window{ELLIPSIS}", "")
             sys.exit(0)
 
         # Prompt if there are issues
         if has_issues:
-            logger.report_info(str(report.get_path()))
             answer = logger.ask_choice(
-                "Some issues were detected during dependency tracing. Would you like to continue?",
+                "Some issues were found while tracing dependencies. Continue?",
                 [
-                    ("y", "Yes", "Continue with submission"),
-                    ("n", "No", "Cancel and exit"),
-                    ("o", "Open Reports", "View diagnostic reports folder"),
+                    ("y", "Continue", "Continue with submission"),
+                    ("n", "Cancel", "Cancel and close"),
+                    ("o", "Open Diagnostic Reports", "Open the Diagnostic Reports folder"),
                 ],
                 default="y",
             )
             if answer == "o":
+                logger.report_info(str(report.get_path()))
                 open_folder(str(report.get_reports_dir()))
                 answer = logger.ask_choice(
                     "Continue with submission?",
                     [
-                        ("y", "Yes", "Proceed anyway"),
-                        ("n", "No", "Cancel and exit"),
+                        ("y", "Continue", "Proceed anyway"),
+                        ("n", "Cancel", "Cancel and close"),
                     ],
                     default="y",
                 )
@@ -777,12 +864,12 @@ def main() -> None:
                 sys.exit(1)
 
         # ═══════════════════════════════════════════════════════════════════════
-        # STAGE 2: MANIFEST - Map deps into project structure
+        # Stage 2: Manifest — map dependencies into project structure
         # ═══════════════════════════════════════════════════════════════════════
         logger.stage_header(
             2,
-            "BUILDING MANIFEST",
-            "Mapping dependencies to project structure",
+            "Building manifest",
+            "Mapping dependencies into the project structure",
         )
 
         report.start_stage("pack")
@@ -877,12 +964,7 @@ def main() -> None:
 
         zip_warning_text = None
         if has_zip_issues:
-            parts_z: List[str] = []
-            if missing_files_list:
-                parts_z.append(f"{len(missing_files_list)} missing file(s)")
-            if unreadable_files_list:
-                parts_z.append(f"{len(unreadable_files_list)} unreadable file(s)")
-            zip_warning_text = "\n".join(f"  - {p}" for p in parts_z) + "\nThe zip may be incomplete."
+            zip_warning_text = "The archive may be incomplete."
 
         logger.trace_summary(
             total=len(dep_paths),
@@ -891,27 +973,33 @@ def main() -> None:
             project_root=shorten_path(project_root_str),
             cross_drive=len(cross_drive_deps),
             warning_text=zip_warning_text,
+            cross_drive_excluded=False,
+            missing_files=missing_files_list,
+            unreadable_files=unreadable_files_list,
+            cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
+            shorten_fn=shorten_path,
+            automatic_project_path=True,  # ZIP mode always auto-detects
         )
         report.complete_stage("trace")
 
         if has_zip_issues:
-            logger.report_info(str(report.get_path()))
             answer = logger.ask_choice(
-                "Some issues were detected during dependency tracing. Would you like to continue?",
+                "Some issues were found while tracing dependencies. Continue?",
                 [
-                    ("y", "Yes", "Continue with submission"),
-                    ("n", "No", "Cancel and exit"),
-                    ("o", "Open Reports", "View diagnostic reports folder"),
+                    ("y", "Continue", "Continue with submission"),
+                    ("n", "Cancel", "Cancel and close"),
+                    ("o", "Open Diagnostic Reports", "Open the Diagnostic Reports folder"),
                 ],
                 default="y",
             )
             if answer == "o":
+                logger.report_info(str(report.get_path()))
                 open_folder(str(report.get_reports_dir()))
                 answer = logger.ask_choice(
                     "Continue with submission?",
                     [
-                        ("y", "Yes", "Proceed anyway"),
-                        ("n", "No", "Cancel and exit"),
+                        ("y", "Continue", "Proceed anyway"),
+                        ("n", "Cancel", "Cancel and close"),
                     ],
                     default="y",
                 )
@@ -961,16 +1049,16 @@ def main() -> None:
                 report_path=str(test_report_path) if test_report_path else None,
                 shorten_fn=shorten_path,
             )
-            _safe_input("\nPress ENTER to close this window...", "")
+            _safe_input(f"\nPress Enter to close this window{ELLIPSIS}", "")
             sys.exit(0)
 
         # ═══════════════════════════════════════════════════════════════════════
-        # STAGE 2: PACKING (ZIP MODE)
+        # Stage 2: Packing (Zip upload)
         # ═══════════════════════════════════════════════════════════════════════
         logger.stage_header(
             2,
-            "PACKING",
-            "Creating compressed archive with all dependencies",
+            "Packing",
+            "Creating a compressed archive with all dependencies",
         )
         report.start_stage("pack")
 
@@ -1007,7 +1095,7 @@ def main() -> None:
 
         if not zip_file.exists():
             report.set_status("failed")
-            logger.fatal("Zip file does not exist")
+            logger.fatal("Couldn't create the archive.")
 
         required_storage = zip_file.stat().st_size
         rel_manifest = []
@@ -1032,16 +1120,16 @@ def main() -> None:
         if not use_project and zip_file.exists():
             try:
                 zip_file.unlink()
-                logger.info(f"Cleaned up temp zip: {zip_file}")
+                logger.info(f"Cleaned up temp archive: {zip_file}")
             except:
                 pass
-        _safe_input("\nPress ENTER to close this window...", "")
+        _safe_input(f"\nPress Enter to close this window{ELLIPSIS}", "")
         sys.exit(0)
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # STAGE 3: UPLOADING - Transfer files to cloud storage
+    # Stage 3: Uploading — transfer to cloud storage
     # ═══════════════════════════════════════════════════════════════════════════
-    logger.stage_header(3, "UPLOADING", "Transferring files to render farm storage")
+    logger.stage_header(3, "Uploading", "Transferring data to farm storage")
     report.start_stage("upload")
 
     # R2 credentials
@@ -1060,7 +1148,7 @@ def main() -> None:
         bucket = s3info["bucket_name"]
         logger.storage_connect("connected")
     except Exception as exc:
-        logger.fatal(f"Could not obtain storage credentials: {exc}")
+        logger.fatal(f"Couldn't obtain storage credentials.\nTechnical: {exc}")
 
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
 
@@ -1091,7 +1179,7 @@ def main() -> None:
 
     try:
         if not use_project:
-            # ZIP MODE UPLOAD
+            # Zip upload
             total_steps = 2 if has_addons else 1
             step = 1
             logger.upload_start(total_steps)
@@ -1120,7 +1208,7 @@ def main() -> None:
                     step,
                     total_steps,
                     "Uploading add-ons",
-                    f"{len(data['packed_addons'])} item(s)",
+                    _count(len(data["packed_addons"]), "add-on"),
                 )
                 report.start_upload_step(step, total_steps, "Uploading add-ons")
                 run_rclone(
@@ -1137,7 +1225,7 @@ def main() -> None:
             report.complete_stage("upload")
 
         else:
-            # PROJECT MODE UPLOAD
+            # Project upload
             total_steps = 3 if rel_manifest else 2
             if has_addons:
                 total_steps += 1
@@ -1152,10 +1240,10 @@ def main() -> None:
             logger.upload_step(
                 step,
                 total_steps,
-                "Uploading main .blend",
+                "Uploading main blend",
                 f"{Path(blend_path).name} ({_format_size(blend_size)})",
             )
-            report.start_upload_step(step, total_steps, "Uploading main .blend")
+            report.start_upload_step(step, total_steps, "Uploading main blend")
             move_to_path = _nfc(_s3key_clean(f"{project_name}/{main_blend_s3}"))
             remote_main = f":s3:{bucket}/{move_to_path}"
             run_rclone(
@@ -1166,7 +1254,7 @@ def main() -> None:
                 extra=rclone_settings,
                 logger=logger,
             )
-            logger.upload_complete("Main .blend uploaded")
+            logger.upload_complete("Main blend uploaded")
             report.complete_upload_step(bytes_transferred=blend_size)
             step += 1
 
@@ -1175,7 +1263,7 @@ def main() -> None:
                     step,
                     total_steps,
                     "Uploading dependencies",
-                    f"{len(rel_manifest)} file(s)",
+                    _count(len(rel_manifest), "dependency"),
                 )
                 report.start_upload_step(step, total_steps, "Uploading dependencies")
                 dependency_rclone_settings = ["--files-from", str(filelist)]
@@ -1214,7 +1302,7 @@ def main() -> None:
                     step,
                     total_steps,
                     "Uploading add-ons",
-                    f"{len(data['packed_addons'])} item(s)",
+                    _count(len(data["packed_addons"]), "add-on"),
                 )
                 report.start_upload_step(step, total_steps, "Uploading add-ons")
                 run_rclone(
@@ -1232,7 +1320,7 @@ def main() -> None:
 
     except RuntimeError as exc:
         report.set_status("failed")
-        logger.fatal(f"Upload failed: {exc}")
+        logger.fatal(f"Upload failed.\nTechnical: {exc}")
 
     finally:
         try:
@@ -1296,17 +1384,24 @@ def main() -> None:
         post_resp.raise_for_status()
     except requests.RequestException as exc:
         report.set_status("failed")
-        logger.fatal(f"Job registration failed: {exc}")
+        logger.fatal(f"Job registration failed.\nTechnical: {exc}")
 
     # Finalize the diagnostic report
     report.finalize()
 
     elapsed = time.perf_counter() - t_start
     job_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{data['job_id']}"
+
+    selection = "c"
     try:
-        logger.logo_end(job_id=data["job_id"], elapsed=elapsed, job_url=job_url)
+        selection = logger.logo_end(
+            job_id=data["job_id"],
+            elapsed=elapsed,
+            job_url=job_url,
+            report_path=str(report.get_reports_dir()),
+        )
     except Exception:
-        pass
+        selection = "c"
 
     try:
         # Best effort: remove the handoff file (only in worker mode)
@@ -1315,24 +1410,27 @@ def main() -> None:
     except Exception:
         pass
 
-    selection = logger.ask_choice(
-        "Submission complete! What would you like to do?",
-        [
-            ("y", "Open in Browser", "View job status on superlumin.al"),
-            ("o", "Open Reports", "View diagnostic reports folder"),
-            ("n", "Close", "Exit this window"),
-        ],
-        default="n",
-    )
-    if selection == "o":
-        open_folder(str(report.get_reports_dir()))
-        _safe_input("\nPress ENTER to close this window...", "")
-    elif selection == "y":
-        web_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{data['job_id']}"
-        webbrowser.open(web_url)
-        logger.job_complete(web_url)
-        _safe_input("\nPress ENTER to close this window...", "")
-        sys.exit(1)
+    # Act on the integrated success prompt.
+    if selection == "j":
+        try:
+            webbrowser.open(job_url)
+            logger.job_complete(job_url)
+        except Exception:
+            pass
+        _safe_input(f"\nPress Enter to close this window{ELLIPSIS}", "")
+        sys.exit(0)
+
+    if selection == "r":
+        try:
+            open_folder(str(report.get_reports_dir()))
+            logger.info("Opened Diagnostic Reports.")
+        except Exception:
+            pass
+        _safe_input(f"\nPress Enter to close this window{ELLIPSIS}", "")
+        sys.exit(0)
+
+    # selection == "c" (close)
+    sys.exit(0)
 
 
 # ─── entry ───────────────────────────────────────────────────────
@@ -1347,10 +1445,11 @@ if __name__ == "__main__":
         traceback.print_exc()
         print(
             f"\n{exc}\n"
-            "Tip: try switching to Zip upload or choose a higher-level Project Path, then submit again."
+            "Tip: switch to Zip upload or choose a higher-level Project Path, then submit again."
         )
         try:
-            _safe_input("\nPress ENTER to close this window...", "")
+            _safe_input(f"\nPress Enter to close this window{ELLIPSIS}", "")
         except Exception:
             pass
         sys.exit(1)
+

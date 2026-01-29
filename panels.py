@@ -378,6 +378,15 @@ class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
             sub.active = not props.automatic_project_path
             sub.prop(props, "custom_project_path")
 
+            # Warning if automatic is disabled but no custom path is set
+            if not props.automatic_project_path:
+                custom_path = str(props.custom_project_path or "").strip()
+                if not custom_path:
+                    warn_box = col.box()
+                    warn_row = warn_box.row()
+                    warn_row.alert = True
+                    warn_row.label(text="Custom Project Path is empty. Either enable Automatic Project Path or specify a valid folder.", icon="ERROR")
+
 
 class SUPERLUMINAL_PT_IncludeAddons(bpy.types.Panel):
     bl_idname = "SUPERLUMINAL_PT_IncludeAddons"

@@ -125,8 +125,25 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             )
             return {"CANCELLED"}
 
-        # Non-blocking heads-up if Project upload will ignore off-drive deps
+        # Validate custom project path if automatic is disabled
         if props.upload_type == "PROJECT":
+            if not props.automatic_project_path:
+                custom_path = str(props.custom_project_path or "").strip()
+                if not custom_path:
+                    self.report(
+                        {"ERROR"},
+                        "Custom Project Path is empty. Either enable Automatic Project Path or specify a valid folder.",
+                    )
+                    return {"CANCELLED"}
+                # Also check if the path exists
+                if not os.path.isdir(bpy.path.abspath(custom_path)):
+                    self.report(
+                        {"ERROR"},
+                        f"Custom Project Path does not exist: {custom_path}",
+                    )
+                    return {"CANCELLED"}
+
+            # Non-blocking heads-up if Project upload will ignore off-drive deps
             try:
                 has_cross, summary = quick_cross_drive_hint()
                 if has_cross:
