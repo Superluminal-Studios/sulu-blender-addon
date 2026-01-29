@@ -254,7 +254,7 @@ def _mac_permission_help(path: str, err: str) -> str:
             "",
             "Cloud storage note:",
             "  - This dependency is in a cloud-synced folder.",
-            "  - Make sure it's downloaded and available offline, then try again.",
+            "  - Make sure the file is downloaded and available offline, then submit again.",
         ]
     lines += ["", f"Technical: {err}"]
     return "\n".join(lines)
@@ -458,7 +458,7 @@ def _generate_report(
             json.dump(report, f, indent=2, default=str)
 
     except Exception as e:
-        _LOG(f"Warning: Could not save diagnostic report: {e}")
+        _LOG(f"Diagnostic report not saved: {e}")
         report_path = None
 
     return report, report_path
@@ -592,25 +592,25 @@ def main() -> None:
                         "https://superlumin.al/blender-addon",
                         [
                             "Download the add-on .zip file from the link.",
-                            "Uninstall the current add-on in the Blender preferences.",
+                            "Uninstall the current add-on in Blender preferences.",
                             "Install the downloaded .zip file.",
                             "Restart Blender.",
                         ],
                         prompt="Update now?",
                         options=[
                             ("y", "Update", "Open the download page and close"),
-                            ("n", "Not now", "Continue with the current version"),
+                            ("n", "Not now", "Continue with current version"),
                         ],
                         default="n",
                     )
                     if answer == "y":
                         webbrowser.open("https://superlumin.al/blender-addon")
-                        logger.info_exit("Complete the update, then restart Blender.")
+                        logger.info_exit("Install the new version, then restart Blender.")
     except SystemExit:
         sys.exit(0)
     except Exception:
         logger.info(
-            f"Couldn't check for add-on updates (network not available or rate-limited). Continuing{ELLIPSIS}"
+            "Couldn't check for add-on updates. Continuing with current version."
         )
 
     headers = {"Authorization": data["user_token"]}
@@ -621,7 +621,7 @@ def main() -> None:
     except Exception as e:
         logger.fatal(
             "Couldn't prepare the uploader (rclone). "
-            "Try restarting Blender. If the problem continues, reinstall the add-on.\n"
+            "Restart Blender. If this continues, reinstall the add-on.\n"
             f"Technical: {e}"
         )
 
@@ -642,8 +642,8 @@ def main() -> None:
 
             logger.fatal(
                 "Couldn't confirm farm availability.\n"
-                "Check that you're logged in and a project is selected. "
-                "If this keeps happening, log out and log back in."
+                "Verify you're logged in and a project is selected. "
+                "If this continues, log out and log back in."
             )
     except SystemExit:
         raise
@@ -652,8 +652,8 @@ def main() -> None:
             logger.error(f"Farm status check exception: {exc}")
         logger.fatal(
             "Couldn't confirm farm availability.\n"
-            "Check that you're logged in and a project is selected. "
-            "If this keeps happening, log out and log back in."
+            "Verify you're logged in and a project is selected. "
+            "If this continues, log out and log back in."
         )
 
     # Local paths / settings
@@ -702,10 +702,10 @@ def main() -> None:
     logger.stage_header(
         1,
         "Tracing dependencies",
-        "Tracing external dependencies referenced by this blend file",
+        "Scanning for external assets referenced by this blend file",
         details=[
             f"Main file: {Path(blend_path).name}",
-            f"Resolving dependencies{ELLIPSIS}",
+            "Resolving dependencies",
         ],
     )
     logger.trace_start(blend_path)
@@ -741,8 +741,8 @@ def main() -> None:
         if not automatic_project_path:
             if not custom_project_path_str or not str(custom_project_path_str).strip():
                 logger.fatal(
-                    "Custom Project Path is empty.\n"
-                    "Turn on Automatic Project Path, or choose a valid folder."
+                    "Custom project path is empty.\n"
+                    "Turn on Automatic Project Path, or select a valid folder."
                 )
             custom_root = Path(custom_project_path_str)
 
@@ -795,14 +795,14 @@ def main() -> None:
 
             if absolute_path_deps:
                 warning_parts.append(
-                    "Farm can't resolve absolute paths. "
-                    "Make paths relative (File → External Data → Make All Paths Relative) or use Zip upload."
+                    "Farm cannot resolve absolute paths. "
+                    "Make paths relative (File → External Data → Make All Paths Relative), or use Zip upload."
                 )
 
             if cross_drive_deps:
                 warning_parts.append(
                     "Cross-drive files excluded from Project upload. "
-                    "Use Zip upload or move files to the project drive."
+                    "Use Zip upload, or move files to the project drive."
                 )
 
             if (missing_files_list or unreadable_files_list) and not absolute_path_deps and not cross_drive_deps:
@@ -871,27 +871,27 @@ def main() -> None:
                 report_path=str(test_report_path) if test_report_path else None,
                 shorten_fn=shorten_path,
             )
-            _safe_input(f"\nPress Enter to close this window{ELLIPSIS}", "")
+            _safe_input("\nPress Enter to close.", "")
             sys.exit(0)
 
         # Prompt if there are issues
         if has_issues:
             answer = logger.ask_choice(
-                "Some issues were found while tracing dependencies. Continue?",
+                "Some dependencies have problems. Continue anyway?",
                 [
-                    ("y", "Continue", "Continue with submission"),
+                    ("y", "Continue", "Proceed with submission"),
                     ("n", "Cancel", "Cancel and close"),
-                    ("o", "Open Diagnostic Reports", "Open the Diagnostic Reports folder"),
+                    ("r", "Open diagnostic reports", "Open the diagnostic reports folder"),
                 ],
                 default="y",
             )
-            if answer == "o":
+            if answer == "r":
                 logger.report_info(str(report.get_path()))
                 open_folder(str(report.get_reports_dir()))
                 answer = logger.ask_choice(
                     "Continue with submission?",
                     [
-                        ("y", "Continue", "Proceed anyway"),
+                        ("y", "Continue", "Proceed with submission"),
                         ("n", "Cancel", "Cancel and close"),
                     ],
                     default="y",
@@ -1021,21 +1021,21 @@ def main() -> None:
 
         if has_zip_issues:
             answer = logger.ask_choice(
-                "Some issues were found while tracing dependencies. Continue?",
+                "Some dependencies have problems. Continue anyway?",
                 [
-                    ("y", "Continue", "Continue with submission"),
+                    ("y", "Continue", "Proceed with submission"),
                     ("n", "Cancel", "Cancel and close"),
-                    ("o", "Open Diagnostic Reports", "Open the Diagnostic Reports folder"),
+                    ("r", "Open diagnostic reports", "Open the diagnostic reports folder"),
                 ],
                 default="y",
             )
-            if answer == "o":
+            if answer == "r":
                 logger.report_info(str(report.get_path()))
                 open_folder(str(report.get_reports_dir()))
                 answer = logger.ask_choice(
                     "Continue with submission?",
                     [
-                        ("y", "Continue", "Proceed anyway"),
+                        ("y", "Continue", "Proceed with submission"),
                         ("n", "Cancel", "Cancel and close"),
                     ],
                     default="y",
@@ -1086,7 +1086,7 @@ def main() -> None:
                 report_path=str(test_report_path) if test_report_path else None,
                 shorten_fn=shorten_path,
             )
-            _safe_input(f"\nPress Enter to close this window{ELLIPSIS}", "")
+            _safe_input("\nPress Enter to close.", "")
             sys.exit(0)
 
         # ═══════════════════════════════════════════════════════════════════════
@@ -1132,7 +1132,7 @@ def main() -> None:
 
         if not zip_file.exists():
             report.set_status("failed")
-            logger.fatal("Couldn't create the archive.")
+            logger.fatal("Archive creation did not complete. Check disk space and permissions.")
 
         required_storage = zip_file.stat().st_size
         rel_manifest = []
@@ -1157,10 +1157,10 @@ def main() -> None:
         if not use_project and zip_file.exists():
             try:
                 zip_file.unlink()
-                logger.info(f"Cleaned up temp archive: {zip_file}")
+                logger.info(f"Temporary archive removed: {zip_file}")
             except:
                 pass
-        _safe_input(f"\nPress Enter to close this window{ELLIPSIS}", "")
+        _safe_input("\nPress Enter to close.", "")
         sys.exit(0)
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -1185,7 +1185,7 @@ def main() -> None:
         bucket = s3info["bucket_name"]
         logger.storage_connect("connected")
     except Exception as exc:
-        logger.fatal(f"Couldn't obtain storage credentials.\nTechnical: {exc}")
+        logger.fatal(f"Storage credentials unavailable. Check your connection and try again.\nTechnical: {exc}")
 
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
 
@@ -1357,7 +1357,7 @@ def main() -> None:
 
     except RuntimeError as exc:
         report.set_status("failed")
-        logger.fatal(f"Upload failed.\nTechnical: {exc}")
+        logger.fatal(f"Upload did not complete. Check your connection and try again.\nTechnical: {exc}")
 
     finally:
         try:
@@ -1421,7 +1421,7 @@ def main() -> None:
         post_resp.raise_for_status()
     except requests.RequestException as exc:
         report.set_status("failed")
-        logger.fatal(f"Job registration failed.\nTechnical: {exc}")
+        logger.fatal(f"Job registration did not complete. Check your connection and try again.\nTechnical: {exc}")
 
     # Finalize the diagnostic report
     report.finalize()
@@ -1454,16 +1454,16 @@ def main() -> None:
             logger.job_complete(job_url)
         except Exception:
             pass
-        _safe_input(f"\nPress Enter to close this window{ELLIPSIS}", "")
+        _safe_input("\nPress Enter to close.", "")
         sys.exit(0)
 
     if selection == "r":
         try:
             open_folder(str(report.get_reports_dir()))
-            logger.info("Opened Diagnostic Reports.")
+            logger.info("Diagnostic reports folder opened.")
         except Exception:
             pass
-        _safe_input(f"\nPress Enter to close this window{ELLIPSIS}", "")
+        _safe_input("\nPress Enter to close.", "")
         sys.exit(0)
 
     # selection == "c" (close)
@@ -1482,10 +1482,10 @@ if __name__ == "__main__":
         traceback.print_exc()
         print(
             f"\n{exc}\n"
-            "Tip: switch to Zip upload or choose a higher-level Project Path, then submit again."
+            "Switch to Zip upload or select a higher-level project path, then submit again."
         )
         try:
-            _safe_input(f"\nPress Enter to close this window{ELLIPSIS}", "")
+            _safe_input("\nPress Enter to close.", "")
         except Exception:
             pass
         sys.exit(1)

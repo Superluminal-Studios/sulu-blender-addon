@@ -927,9 +927,9 @@ class SubmitLogger:
                 padding=(0, 1),
                 expand=True,
             )
-            table.add_column("Source File", style="#7E828B", no_wrap=True, ratio=2)
-            table.add_column("Data Block", style="#D8DEEC", no_wrap=True, ratio=2)
-            table.add_column("Found File", style="#D8DEEC", no_wrap=True, ratio=3)
+            table.add_column("Source file", style="#7E828B", no_wrap=True, ratio=2)
+            table.add_column("Data block", style="#D8DEEC", no_wrap=True, ratio=2)
+            table.add_column("Found file", style="#D8DEEC", no_wrap=True, ratio=3)
             table.add_column("", justify="center", width=3)
 
             for entry in self._trace_entries:
@@ -1605,14 +1605,14 @@ class SubmitLogger:
         first = True
         if have_job:
             row.append_text(chip("J", chip_primary))
-            row.append(" Job Page", style="sulu.fg")
+            row.append(" Job page", style="sulu.fg")
             first = False
 
         if have_report:
             if not first:
                 row.append("   ", style="sulu.dim")
             row.append_text(chip("R", chip_accent))
-            row.append(" Diagnostic Reports", style="sulu.fg")
+            row.append(" Diagnostic reports", style="sulu.fg")
             first = False
 
         if not first:
@@ -1682,7 +1682,7 @@ class SubmitLogger:
             headline.justify = "center"
 
             subtitle = Text(
-                "Your job is queued and will begin rendering shortly.",
+                "Your job is queued. Rendering begins shortly.",
                 style="sulu.muted",
             )
             subtitle.justify = "center"
@@ -1743,12 +1743,12 @@ class SubmitLogger:
         # Plain text fallback
         self._log_fn("")
         self._log_fn("Submission complete")
-        self._log_fn("Your job is queued and will begin rendering shortly.")
+        self._log_fn("Your job is queued. Rendering begins shortly.")
         self._log_fn("")
         if have_job:
-            self._log_fn("  [J] Job Page")
+            self._log_fn("  [J] Job page")
         if have_report:
-            self._log_fn("  [R] Diagnostic Reports")
+            self._log_fn("  [R] Diagnostic reports")
         self._log_fn("  [Enter] Close")
 
         if not self._can_prompt():
@@ -1897,7 +1897,7 @@ class SubmitLogger:
     def fatal(self, message: str) -> None:
         self.warn_block(message, severity="error")
         try:
-            self._input_fn(f"\nPress Enter to close this window{ELLIPSIS}", "")
+            self._input_fn("\nPress Enter to close.", "")
         except Exception:
             pass
         sys.exit(1)
@@ -1915,7 +1915,7 @@ class SubmitLogger:
         else:
             self._log_fn(f"[i] {message}")
         try:
-            self._input_fn(f"\nPress Enter to close this window{ELLIPSIS}", "")
+            self._input_fn("\nPress Enter to close.", "")
         except Exception:
             pass
         sys.exit(0)
@@ -2030,7 +2030,7 @@ class SubmitLogger:
 
     def storage_connect(self, status: str = "connecting") -> None:
         if status == "connecting":
-            self.info(f"Connecting to storage{ELLIPSIS}")
+            self.info("Connecting to storage")
         else:
             if self.console:
                 self.console.print(
@@ -2151,7 +2151,7 @@ class SubmitLogger:
             self.report_info(report_path)
 
         self.warn_block(
-            "Test mode is on. No upload or job registration will be performed.",
+            "Test mode is on. No upload or job registration.",
             severity="warning",
         )
 
@@ -2166,7 +2166,7 @@ class SubmitLogger:
         required_storage: int = 0,
     ) -> None:
         lines: List[str] = [
-            "Packing completed.",
+            "Packing complete.",
             f"Upload type: {upload_type}",
         ]
         if upload_type == "PROJECT":
@@ -2179,7 +2179,7 @@ class SubmitLogger:
                 lines.append(f"Archive size: {format_size(zip_size)}")
         lines.append(f"Storage estimate: {format_size(required_storage)}")
         lines.append("")
-        lines.append("Skipping upload and job registration.")
+        lines.append("Upload and job registration skipped.")
 
         if self.console and Panel is not None and Text is not None:
             panel = self._panel(
@@ -2224,7 +2224,7 @@ class SubmitLogger:
                 parts.append(f"{_count(missing_count, 'missing dependency')}")
             if unreadable_count:
                 parts.append(f"{_count(unreadable_count, 'dependency')} not readable")
-            self.warn_block("Issues: " + ", ".join(parts), severity="warning")
+            self.warn_block("Problems found: " + ", ".join(parts), severity="warning")
         self.pack_end(
             ok_count=ok_count, total_size=total_size, title="Packing complete"
         )
