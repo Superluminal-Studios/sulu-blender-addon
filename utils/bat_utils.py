@@ -104,10 +104,10 @@ def _get_block_name(usage: Any) -> str:
 
 
 def _get_source_blend_name(usage: Any) -> str:
-    """Get the source .blend filename from a BlockUsage."""
+    """Get the source .blend filepath from a BlockUsage."""
     try:
         filepath = usage.block.bfile.filepath
-        return Path(filepath).name
+        return str(filepath)
     except Exception:
         return "unknown.blend"
 
