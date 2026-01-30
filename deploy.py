@@ -36,66 +36,53 @@ def version_tuple(tag: str) -> str:
 
 def should_exclude(rel_path: str) -> bool:
     """
-    Decide exclusion based on *exact* path segments / filenames
-    (prevents substring accidents like excluding 'rclone.py').
+    Exclude dev/build artifacts and rclone binaries. Keep all source .py files.
     """
     rel = rel_path.replace("\\", "/")
     parts = rel.split("/")
     filename = parts[-1]
+    parent_dirs = parts[:-1]
 
-    # --- Allowlist ---
-    # rclone.py is needed; never exclude it even if other rclone assets are excluded
-    if filename == "rclone.py":
-        return False
-
-    # --- Excluded directories (exact directory name match) ---
-    # Note: We do NOT prune 'rclone' here so we can still include rclone.py if it's inside.
-    EXCLUDE_DIR_NAMES = {
+    # --- Excluded directories (applies to all files) ---
+    EXCLUDE_DIRS = {
         "__pycache__",
         ".git",
         ".github",
         ".claude",
         "tests",
         "reports",
+        "rclone",  # Downloaded rclone binaries live here
     }
-
-    # If any parent directory is excluded -> exclude
-    if any(p in EXCLUDE_DIR_NAMES for p in parts[:-1]):
+    if any(d in EXCLUDE_DIRS for d in parent_dirs):
         return True
 
-    # Exclude everything under a directory named exactly "rclone" (downloaded binaries),
-    # BUT rclone.py was already allowlisted above.
-    if "rclone" in parts[:-1]:
-        return True
-
-    # --- Excluded filenames (exact filename match) ---
-    EXCLUDE_FILE_NAMES = {
-        # VCS / housekeeping
+    # --- Excluded files by exact name ---
+    EXCLUDE_FILES = {
+        # VCS
         ".gitignore",
         ".gitkeep",
         ".gitattributes",
         # Docs
         "README.md",
         "CLAUDE.md",
-        # Extension/manifest files
+        # Manifest/extension stuff
         "extensions_index.json",
         "manifest.py",
         "update_manifest.py",
         "blender_manifest.toml",
-        # Build/deploy
+        # Build/deploy scripts
         "deploy.py",
+        "test_deploy.ps1",
         # Dev files
         "dev_config.json",
         "dev_config.example.json",
-        # Reports / session data
+        # Session data
         "session.json",
+        # rclone binaries (in case they're not in rclone/ dir)
+        "rclone",
+        "rclone.exe",
     }
-
-    if filename in EXCLUDE_FILE_NAMES:
-        return True
-
-    # If there's a downloaded binary named exactly "rclone" (no .py), exclude it explicitly
-    if filename in {"rclone", "rclone.exe"}:
+    if filename in EXCLUDE_FILES:
         return True
 
     return False
@@ -207,12 +194,11 @@ else:
 
     with zipfile.ZipFile(addon_path, "w", zipfile.ZIP_DEFLATED) as addon_archive:
         for root, dirs, files in os.walk(addon_directory):
-            # Optional prune (rclone not pruned so rclone.py can pass allowlist if needed)
             dirs[:] = [
                 d
                 for d in dirs
                 if d
-                not in {"__pycache__", ".git", ".github", ".claude", "tests", "reports"}
+                not in {"__pycache__", ".git", ".github", ".claude", "tests", "reports", "rclone"}
             ]
 
             for file in files:
@@ -226,8 +212,9 @@ else:
                 if os.path.abspath(file_path) == os.path.abspath(addon_path):
                     continue
 
-                # Keep the archive root as SuperLuminalRender/ by zipping relative to /tmp
-                addon_archive.write(file_path, os.path.relpath(file_path, "/tmp/"))
+                # Archive path: SuperluminalRender/<relative_path>
+                archive_name = os.path.join(ADDON_NAME, rel_path_from_addon).replace("\\", "/")
+                addon_archive.write(file_path, archive_name)
 
     print(f"Release build created: {addon_path}")
     print(f"Version tag: {version}")
