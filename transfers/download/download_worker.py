@@ -36,7 +36,7 @@ try:
     sys.modules[pkg_name] = pkg
 
     # Import helpers
-    rclone = importlib.import_module(f"{pkg_name}.transfers.rclone")
+    rclone = importlib.import_module(f"{pkg_name}.transfers.rclone_utils")
     run_rclone = rclone.run_rclone
     ensure_rclone = rclone.ensure_rclone
     worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
@@ -174,7 +174,13 @@ def _rclone_copy_output(dest_dir: str) -> bool:
         return True
     except RuntimeError as exc:
         msg = str(exc).lower()
-        hints = ("directory not found", "no such key", "404", "not exist", "cannot find")
+        hints = (
+            "directory not found",
+            "no such key",
+            "404",
+            "not exist",
+            "cannot find",
+        )
         if any(h in msg for h in hints):
             logger.info("No frames available yet")
             return False
@@ -265,7 +271,9 @@ def main() -> None:
     session = requests_retry_session()
     headers = {"Authorization": data["user_token"]}
     job_id = str(data.get("job_id", "") or "").strip()
-    job_name = str(data.get("job_name", "") or f"job_{job_id}").strip() or f"job_{job_id}"
+    job_name = (
+        str(data.get("job_name", "") or f"job_{job_id}").strip() or f"job_{job_id}"
+    )
     download_path = str(data.get("download_path", "") or "").strip() or os.getcwd()
     safe_job_dir = _safe_dir_name(job_name, f"job_{job_id}")
     dest_dir = os.path.abspath(os.path.join(download_path, safe_job_dir))
@@ -347,7 +355,9 @@ def main() -> None:
             single_downloader(dest_dir)
         else:
             if not sarfis_url or not sarfis_token:
-                logger.warning("Can't track job progress. Downloading available frames only.")
+                logger.warning(
+                    "Can't track job progress. Downloading available frames only."
+                )
                 single_downloader(dest_dir)
             else:
                 auto_downloader(dest_dir, poll_seconds=5)
@@ -360,7 +370,9 @@ def main() -> None:
             open_folder(dest_dir)
 
     except KeyboardInterrupt:
-        logger.warn_block("Download interrupted. Run again to resume.", severity="warning")
+        logger.warn_block(
+            "Download interrupted. Run again to resume.", severity="warning"
+        )
         try:
             input("\nPress Enter to close.")
         except Exception:

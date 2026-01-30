@@ -1,4 +1,3 @@
-
 # submit_worker.py
 """
 submit_worker.py – Sulu Submit worker (robust, with retries).
@@ -89,7 +88,12 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     Returns a dict with required callables/values.
     """
     global _count, _format_size, _nfc, _debug_enabled, _is_interactive, _safe_input
-    global _norm_abs_for_detection, _relpath_safe, _s3key_clean, _samepath, _mac_permission_help
+    global \
+        _norm_abs_for_detection, \
+        _relpath_safe, \
+        _s3key_clean, \
+        _samepath, \
+        _mac_permission_help
 
     addon_dir = Path(data["addon_dir"]).resolve()
     pkg_name = addon_dir.name.replace("-", "_")
@@ -142,11 +146,13 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     submit_logger = importlib.import_module(f"{pkg_name}.utils.submit_logger")
     create_logger = submit_logger.create_logger
 
-    rclone = importlib.import_module(f"{pkg_name}.transfers.rclone")
+    rclone = importlib.import_module(f"{pkg_name}.transfers.rclone_utils")
     run_rclone = rclone.run_rclone
     ensure_rclone = rclone.ensure_rclone
 
-    diagnostic_report_mod = importlib.import_module(f"{pkg_name}.utils.diagnostic_report")
+    diagnostic_report_mod = importlib.import_module(
+        f"{pkg_name}.utils.diagnostic_report"
+    )
     DiagnosticReport = diagnostic_report_mod.DiagnosticReport
     generate_test_report = diagnostic_report_mod.generate_test_report
 
@@ -224,7 +230,9 @@ def main() -> None:
     # For ZIP mode, we need ~2x blend size in temp (archive + headroom)
     # For PROJECT mode, we just need temp space for manifest file
     use_project = bool(data.get("use_project_upload"))
-    temp_needed = blend_size * 2 if not use_project else 10 * 1024 * 1024  # 10 MB for manifest
+    temp_needed = (
+        blend_size * 2 if not use_project else 10 * 1024 * 1024
+    )  # 10 MB for manifest
 
     storage_checks = [
         (tempfile.gettempdir(), temp_needed, "Temp folder"),
@@ -275,7 +283,9 @@ def main() -> None:
                     )
                     if answer == "y":
                         webbrowser.open("https://superlumin.al/blender-addon")
-                        logger.info_exit("Install the new version, then restart Blender.")
+                        logger.info_exit(
+                            "Install the new version, then restart Blender."
+                        )
     except SystemExit:
         sys.exit(0)
     except Exception:
@@ -417,7 +427,9 @@ def main() -> None:
             custom_root = Path(custom_project_path_str)
 
         project_root, same_drive_deps, cross_drive_deps = compute_project_root(
-            Path(blend_path), dep_paths, custom_root,
+            Path(blend_path),
+            dep_paths,
+            custom_root,
             missing_files=missing_set,
             unreadable_files=unreadable_dict,
         )
@@ -431,10 +443,16 @@ def main() -> None:
         # Build warning text for issues
         missing_files_list = [str(p) for p in sorted(missing_set)]
         unreadable_files_list = [
-            (str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))
+            (str(p), err)
+            for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))
         ]
         absolute_path_files_list = [str(p) for p in sorted(absolute_path_deps)]
-        has_issues = bool(cross_drive_deps or missing_files_list or unreadable_files_list or absolute_path_deps)
+        has_issues = bool(
+            cross_drive_deps
+            or missing_files_list
+            or unreadable_files_list
+            or absolute_path_deps
+        )
 
         warning_text = None
         if has_issues:
@@ -450,13 +468,19 @@ def main() -> None:
             if missing_files_list:
                 parts.append(f"{_count(len(missing_files_list), 'missing dependency')}")
             if unreadable_files_list:
-                parts.append(f"{_count(len(unreadable_files_list), 'dependency')} not readable")
+                parts.append(
+                    f"{_count(len(unreadable_files_list), 'dependency')} not readable"
+                )
 
             mac_extra = ""
             if _IS_MAC and unreadable_files_list:
                 for p, err in unreadable_files_list:
                     low = err.lower()
-                    if "permission" in low or "operation not permitted" in low or "not permitted" in low:
+                    if (
+                        "permission" in low
+                        or "operation not permitted" in low
+                        or "not permitted" in low
+                    ):
                         mac_extra = "\n" + _mac_permission_help(p, err)
                         break
 
@@ -475,12 +499,16 @@ def main() -> None:
                     "Use Zip upload, or move files to the project drive."
                 )
 
-            if (missing_files_list or unreadable_files_list) and not absolute_path_deps and not cross_drive_deps:
-                warning_parts.append(
-                    "Missing or unreadable files excluded."
-                )
+            if (
+                (missing_files_list or unreadable_files_list)
+                and not absolute_path_deps
+                and not cross_drive_deps
+            ):
+                warning_parts.append("Missing or unreadable files excluded.")
 
-            warning_text = "\n".join(warning_parts) + mac_extra if warning_parts else None
+            warning_text = (
+                "\n".join(warning_parts) + mac_extra if warning_parts else None
+            )
 
         logger.trace_summary(
             total=len(dep_paths),
@@ -535,7 +563,10 @@ def main() -> None:
                 total_size=total_size,
                 missing=[str(p) for p in sorted(missing_set)],
                 unreadable=[
-                    (str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))
+                    (str(p), err)
+                    for p, err in sorted(
+                        unreadable_dict.items(), key=lambda x: str(x[0])
+                    )
                 ],
                 cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
                 upload_type="PROJECT",
@@ -552,7 +583,11 @@ def main() -> None:
                 [
                     ("y", "Continue", "Proceed with submission"),
                     ("n", "Cancel", "Cancel and close"),
-                    ("r", "Open diagnostic reports", "Open the diagnostic reports folder"),
+                    (
+                        "r",
+                        "Open diagnostic reports",
+                        "Open the diagnostic reports folder",
+                    ),
                 ],
                 default="y",
             )
@@ -656,7 +691,8 @@ def main() -> None:
         )
 
         project_root, same_drive_deps, cross_drive_deps = compute_project_root(
-            Path(blend_path), dep_paths,
+            Path(blend_path),
+            dep_paths,
             missing_files=missing_set,
             unreadable_files=unreadable_dict,
         )
@@ -667,7 +703,8 @@ def main() -> None:
 
         missing_files_list = [str(p) for p in sorted(missing_set)]
         unreadable_files_list = [
-            (str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))
+            (str(p), err)
+            for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))
         ]
         has_zip_issues = bool(missing_files_list or unreadable_files_list)
 
@@ -697,7 +734,11 @@ def main() -> None:
                 [
                     ("y", "Continue", "Proceed with submission"),
                     ("n", "Cancel", "Cancel and close"),
-                    ("r", "Open diagnostic reports", "Open the diagnostic reports folder"),
+                    (
+                        "r",
+                        "Open diagnostic reports",
+                        "Open the diagnostic reports folder",
+                    ),
                 ],
                 default="y",
             )
@@ -752,7 +793,10 @@ def main() -> None:
                 total_size=total_size,
                 missing=[str(p) for p in sorted(missing_set)],
                 unreadable=[
-                    (str(p), err) for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))
+                    (str(p), err)
+                    for p, err in sorted(
+                        unreadable_dict.items(), key=lambda x: str(x[0])
+                    )
                 ],
                 cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
                 upload_type="ZIP",
@@ -856,7 +900,9 @@ def main() -> None:
         s3info = s3_response.json()["items"][0]
         bucket = s3info["bucket_name"]
     except Exception as exc:
-        logger.fatal(f"Couldn't get storage credentials. Check your connection and try again.\nDetails: {exc}")
+        logger.fatal(
+            f"Couldn't get storage credentials. Check your connection and try again.\nDetails: {exc}"
+        )
 
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
 
@@ -1004,7 +1050,9 @@ def main() -> None:
 
     except RuntimeError as exc:
         report.set_status("failed")
-        logger.fatal(f"Upload stopped. Check your connection and try again.\nDetails: {exc}")
+        logger.fatal(
+            f"Upload stopped. Check your connection and try again.\nDetails: {exc}"
+        )
 
     finally:
         try:
@@ -1068,7 +1116,9 @@ def main() -> None:
         post_resp.raise_for_status()
     except requests.RequestException as exc:
         report.set_status("failed")
-        logger.fatal(f"Couldn't register job. Check your connection and try again.\nDetails: {exc}")
+        logger.fatal(
+            f"Couldn't register job. Check your connection and try again.\nDetails: {exc}"
+        )
 
     # Finalize the diagnostic report
     report.finalize()
@@ -1136,4 +1186,3 @@ if __name__ == "__main__":
         except Exception:
             pass
         sys.exit(1)
-
