@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import bpy
 from .storage            import Storage
 from .utils.date_utils   import format_submitted
 from .icons              import get_status_icon_id, get_fallback_icon
-from .storage            import Storage
 
 COLUMN_ORDER = [
     "name",
@@ -27,19 +28,61 @@ def get_job_items(self, context):
     return [(jid, j["name"], j["name"]) for jid, j in Storage.data["jobs"].items()]
 
 
+def _get_column_label(key: str) -> str:
+    """Get display label for a column key."""
+    return "Prog." if key == "progress" else key.replace("_", " ").title()
+
+
+def _get_sort_icon(prefs, key: str) -> str:
+    """Get sort indicator icon for a column."""
+    if prefs.sort_column != key:
+        return "NONE"
+    return "TRIA_UP" if prefs.sort_ascending else "TRIA_DOWN"
+
+
+class SUPERLUMINAL_OT_sort_jobs(bpy.types.Operator):
+    """Sort jobs by this column"""
+    bl_idname = "superluminal.sort_jobs"
+    bl_label = "Sort Jobs"
+    bl_options = {'INTERNAL'}
+
+    column: bpy.props.StringProperty()
+
+    def execute(self, context):
+        prefs = context.preferences.addons[__package__].preferences
+        if prefs.sort_column == self.column:
+            # Toggle direction if same column clicked
+            prefs.sort_ascending = not prefs.sort_ascending
+        else:
+            # New column: default to descending for time columns, ascending for others
+            prefs.sort_column = self.column
+            prefs.sort_ascending = self.column not in (
+                "submission_time", "started_time", "finished_time"
+            )
+        if context.area:
+            context.area.tag_redraw()
+        return {'FINISHED'}
+
+
 def draw_header_row(layout, prefs):
     """
-    Draw a header row with the same enabled columns and labels that
-    SUPERLUMINAL_UL_job_items uses internally.
+    Draw a clickable header row with sort indicators.
     """
     row = layout.row(align=True)
-    row.scale_y = 0.6
 
     for key in COLUMN_ORDER:
         if getattr(prefs, f"show_col_{key}"):
-            box = row.box()
-            label = "Prog." if key == "progress" else key.replace("_", " ").title()
-            box.label(text=label)
+            label = _get_column_label(key)
+            sort_icon = _get_sort_icon(prefs, key)
+
+            # Use operator for clickable header
+            op = row.operator(
+                SUPERLUMINAL_OT_sort_jobs.bl_idname,
+                text=label,
+                icon=sort_icon,
+                emboss=True,
+            )
+            op.column = key
 
 
 def refresh_jobs_collection(prefs):
@@ -114,8 +157,26 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
 
     def filter_items(self, context, data, propname):
         items = getattr(data, propname)
+        prefs = context.preferences.addons[__package__].preferences
+
         flt_flags = [self.bitflag_filter_item] * len(items)
-        flt_neworder = list(range(len(items) - 1, -1, -1))
+
+        # Build sort order based on selected column
+        sort_col = prefs.sort_column
+        ascending = prefs.sort_ascending
+
+        # Create list of (index, sort_value) pairs
+        def get_sort_key(item):
+            val = getattr(item, sort_col, "")
+            # Handle different types for proper sorting
+            if isinstance(val, str):
+                return val.casefold()
+            return val
+
+        indexed = [(i, get_sort_key(it)) for i, it in enumerate(items)]
+        indexed.sort(key=lambda x: x[1], reverse=not ascending)
+
+        flt_neworder = [i for i, _ in indexed]
         return flt_flags, flt_neworder
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -229,6 +290,10 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     show_col_blender_version: bpy.props.BoolProperty(default=False)
     show_col_type:            bpy.props.BoolProperty(default=False)
 
+    # Sort state
+    sort_column:    bpy.props.StringProperty(default="submission_time")
+    sort_ascending: bpy.props.BoolProperty(default=False)
+
 
     show_password_login: bpy.props.BoolProperty(
         name="Show password sign-in",
@@ -245,6 +310,7 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
 
 classes = (
     SuperluminalJobItem,
+    SUPERLUMINAL_OT_sort_jobs,
     SUPERLUMINAL_MT_job_columns,
     SUPERLUMINAL_UL_job_items := SUPERLUMINAL_UL_job_items,  # keep stable name in bpy
     SuperluminalAddonPreferences,

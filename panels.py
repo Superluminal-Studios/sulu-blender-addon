@@ -586,31 +586,43 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
             else []
         )
 
-        job_id, job_name = "", ""
+        job_id, job_name, job_status = "", "", ""
         if selected_project_jobs and 0 <= prefs.active_job_index < len(
             selected_project_jobs
         ):
             sel_job = selected_project_jobs[prefs.active_job_index]
             job_id = sel_job.get("id", "")
             job_name = sel_job.get("name", "")
+            job_status = sel_job.get("status", "")
 
-        # Selected job row + open button
-        row = layout.row(align=True)
-        row.enabled = logged_in and jobs_ok and bool(job_name) and job_id != ""
-        row.label(text=str(job_name))
-        op = row.operator(
-            "superluminal.open_browser", text="Open in Browser", icon="URL"
+        has_selection = logged_in and jobs_ok and bool(job_name) and job_id != ""
+
+        # Selected job context box
+        box = layout.box()
+        box.enabled = has_selection
+
+        # Job name header with status icon and browser button
+        header = box.row(align=True)
+        if has_selection:
+            status_icon_id = get_icon_id(job_status.upper())
+            if status_icon_id:
+                header.label(text=job_name, icon_value=status_icon_id)
+            else:
+                header.label(text=job_name, icon=get_fallback_icon(job_status))
+        else:
+            header.label(text="No job selected", icon="BLANK1")
+
+        op = header.operator(
+            "superluminal.open_browser", text="", icon="URL"
         )
         op.job_id = job_id
         op.project_id = prefs.project_id
 
-        # Download path + button
-        layout.prop(props, "download_path", text="Download path")
+        # Download section inside the box
+        box.prop(props, "download_path", text="Download path")
 
-        row = layout.row()
-        row.enabled = logged_in and jobs_ok and bool(job_name) and job_id != ""
-        op2 = row.operator(
-            "superluminal.download_job", text="Download job output", icon="SORT_ASC"
+        op2 = box.operator(
+            "superluminal.download_job", text="Download job output", icon="IMPORT"
         )
         op2.job_id = job_id
         op2.job_name = job_name
