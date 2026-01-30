@@ -25,14 +25,12 @@ jobs:
         run: |
           set -euxo pipefail
 
-          STAGE=/tmp/SuperLuminalRender
+          STAGE=/tmp/SuperluminalRender
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
 
-          # Copy repo contents into staging
-          # Note: dotfiles at repo root aren't copied by ./* (fine),
-          # but nested dotfiles (like subdir/.gitignore) are copied.
-          cp -R ./* "$STAGE/"
+          # Copy repo contents into staging INCLUDING dotfiles, but exclude .git
+          tar --exclude='./.git' -cf - . | tar -xf - -C "$STAGE"
 
           # Remove stuff we never ship
           rm -rf "$STAGE/.claude" "$STAGE/.github" "$STAGE/tests"
@@ -47,9 +45,9 @@ jobs:
 
           VERSION="${{ github.event.release.tag_name }}"
           SAFE_VERSION="$(echo "$VERSION" | sed 's/[^0-9A-Za-z._-]/_/g')"
-          OUT="/tmp/SuperLuminalRender-${SAFE_VERSION}.zip"
+          OUT="/tmp/SuperluminalRender-${SAFE_VERSION}.zip"
 
-          python3 /tmp/SuperLuminalRender/deploy.py --version "$VERSION" --output "$OUT"
+          python3 /tmp/SuperluminalRender/deploy.py --version "$VERSION" --output "$OUT"
 
           ls -l "$OUT"
           echo "ZIP_PATH=$OUT" >> "$GITHUB_ENV"
