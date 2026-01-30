@@ -55,8 +55,7 @@ try:
     CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
 
 except Exception as exc:
-    print(f"Failed to initialize downloader: {exc}")
-    print(f"Error type: {type(exc)}")
+    print(f"Couldn't start downloader: {exc}")
     traceback.print_exc()
     input("\nPress Enter to close.")
     sys.exit(1)
@@ -177,9 +176,9 @@ def _rclone_copy_output(dest_dir: str) -> bool:
         msg = str(exc).lower()
         hints = ("directory not found", "no such key", "404", "not exist", "cannot find")
         if any(h in msg for h in hints):
-            logger.info("Output not available yet. Waiting for frames.")
+            logger.info("No frames available yet")
             return False
-        logger.error(f"Download error: {exc}")
+        logger.error(f"Download stopped: {exc}")
         raise
 
 
@@ -196,7 +195,7 @@ def single_downloader(dest_dir: str) -> None:
     if ok:
         logger.transfer_complete("Downloaded")
     else:
-        logger.warning("No outputs yet. Try again later.")
+        logger.warning("No frames ready yet. Run again later to download.")
 
 
 def auto_downloader(dest_dir: str, poll_seconds: int = 5) -> None:
@@ -235,7 +234,7 @@ def auto_downloader(dest_dir: str, poll_seconds: int = 5) -> None:
                 logger.transfer_complete("Downloaded")
                 last_downloaded = finished
         elif finished == 0 and not shown_waiting:
-            logger.info("Waiting for frames to render")
+            logger.info("Waiting for first frame")
             shown_waiting = True
 
         # Job complete?
@@ -244,11 +243,11 @@ def auto_downloader(dest_dir: str, poll_seconds: int = 5) -> None:
             _rclone_copy_output(dest_dir)
 
             if job_status == "finished":
-                logger.success(f"All {finished} frames downloaded")
+                logger.success(f"{finished} frames downloaded")
             elif job_status == "paused":
-                logger.warning("Job paused. Current frames saved.")
+                logger.warning(f"Job paused. {finished} frames saved.")
             else:
-                logger.warning("Job ended with errors. Current frames saved.")
+                logger.warning(f"Job stopped with errors. {finished} frames saved.")
             break
 
         time.sleep(max(1, int(poll_seconds)))
@@ -287,7 +286,7 @@ def main() -> None:
     try:
         rclone_bin = ensure_rclone(logger=logger)
     except Exception as exc:
-        logger.fatal(f"Could not prepare the downloader (rclone): {exc}")
+        logger.fatal(f"Couldn't set up transfer tool: {exc}")
 
     # Obtain R2 credentials
     try:
@@ -308,7 +307,7 @@ def main() -> None:
         bucket = s3info["bucket_name"]
 
     except (IndexError, requests.RequestException, KeyError) as exc:
-        logger.fatal(f"Failed to obtain storage credentials: {exc}")
+        logger.fatal(f"Couldn't connect to storage: {exc}")
 
     # Build rclone base once
     base_cmd = _build_rclone_base()
@@ -323,7 +322,7 @@ def main() -> None:
             single_downloader(dest_dir)
         else:
             if not sarfis_url or not sarfis_token:
-                logger.warning("Auto mode requested but no status endpoint available. Using single download.")
+                logger.warning("Can't track job progress. Downloading available frames only.")
                 single_downloader(dest_dir)
             else:
                 auto_downloader(dest_dir, poll_seconds=5)
@@ -336,13 +335,13 @@ def main() -> None:
             open_folder(dest_dir)
 
     except KeyboardInterrupt:
-        logger.warn_block("Download interrupted. Rerun later to resume.", severity="warning")
+        logger.warn_block("Download interrupted. Run again to resume.", severity="warning")
         try:
             input("\nPress Enter to close.")
         except Exception:
             pass
     except Exception as exc:
-        logger.fatal(f"Download failed: {exc}")
+        logger.fatal(f"Download stopped: {exc}")
 
 
 if __name__ == "__main__":
@@ -350,5 +349,5 @@ if __name__ == "__main__":
         main()
     except Exception as exc:
         traceback.print_exc()
-        print(f"\nDownload failed before start: {exc}")
+        print(f"\nCouldn't start download: {exc}")
         input("\nPress Enter to close.")

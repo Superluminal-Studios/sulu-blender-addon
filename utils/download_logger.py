@@ -169,15 +169,15 @@ class DownloadLogger:
             title.append("Auto-download", style="sulu.dim")
 
             body = Text()
-            body.append("Downloading frames as they finish rendering.\n", style="sulu.fg")
-            body.append("Close this window anytime. Rerun later to resume.", style="sulu.muted")
+            body.append("Downloading frames as they render.\n", style="sulu.fg")
+            body.append("Close anytime. Run again to resume.", style="sulu.muted")
 
             panel = self._panel(body, title=title, border="sulu.accent", padding=(0, 2))
             self.console.print(panel)
         else:
             self._log_fn("")
-            self._log_fn("Auto-download: Downloading frames as they finish rendering.")
-            self._log_fn("Close anytime. Rerun later to resume.")
+            self._log_fn("Auto-download: Downloading frames as they render.")
+            self._log_fn("Close anytime. Run again to resume.")
 
     def connection_complete(self) -> None:
         """Show storage connection success in a panel."""
@@ -205,7 +205,7 @@ class DownloadLogger:
             title.append("Resuming", style="sulu.dim")
 
             body = Text()
-            body.append(f"{cached_count} frames previously downloaded.", style="sulu.fg")
+            body.append(f"{cached_count} frames already downloaded", style="sulu.fg")
 
             panel = self._panel(body, title=title, border="sulu.accent", padding=(0, 2))
             self.console.print(panel)
@@ -213,7 +213,7 @@ class DownloadLogger:
             # Restart live after panel
             self._start_live()
         else:
-            self._log_fn(f"  Resuming: {cached_count} frames previously downloaded.")
+            self._log_fn(f"  Resuming: {cached_count} frames already downloaded")
 
     # ─────────────────────── Progress ───────────────────────
 
@@ -325,7 +325,7 @@ class DownloadLogger:
         # Build status text
         status_text = ""
         if status == "checking":
-            status_text = f"[{checks}] Checking existing files"
+            status_text = f"Checking {checks} files"
 
         if self.console and Text is not None:
             if self._live is None:
