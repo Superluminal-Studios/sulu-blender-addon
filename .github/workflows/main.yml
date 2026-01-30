@@ -2,54 +2,81 @@ name: Release Zip
 
 on:
   release:
-    types: 
+    types:
       - published
 
 permissions:
   contents: write
   packages: write
-  
 
 jobs:
   zip-files:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the repository
+      # Step 1: Checkout the repository at the release tag
       - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
 
-      # Step 2: Install Python
-      - name: Install Python
+      # Step 2: Install Python (via setup-python)
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Step 3: Copy repo into /tmp/SuperLuminalRender, excluding unwanted files/folders
+      - name: Prepare folder structure (copy with exclusions)
         run: |
-          sudo apt update && sudo apt install -y python3 python3-pip
+          sudo apt-get update
+          sudo apt-get install -y rsync zip
 
-      # Step 3: Move files to a folder named OctaRender
-      - name: Prepare folder structure
-        run: |
-          mkdir /tmp/SuperLuminalRender
-          cp -r /home/runner/work/sulu-blender-addon/sulu-blender-addon/* /tmp/SuperLuminalRender/
+          rm -rf /tmp/SuperLuminalRender
+          mkdir -p /tmp/SuperLuminalRender
 
-      # Step 4: Move files to a folder named OctaRender
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='/.claude/' \
+            --exclude='/.github/' \
+            --exclude='/tests/' \
+            --exclude='/dev_config.example.json' \
+            --exclude='.gitignore' \
+            --exclude='.gitkeep' \
+            ./ /tmp/SuperLuminalRender/
+
+      # Step 4: List files for debugging
       - name: List Files
         run: |
-          ls -l /home/runner/work/sulu-blender-addon/
-          ls -l /home/runner/work/sulu-blender-addon/sulu-blender-addon/
-          ls -l /tmp/SuperLuminalRender/
-          ls -l /tmp/
+          echo "Workspace: $GITHUB_WORKSPACE"
+          ls -la "$GITHUB_WORKSPACE"
+          echo ""
+          echo "Staging (/tmp/SuperLuminalRender):"
+          ls -la /tmp/SuperLuminalRender
+          echo ""
+          echo "Exclude check (should print nothing):"
+          cd /tmp/SuperLuminalRender
+          find . \( \
+            -path './.github' -o -path './.claude' -o -path './tests' -o \
+            -name '.gitignore' -o -name '.gitkeep' -o -name 'dev_config.example.json' \
+          \) -print || true
 
-      #Step 5: Run deploy.py
+      # Step 5: Run deploy.py (expected to produce /tmp/SuperLuminalRender.zip)
       - name: Run deploy.py
         run: |
-          python3 /tmp/SuperLuminalRender/deploy.py --version ${{ github.ref_name }}
+          python3 /tmp/SuperLuminalRender/deploy.py --version "${{ github.event.release.tag_name }}"
 
-      # Step 6: Release
+      # Step 6: Ensure zip exists
+      - name: Ensure zip exists
+        run: |
+          ls -la /tmp
+          test -f /tmp/SuperLuminalRender.zip
+
+      # Step 7: Upload zip to the Release
       - name: Upload to Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          files: |
-            /tmp/SuperLuminalRender.zip
+          files: /tmp/SuperLuminalRender.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
