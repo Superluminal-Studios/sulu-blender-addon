@@ -273,6 +273,31 @@ def main() -> None:
     # Show startup logo
     logger.logo_start(job_name=job_name, dest_dir=dest_dir)
 
+    # ─── Preflight checks (run early so user knows quickly if something's wrong) ───
+    # Import preflight utilities
+    addon_dir = Path(data["addon_dir"]).resolve()
+    pkg_name = addon_dir.name.replace("-", "_")
+    preflight_mod = importlib.import_module(f"{pkg_name}.utils.worker_utils")
+    run_preflight_checks = preflight_mod.run_preflight_checks
+
+    # Estimate download size - use 1 GB as reasonable default for render output
+    # The actual size varies, but we want to ensure there's reasonable space
+    estimated_download_size = 1024 * 1024 * 1024  # 1 GB minimum
+
+    storage_checks = [
+        (download_path, estimated_download_size, "Download folder"),
+    ]
+
+    preflight_ok, preflight_issues = run_preflight_checks(
+        session=session,
+        storage_checks=storage_checks,
+    )
+
+    if not preflight_ok and preflight_issues:
+        for issue in preflight_issues:
+            logger.warning(issue)
+        # Don't block for downloads - just warn
+
     # Determine mode
     sarfis_url = data.get("sarfis_url")
     sarfis_token = data.get("sarfis_token")

@@ -1052,7 +1052,7 @@ class SubmitLogger:
             # Plain text fallback with status suffix
             status_suffix = ""
             if status == "checking":
-                status_suffix = f"  [{checks}] Checking previously uploaded files"
+                status_suffix = f"  Checking {checks} existing files"
             elif transfers > 0 and checks > transfers:
                 skipped = checks - transfers
                 status_suffix = f"  ({skipped} unchanged)"
@@ -1157,8 +1157,7 @@ class SubmitLogger:
         # Add status suffix based on checking/transferring state
         if status == "checking":
             line.append("  ", style="sulu.dim")
-            line.append(f"[{checks}]", style="sulu.muted")
-            line.append(" Checking previously uploaded files", style="sulu.dim")
+            line.append(f"Checking {checks} existing files", style="sulu.muted")
         elif transfers > 0 and checks > transfers:
             skipped = checks - transfers
             line.append("  ", style="sulu.dim")
@@ -1868,7 +1867,7 @@ class SubmitLogger:
             self.report_info(report_path)
 
         self.warn_block(
-            "Test mode is on. No upload or job registration.",
+            "Test mode. No upload or job registration.",
             severity="warning",
         )
 

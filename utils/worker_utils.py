@@ -726,3 +726,169 @@ def should_moveto_local_file(local_path: str, original_blend_path: str) -> bool:
         return False
 
     return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pre-flight checks (time sync, storage space)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Maximum allowed clock drift in seconds (S3 signatures fail beyond ~15 min)
+MAX_CLOCK_DRIFT_SECONDS = 300  # 5 minutes - warn before S3's 15 min limit
+
+
+def check_time_sync(
+    session: Optional[requests.Session] = None,
+    timeout: float = 5.0,
+) -> Tuple[bool, int, Optional[str]]:
+    """
+    Check if system clock is reasonably synchronized with server time.
+
+    Uses the Date header from a HEAD request to a reliable endpoint.
+    S3 requests fail if clock is more than ~15 minutes off.
+
+    Returns:
+        (ok, drift_seconds, error_message)
+        - ok: True if clock is within acceptable drift
+        - drift_seconds: Signed difference (positive = local ahead, negative = local behind)
+        - error_message: None if ok, otherwise a user-friendly message
+    """
+    from email.utils import parsedate_to_datetime
+
+    check_urls = [
+        "https://cloudflare.com/cdn-cgi/trace",
+        "https://www.google.com",
+        "https://api.github.com",
+    ]
+
+    sess = session or requests.Session()
+    local_time = time.time()
+
+    for url in check_urls:
+        try:
+            resp = sess.head(url, timeout=timeout, allow_redirects=True)
+            date_header = resp.headers.get("Date")
+            if date_header:
+                server_dt = parsedate_to_datetime(date_header)
+                server_time = server_dt.timestamp()
+                drift = int(local_time - server_time)
+
+                if abs(drift) > MAX_CLOCK_DRIFT_SECONDS:
+                    direction = "ahead" if drift > 0 else "behind"
+                    minutes = abs(drift) // 60
+                    return (
+                        False,
+                        drift,
+                        f"System clock is {minutes} minutes {direction}. "
+                        f"Cloud storage requires accurate time. "
+                        f"Sync your system clock in date and time settings.",
+                    )
+                return (True, drift, None)
+        except Exception:
+            continue
+
+    # Couldn't reach any server - not necessarily a time problem
+    return (True, 0, None)
+
+
+def check_storage_space(
+    paths: List[Tuple[str, int, str]],
+) -> List[Tuple[str, str, int, int, str]]:
+    """
+    Check available storage space at multiple locations.
+
+    Args:
+        paths: List of (path, required_bytes, label) tuples
+               - path: Directory to check
+               - required_bytes: Minimum required space (0 to just report)
+               - label: Human-readable name for the location
+
+    Returns:
+        List of issues as (path, label, required, available, message) tuples.
+        Empty list means all checks passed.
+    """
+    issues: List[Tuple[str, str, int, int, str]] = []
+
+    for path, required, label in paths:
+        try:
+            # Resolve to actual directory
+            check_path = path
+            if not os.path.isdir(check_path):
+                check_path = os.path.dirname(check_path)
+            if not check_path or not os.path.isdir(check_path):
+                check_path = tempfile.gettempdir()
+
+            usage = shutil.disk_usage(check_path)
+            available = usage.free
+
+            if required > 0 and available < required:
+                needed = format_size(required)
+                have = format_size(available)
+                issues.append((
+                    path,
+                    label,
+                    required,
+                    available,
+                    f"{label}: {have} available, {needed} needed",
+                ))
+        except Exception as exc:
+            # Can't check - report but don't block
+            issues.append((
+                path,
+                label,
+                required,
+                0,
+                f"{label}: Couldn't check space ({exc})",
+            ))
+
+    return issues
+
+
+def get_temp_space_available() -> int:
+    """Return available bytes in the system temp directory."""
+    try:
+        usage = shutil.disk_usage(tempfile.gettempdir())
+        return usage.free
+    except Exception:
+        return 0
+
+
+def run_preflight_checks(
+    session: Optional[requests.Session] = None,
+    storage_checks: Optional[List[Tuple[str, int, str]]] = None,
+    logger_instance=None,
+) -> Tuple[bool, List[str]]:
+    """
+    Run all pre-flight checks and collect issues.
+
+    Args:
+        session: HTTP session for time check
+        storage_checks: List of (path, required_bytes, label) for storage checks
+        logger_instance: Unused, kept for backward compatibility
+
+    Returns:
+        Tuple of (all_ok, issues_list) where issues_list contains issue messages.
+    """
+    all_ok = True
+    issues: List[str] = []
+
+    # Time sync check
+    time_ok, drift, time_msg = check_time_sync(session)
+    if not time_ok and time_msg:
+        issues.append(time_msg)
+        all_ok = False
+    elif abs(drift) > 60:
+        # Warn if drift is noticeable but not critical
+        direction = "ahead" if drift > 0 else "behind"
+        issues.append(f"System clock is {abs(drift)} seconds {direction}")
+
+    # Storage checks
+    if storage_checks:
+        storage_issues = check_storage_space(storage_checks)
+        for path, label, required, available, msg in storage_issues:
+            if required > 0 and available < required:
+                issues.append(msg)
+                all_ok = False
+            else:
+                issues.append(msg)
+
+    return all_ok, issues

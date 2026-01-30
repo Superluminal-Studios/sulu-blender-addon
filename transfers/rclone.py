@@ -494,23 +494,16 @@ def _classify_failure(
     blob = "\n".join([str(x) for x in (tail_lines or [])]).strip()
     low = blob.lower()
 
+    tech = _pick_technical_line(tail_lines) or f"exit code {exit_code}"
+
     # ---- Clock skew / wrong system time ----
     skew = _extract_time_skew(tail_lines)
     if skew is not None:
         host, delta = skew
-        delta_str = f" ({delta})" if delta else ""
         return (
             "clock_skew",
-            "Storage authentication failed because your computer clock is out of sync with the storage service"
-            f"{delta_str}.\n"
-            "\n"
-            "Fix:\n"
-            "  • Turn on automatic time sync in your OS, then retry.\n"
-            "    - Windows: Settings → Time & language → Date & time → Set time automatically → Sync now\n"
-            "    - macOS: System Settings → General → Date & Time → Set automatically\n"
-            "    - Linux: enable NTP (often: `sudo timedatectl set-ntp true`)\n"
-            "\n"
-            f"Technical: time differs from {host}{delta_str}.",
+            f"System clock is {delta or 'significantly'} out of sync. "
+            f"Sync your clock in date and time settings, then retry.\n\n[{tech}]",
         )
 
     clock_markers = (
@@ -528,12 +521,8 @@ def _classify_failure(
     if any(m in low for m in clock_markers):
         return (
             "clock_skew",
-            "Storage authentication failed and your system clock appears incorrect.\n"
-            "\n"
-            "Fix:\n"
-            "  • Turn on automatic time sync in your OS, then retry.\n"
-            "\n"
-            f"Technical: {_pick_technical_line(tail_lines) or f'exit code {exit_code}'}",
+            "System clock appears incorrect. "
+            f"Sync your clock in date and time settings, then retry.\n\n[{tech}]",
         )
 
     # ---- Local disk full ----
@@ -555,14 +544,8 @@ def _classify_failure(
         free_str = _human_bytes(free) if free is not None else "unknown"
         return (
             "local_disk_full",
-            "Transfer failed because your computer ran out of disk space while writing files.\n"
-            f"Free space (approx.): {free_str}\n"
-            "\n"
-            "Fix:\n"
-            "  • Free up disk space (or choose a different destination folder)\n"
-            "  • Then retry\n"
-            "\n"
-            f"Technical: {_pick_technical_line(tail_lines) or 'disk full'}",
+            f"Disk full ({free_str} available). "
+            f"Free up space or choose a different destination.\n\n[{tech}]",
         )
 
     # ---- Network / connection errors ----
@@ -582,17 +565,10 @@ def _classify_failure(
     if any(m in low for m in network_markers):
         return (
             "network_error",
-            "Transfer failed due to a network connection issue.\n"
-            "\n"
-            "Fix:\n"
-            "  • Check your internet connection\n"
-            "  • If on WiFi, try moving closer to router or use ethernet\n"
-            "  • Retry the upload\n"
-            "\n"
-            f"Technical: {_pick_technical_line(tail_lines) or 'network error'}",
+            f"Connection failed. Check your internet connection and retry.\n\n[{tech}]",
         )
 
-    # ---- Remote quota / storage exhausted ----
+    # ---- Remote storage service error ----
     remote_space_markers = (
         "insufficient storage",
         "insufficientstorage",
@@ -604,14 +580,8 @@ def _classify_failure(
     )
     if any(m in low for m in remote_space_markers):
         return (
-            "remote_storage_full",
-            "Transfer failed because the storage service reports insufficient storage / quota.\n"
-            "\n"
-            "Fix:\n"
-            "  • Free space in your cloud storage / plan (or upgrade)\n"
-            "  • Then retry\n"
-            "\n"
-            f"Technical: {_pick_technical_line(tail_lines) or 'insufficient storage/quota'}",
+            "remote_storage_error",
+            f"Storage service rejected the request. Retry, or contact support if this persists.\n\n[{tech}]",
         )
 
     # ---- Not found ----
@@ -625,8 +595,7 @@ def _classify_failure(
     if any(m in low for m in not_found_markers):
         return (
             "not_found",
-            "Nothing to transfer yet (source path not found). This can be normal if outputs haven’t been produced yet.\n"
-            f"Technical: {_pick_technical_line(tail_lines) or f'exit code {exit_code}'}",
+            f"Source not found. This can be normal if outputs haven't been produced yet.\n\n[{tech}]",
         )
 
     # ---- Permissions / auth (403 etc) ----
@@ -641,19 +610,10 @@ def _classify_failure(
     if any(m in low for m in perm_markers):
         return (
             "forbidden",
-            "Storage rejected the request (HTTP 403 Forbidden).\n"
-            "\n"
-            "Fix:\n"
-            "  • Log out and back in (to refresh credentials), then retry\n"
-            "  • Make sure your system time is correct\n"
-            "\n"
-            f"Technical: {_pick_technical_line(tail_lines) or '403 forbidden'}",
+            f"Access denied. Log out and back in to refresh credentials, then retry.\n\n[{tech}]",
         )
 
-    tech = _pick_technical_line(tail_lines)
-    if tech:
-        return ("unknown", f"rclone failed (exit code {exit_code}).\nTechnical: {tech}")
-    return ("unknown", f"rclone failed (exit code {exit_code}).")
+    return ("unknown", f"Transfer failed. Retry, or contact support if this persists.\n\n[{tech}]")
 
 
 # ────────────────────────── main runner ──────────────────────────

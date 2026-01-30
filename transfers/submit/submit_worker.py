@@ -209,6 +209,45 @@ def main() -> None:
     # Single resilient session for all HTTP traffic
     session = requests_retry_session()
 
+    # ─── Preflight checks (run early so user knows quickly if something's wrong) ───
+    worker_utils = importlib.import_module(f"{mods['pkg_name']}.utils.worker_utils")
+    run_preflight_checks = worker_utils.run_preflight_checks
+    get_temp_space_available = worker_utils.get_temp_space_available
+
+    # Estimate storage needs
+    blend_size = 0
+    try:
+        blend_size = os.path.getsize(data["blend_path"])
+    except Exception:
+        pass
+
+    # For ZIP mode, we need ~2x blend size in temp (archive + headroom)
+    # For PROJECT mode, we just need temp space for manifest file
+    use_project = bool(data.get("use_project_upload"))
+    temp_needed = blend_size * 2 if not use_project else 10 * 1024 * 1024  # 10 MB for manifest
+
+    storage_checks = [
+        (tempfile.gettempdir(), temp_needed, "Temp folder"),
+    ]
+
+    preflight_ok, preflight_issues = run_preflight_checks(
+        session=session,
+        storage_checks=storage_checks,
+    )
+
+    if not preflight_ok and preflight_issues:
+        issue_text = "\n".join(f"• {issue}" for issue in preflight_issues)
+        answer = logger.ask_choice(
+            issue_text,
+            [
+                ("y", "Continue", "Upload anyway"),
+                ("n", "Cancel", "Exit and resolve issues"),
+            ],
+            default="n",
+        )
+        if answer != "y":
+            sys.exit(1)
+
     # Optional: check for addon update
     try:
         github_response = session.get(
@@ -251,9 +290,9 @@ def main() -> None:
         rclone_bin = ensure_rclone(logger=logger)
     except Exception as e:
         logger.fatal(
-            "Couldn't prepare the uploader (rclone). "
-            "Restart Blender. If this continues, reinstall the add-on.\n"
-            f"Technical: {e}"
+            "Couldn't set up transfer tool. "
+            "Restart Blender. If this keeps happening, reinstall the add-on.\n"
+            f"Details: {e}"
         )
 
     # Verify farm availability (nice error if org misconfigured)
@@ -766,7 +805,7 @@ def main() -> None:
 
         if not zip_file.exists():
             report.set_status("failed")
-            logger.fatal("Archive creation did not complete. Check disk space and permissions.")
+            logger.fatal("Archive not created. Check disk space and permissions.")
 
         required_storage = zip_file.stat().st_size
         rel_manifest = []
@@ -817,7 +856,7 @@ def main() -> None:
         s3info = s3_response.json()["items"][0]
         bucket = s3info["bucket_name"]
     except Exception as exc:
-        logger.fatal(f"Storage credentials unavailable. Check your connection and try again.\nTechnical: {exc}")
+        logger.fatal(f"Couldn't get storage credentials. Check your connection and try again.\nDetails: {exc}")
 
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
 
@@ -965,7 +1004,7 @@ def main() -> None:
 
     except RuntimeError as exc:
         report.set_status("failed")
-        logger.fatal(f"Upload did not complete. Check your connection and try again.\nTechnical: {exc}")
+        logger.fatal(f"Upload stopped. Check your connection and try again.\nDetails: {exc}")
 
     finally:
         try:
@@ -1029,7 +1068,7 @@ def main() -> None:
         post_resp.raise_for_status()
     except requests.RequestException as exc:
         report.set_status("failed")
-        logger.fatal(f"Job registration did not complete. Check your connection and try again.\nTechnical: {exc}")
+        logger.fatal(f"Couldn't register job. Check your connection and try again.\nDetails: {exc}")
 
     # Finalize the diagnostic report
     report.finalize()
@@ -1090,7 +1129,7 @@ if __name__ == "__main__":
         traceback.print_exc()
         print(
             f"\n{exc}\n"
-            "Switch to Zip upload or select a higher-level project path, then submit again."
+            "Try Zip upload or select a different project path, then submit again."
         )
         try:
             _safe_input("\nPress Enter to close.", "")
