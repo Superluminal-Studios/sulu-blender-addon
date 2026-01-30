@@ -16,23 +16,26 @@ jobs:
     steps:
       # Step 1: Checkout the repository at the release tag
       - name: Checkout repository
-      - uses: actions/checkout@v4
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.event.release.tag_name }}
 
-      # Step 2: Install Python (via setup-python)
+      # Step 2: Setup Python
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # Step 3: Copy repo into /tmp/SuperLuminalRender, excluding unwanted files/folders
-      - name: Prepare folder structure (copy with exclusions)
+      # Step 3: Install tooling we need for packaging
+      - name: Install packaging deps
         run: |
           sudo apt-get update
           sudo apt-get install -y rsync zip
 
+      # Step 4: Copy repo into /tmp/SuperLuminalRender, excluding unwanted files/folders
+      - name: Prepare folder structure (copy with exclusions)
+        run: |
           rm -rf /tmp/SuperLuminalRender
           mkdir -p /tmp/SuperLuminalRender
 
@@ -46,13 +49,14 @@ jobs:
             --exclude='.gitkeep' \
             ./ /tmp/SuperLuminalRender/
 
-      # Step 4: List files for debugging
+      # Step 5: List files for debugging
       - name: List Files
         run: |
           echo "Workspace: $GITHUB_WORKSPACE"
+          echo "Repo root listing:"
           ls -la "$GITHUB_WORKSPACE"
           echo ""
-          echo "Staging (/tmp/SuperLuminalRender):"
+          echo "Staging (/tmp/SuperLuminalRender) listing:"
           ls -la /tmp/SuperLuminalRender
           echo ""
           echo "Exclude check (should print nothing):"
@@ -62,18 +66,18 @@ jobs:
             -name '.gitignore' -o -name '.gitkeep' -o -name 'dev_config.example.json' \
           \) -print || true
 
-      # Step 5: Run deploy.py (expected to produce /tmp/SuperLuminalRender.zip)
+      # Step 6: Run deploy.py (expected to produce /tmp/SuperLuminalRender.zip)
       - name: Run deploy.py
         run: |
-          python3 /tmp/SuperLuminalRender/deploy.py --version "${{ github.event.release.tag_name }}"
+          python /tmp/SuperLuminalRender/deploy.py --version "${{ github.event.release.tag_name }}"
 
-      # Step 6: Ensure zip exists
+      # Step 7: Ensure zip exists
       - name: Ensure zip exists
         run: |
           ls -la /tmp
           test -f /tmp/SuperLuminalRender.zip
 
-      # Step 7: Upload zip to the Release
+      # Step 8: Upload zip to the Release
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
