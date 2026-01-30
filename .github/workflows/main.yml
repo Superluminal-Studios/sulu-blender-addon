@@ -29,7 +29,9 @@ jobs:
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
 
-          # Copy repo contents into staging (keeps .git out because it's a dotdir at repo root)
+          # Copy repo contents into staging
+          # Note: dotfiles at repo root aren't copied by ./* (fine),
+          # but nested dotfiles (like subdir/.gitignore) are copied.
           cp -R ./* "$STAGE/"
 
           # Remove stuff we never ship
