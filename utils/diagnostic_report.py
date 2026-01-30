@@ -12,7 +12,7 @@ import os
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class DiagnosticReport:
@@ -348,3 +348,115 @@ class DiagnosticReport:
     def get_reports_dir(self) -> Path:
         """Get the reports directory path."""
         return self._reports_dir
+
+
+def generate_test_report(
+    blend_path: str,
+    dep_paths: List[Path],
+    missing_set: set,
+    unreadable_dict: dict,
+    project_root: Path,
+    same_drive_deps: List[Path],
+    cross_drive_deps: List[Path],
+    upload_type: str,
+    addon_dir: Optional[str] = None,
+    job_id: Optional[str] = None,
+    mode: str = "test",
+    format_size_fn: Optional[Any] = None,
+) -> Tuple[dict, Optional[Path]]:
+    """
+    Generate a diagnostic report and save it to the reports directory.
+
+    This is a standalone report generator for test mode, separate from the
+    continuous DiagnosticReport class used during actual submissions.
+
+    Returns: (report_dict, report_path) where report_path is None if saving failed.
+    """
+    # Use provided format_size or fallback
+    def _format_size(size_bytes: int) -> str:
+        if format_size_fn:
+            return format_size_fn(size_bytes)
+        if size_bytes < 1000:
+            return f"{size_bytes} B"
+        elif size_bytes < 1000 * 1000:
+            return f"{size_bytes / 1000:.1f} KB"
+        elif size_bytes < 1000 * 1000 * 1000:
+            return f"{size_bytes / (1000 * 1000):.1f} MB"
+        else:
+            return f"{size_bytes / (1000 * 1000 * 1000):.2f} GB"
+
+    # Build report data
+    blend_size = 0
+    try:
+        blend_size = os.path.getsize(blend_path)
+    except Exception:
+        pass
+
+    # Classify by extension
+    by_ext: Dict[str, int] = {}
+    total_size = 0
+    for dep in dep_paths:
+        ext = dep.suffix.lower() if dep.suffix else "(no ext)"
+        by_ext[ext] = by_ext.get(ext, 0) + 1
+        if dep.exists() and dep.is_file():
+            try:
+                total_size += dep.stat().st_size
+            except Exception:
+                pass
+
+    report = {
+        "report_version": "1.0",
+        "generated_at": datetime.now().isoformat(),
+        "mode": mode,
+        "upload_type": upload_type,
+        "blend_file": {
+            "path": str(blend_path),
+            "name": os.path.basename(blend_path),
+            "size_bytes": blend_size,
+            "size_human": _format_size(blend_size),
+        },
+        "project_root": str(project_root),
+        "dependencies": {
+            "total_count": len(dep_paths),
+            "total_size_bytes": total_size,
+            "total_size_human": _format_size(total_size),
+            "by_extension": dict(sorted(by_ext.items(), key=lambda x: -x[1])),
+            "same_drive_count": len(same_drive_deps),
+            "cross_drive_count": len(cross_drive_deps),
+        },
+        "issues": {
+            "missing_count": len(missing_set),
+            "missing_files": [str(p) for p in sorted(missing_set)],
+            "unreadable_count": len(unreadable_dict),
+            "unreadable_files": {str(k): v for k, v in sorted(unreadable_dict.items())},
+            "cross_drive_count": len(cross_drive_deps),
+            "cross_drive_files": [str(p) for p in sorted(cross_drive_deps)],
+        },
+        "all_dependencies": [str(p) for p in sorted(dep_paths)],
+    }
+
+    if job_id:
+        report["job_id"] = job_id
+
+    report_path = None
+    try:
+        if addon_dir:
+            reports_dir = Path(addon_dir) / "reports"
+        else:
+            reports_dir = Path(__file__).parent.parent / "reports"
+
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        blend_name = Path(blend_path).stem[:30]
+        blend_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in blend_name)
+        filename = f"submit_report_{timestamp}_{blend_name}.json"
+
+        report_path = reports_dir / filename
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, default=str)
+
+    except Exception:
+        report_path = None
+
+    return report, report_path

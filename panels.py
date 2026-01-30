@@ -10,7 +10,7 @@ from .storage import Storage
 from .preferences import refresh_jobs_collection, draw_header_row
 from .preferences import draw_login
 from .utils.request_utils import fetch_jobs
-from .icons import icon_values
+from .icons import get_icon_id, get_fallback_icon
 
 from .utils.project_scan import quick_cross_drive_hint, human_shorten
 
@@ -222,7 +222,11 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
     bl_context = "render"
 
     def draw_header(self, context):
-        self.layout.label(text="", icon="RESTRICT_RENDER_OFF")
+        icon_id = get_icon_id("LOGO")
+        if icon_id:
+            self.layout.label(text="", icon_value=icon_id)
+        else:
+            self.layout.label(text="", icon=get_fallback_icon("LOGO"))
 
     def draw(self, context):
         # Keep the parent panel minimal; put content in sub-panels

@@ -15,14 +15,14 @@ PY_FILES = [
 ]
 
 def fail(msg: str) -> int:
-    print(f"❌ {msg}")
+    print(f"[FAIL] {msg}")
     return 1
 
 def warn(msg: str) -> None:
-    print(f"⚠️  {msg}")
+    print(f"[WARN] {msg}")
 
 def ok(msg: str) -> None:
-    print(f"✅ {msg}")
+    print(f"[OK] {msg}")
 
 def main() -> int:
     rc = 0

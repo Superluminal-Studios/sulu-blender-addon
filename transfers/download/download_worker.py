@@ -1,6 +1,6 @@
 """
 download_worker.py – Superluminal: asset downloader
-Relies on generic helpers defined in submit_utils.py.
+Relies on generic helpers defined in worker_utils.py.
 
 Modes:
 - "single": one-time download of everything currently available
@@ -27,7 +27,7 @@ try:
     handoff_path = Path(sys.argv[1]).resolve(strict=True)
     data: Dict[str, object] = json.loads(handoff_path.read_text("utf-8"))
 
-    #import add-on internals
+    # Import add-on internals
     addon_dir = Path(data["addon_dir"]).resolve()
     pkg_name = addon_dir.name.replace("-", "_")
     sys.path.insert(0, str(addon_dir.parent))
@@ -35,26 +35,30 @@ try:
     pkg.__path__ = [str(addon_dir)]
     sys.modules[pkg_name] = pkg
 
-    #import helpers
+    # Import helpers
     rclone = importlib.import_module(f"{pkg_name}.transfers.rclone")
     run_rclone = rclone.run_rclone
     ensure_rclone = rclone.ensure_rclone
     worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
-    clear_console = importlib.import_module(f"{pkg_name}.utils.worker_utils").clear_console
-    open_folder = importlib.import_module(f"{pkg_name}.utils.worker_utils").open_folder
+    clear_console = worker_utils.clear_console
+    open_folder = worker_utils.open_folder
+
+    # Import download logger
+    download_logger_mod = importlib.import_module(f"{pkg_name}.utils.download_logger")
+    DownloadLogger = download_logger_mod.DownloadLogger
+
     clear_console()
-    
-    #internal utils
-    _log = worker_utils.logger
+
+    # Internal utils
     _build_base = worker_utils._build_base
     requests_retry_session = worker_utils.requests_retry_session
     CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
 
 except Exception as exc:
-    print(f"❌  Failed to initialize downloader: {exc}")
+    print(f"Failed to initialize downloader: {exc}")
     print(f"Error type: {type(exc)}")
     traceback.print_exc()
-    input("\nPress ENTER to close this window…")
+    input("\nPress Enter to close.")
     sys.exit(1)
 
 
@@ -70,16 +74,29 @@ base_cmd: List[str]
 download_type: str
 sarfis_url: Optional[str]
 sarfis_token: Optional[str]
+logger: DownloadLogger
 
 
-#helpers
+# Helpers
 def _safe_dir_name(name: str, fallback: str) -> str:
     """Make a filesystem-safe folder name (cross-platform)."""
     n = re.sub(r"[\\/:*?\"<>|]+", "_", str(name)).strip()
     return n or fallback
 
+
 def _ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
+
+
+def _count_existing_files(path: str) -> int:
+    """Count files already in destination (for resume detection)."""
+    if not os.path.isdir(path):
+        return 0
+    count = 0
+    for root, _, files in os.walk(path):
+        count += len(files)
+    return count
+
 
 def _build_rclone_base() -> List[str]:
     return _build_base(
@@ -87,6 +104,7 @@ def _build_rclone_base() -> List[str]:
         f"https://{CLOUDFLARE_R2_DOMAIN}",
         s3info,
     )
+
 
 def _fetch_job_details() -> Tuple[str, int, int]:
     """
@@ -104,35 +122,42 @@ def _fetch_job_details() -> Tuple[str, int, int]:
             timeout=20,
         )
         if resp.status_code != 200:
-            _log(f"ℹ️  Job status check returned {resp.status_code}. will retry.")
+            logger.warning(f"Job status check returned {resp.status_code}")
             return ("unknown", 0, 0)
-        body = resp.json().get("body", {}) if resp.headers.get("content-type", "").startswith("application/json") else {}
+        body = (
+            resp.json().get("body", {})
+            if resp.headers.get("content-type", "").startswith("application/json")
+            else {}
+        )
         status = str(body.get("status", "unknown")).lower()
         tasks = body.get("tasks", {}) or {}
         finished = int(tasks.get("finished", 0) or 0)
         total = int(body.get("total_tasks", tasks.get("total", 0) or 0) or 0)
         return (status, finished, total)
     except Exception as exc:
-        _log(f"ℹ️  Job status check failed ({exc}); will retry.")
+        logger.warning(f"Job status check failed: {exc}")
         return ("unknown", 0, 0)
+
 
 def _rclone_copy_output(dest_dir: str) -> bool:
     """
     Copy job output from remote to dest_dir.
     Returns True if copy succeeded (even if nothing new), False if remote likely doesn't exist yet.
     """
-    # Base args tuned for incremental pulls without thrashing:
-    # - exclude thumbnails
-    # - parallelism modest to keep UI responsive
-    # - size-only to avoid Cloudflare multipart etag pitfalls
     rclone_args = [
-        "--exclude", "thumbnails/**",
-        "--transfers", "8",
-        "--checkers", "8",
+        "--exclude",
+        "thumbnails/**",
+        "--transfers",
+        "8",
+        "--checkers",
+        "8",
         "--size-only",
-        "--retries", "10",
-        "--low-level-retries", "20",
-        "--retries-sleep", "5s",
+        "--retries",
+        "10",
+        "--low-level-retries",
+        "20",
+        "--retries-sleep",
+        "5s",
     ]
 
     remote = f":s3:{bucket}/{job_id}/output/"
@@ -145,90 +170,85 @@ def _rclone_copy_output(dest_dir: str) -> bool:
             remote,
             local,
             rclone_args,
-            logger=_log,
+            logger=logger,
         )
         return True
     except RuntimeError as exc:
-        # If the path doesn't exist yet, treat as "nothing yet"
         msg = str(exc).lower()
         hints = ("directory not found", "no such key", "404", "not exist", "cannot find")
         if any(h in msg for h in hints):
-            _log("ℹ️  Output not available yet (no files found). Will try again.")
+            logger.info("Output not available yet. Waiting for frames.")
             return False
-        _log(f"❌  Download error: {exc}")
+        logger.error(f"Download error: {exc}")
         raise
 
-def _print_first_run_hint():
-    _log("\nℹ️  Tip:")
-    _log("   • Keep this window open to auto download frames as they finish.")
-    _log("   • You can close this window anytime. rerun the download later to resume.")
 
-def single_downloader(dest_dir):
+def single_downloader(dest_dir: str) -> None:
     _ensure_dir(dest_dir)
 
-    _log("🚀  Downloading render output…\n")
+    # Check for existing files (resuming previous download)
+    existing = _count_existing_files(dest_dir)
+    if existing > 0:
+        logger.resume_info(existing)
+
+    logger.transfer_start("Downloading")
     ok = _rclone_copy_output(dest_dir)
-    if not ok:
-        _log("ℹ️  No outputs found yet. Try again later or use Auto mode to wait for frames.")
+    if ok:
+        logger.transfer_complete("Downloaded")
+    else:
+        logger.warning("No outputs yet. Try again later.")
 
 
-def auto_downloader(dest_dir, poll_seconds: int = 5, min_delta_frames: int = 1, min_percent: float = 0.10):
-    """
-    Periodically checks job progress and pulls new frames when:
-      - finished increased by at least `min_delta_frames`, or
-      - overall finished >= min_percent of total (first meaningful batch), or
-      - a periodic refresh timer fires (in case the job API lags behind).
-    """
+def auto_downloader(dest_dir: str, poll_seconds: int = 5) -> None:
+    """Poll for new frames and download as they become available."""
     _ensure_dir(dest_dir)
 
-    last_finished = 0
-    first_notice_shown = False
-    periodic_refresh_every = 60  # seconds
-    last_refresh = time.monotonic() - periodic_refresh_every  # force a refresh on first loop
+    # Check for existing files (resuming previous download)
+    existing = _count_existing_files(dest_dir)
+    if existing > 0:
+        logger.resume_info(existing)
 
-    _log("🔄  Auto mode: will download new frames as they become available.")
-    _print_first_run_hint()
+    last_downloaded = 0
+    last_refresh = 0.0
+    refresh_interval = 60  # Check storage every 60s even if API shows no change
+    shown_waiting = False
+
+    logger.auto_mode_info()
 
     while True:
-        status, finished, total = _fetch_job_details()
-        if total > 0:
-            pct = (finished / max(total, 1)) * 100.0
-            _log(f"\nℹ️  Status: {status or 'unknown'} | {finished}/{total} frames ({pct:.1f}%)")
-        else:
-            _log(f"\nℹ️  Status: {status or 'unknown'} | finished frames: {finished}")
+        job_status, finished, total = _fetch_job_details()
 
-        if not first_notice_shown and status in {"running", "queued", "unknown"}:
-            _log("⏳  Waiting for frames to appear on storage...")
-            first_notice_shown = True
+        # Download if: new frames available, or periodic refresh, or first run
+        new_count = finished - last_downloaded
+        time_to_refresh = (time.monotonic() - last_refresh) >= refresh_interval
+        should_download = new_count > 0 or time_to_refresh or last_downloaded == 0
 
-        enough_progress = (total > 0 and finished >= max(int(total * min_percent), min_delta_frames))
-        new_frames = (finished > last_finished)
-        refresh_due = (time.monotonic() - last_refresh) >= periodic_refresh_every
-
-        if new_frames or enough_progress or refresh_due:
-            if new_frames:
-                _log(f"📥  Detected {finished - last_finished} new frame(s). Downloading…\n")
-            elif enough_progress:
-                _log("📥  Downloading initial batch of frames...\n")
+        if should_download and finished > 0:
+            if new_count > 0 and last_downloaded > 0:
+                logger.transfer_start(f"{new_count} new frames")
             else:
-                _log("📥  Periodic refresh...")
+                logger.transfer_start(f"{finished} frames")
+
             last_refresh = time.monotonic()
             ok = _rclone_copy_output(dest_dir)
             if ok:
-                last_finished = finished
+                logger.transfer_complete("Downloaded")
+                last_downloaded = finished
+        elif finished == 0 and not shown_waiting:
+            logger.info("Waiting for frames to render")
+            shown_waiting = True
 
-        if status in {"finished", "paused", "error"}:
-            _log("\n🔄  Finalizing download (one last pass)...")
-            try:
-                _rclone_copy_output(dest_dir)
-            except Exception:
-                pass
-            if status == "finished":
-                _log("\n✅  All frames downloaded.")
-            elif status == "paused":
-                _log("\n⏸️  Job paused. Current frames are downloaded. You can resume later.")
+        # Job complete?
+        if job_status in {"finished", "paused", "error"}:
+            # One final sync
+            _rclone_copy_output(dest_dir)
+
+            if job_status == "finished":
+                logger.success(f"All {finished} frames downloaded")
+            elif job_status == "paused":
+                logger.warning("Job paused. Current frames saved.")
             else:
-                _log("\n⚠️  Job ended with errors. Current frames are downloaded. You can rerun later to download up more if requeued.")
+                logger.warning("Job ended with errors. Current frames saved.")
             break
 
         time.sleep(max(1, int(poll_seconds)))
@@ -238,6 +258,10 @@ def main() -> None:
     global session, job_id, job_name, download_path
     global rclone_bin, s3info, bucket, base_cmd
     global download_type, sarfis_url, sarfis_token
+    global logger
+
+    # Create logger
+    logger = DownloadLogger()
 
     session = requests_retry_session()
     headers = {"Authorization": data["user_token"]}
@@ -247,26 +271,25 @@ def main() -> None:
     safe_job_dir = _safe_dir_name(job_name, f"job_{job_id}")
     dest_dir = os.path.abspath(os.path.join(download_path, safe_job_dir))
 
-    #determine mode
+    # Show startup logo
+    logger.logo_start(job_name=job_name, dest_dir=dest_dir)
+
+    # Determine mode
     sarfis_url = data.get("sarfis_url")
     sarfis_token = data.get("sarfis_token")
     requested_mode = str(data.get("download_type", "") or "").lower()
     if requested_mode in {"single", "auto"}:
         download_type = requested_mode
     else:
-        #default: auto if we have a status endpoint; otherwise single
         download_type = "auto" if sarfis_url and sarfis_token else "single"
 
-    # rclone
+    # Prepare rclone
     try:
-        rclone_bin = ensure_rclone(logger=_log)
+        rclone_bin = ensure_rclone(logger=logger)
     except Exception as exc:
-        _log(f"❌  Could not prepare the downloader (rclone): {exc}")
-        input("\nPress ENTER to close this window…")
-        sys.exit(1)
+        logger.fatal(f"Could not prepare the downloader (rclone): {exc}")
 
-    #obtain R2 credentials
-    _log("🔑  Fetching storage credentials…")
+    # Obtain R2 credentials
     try:
         s3_resp = session.get(
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
@@ -283,11 +306,9 @@ def main() -> None:
             raise IndexError("No storage records returned for this project.")
         s3info = items[0]
         bucket = s3info["bucket_name"]
-        
+
     except (IndexError, requests.RequestException, KeyError) as exc:
-        _log(f"❌  Failed to obtain bucket credentials: {exc}")
-        input("\nPress ENTER to close this window…")
-        sys.exit(1)
+        logger.fatal(f"Failed to obtain storage credentials: {exc}")
 
     # Build rclone base once
     base_cmd = _build_rclone_base()
@@ -295,35 +316,33 @@ def main() -> None:
     # Make sure the target directory exists
     _ensure_dir(download_path)
 
-    # ─────── run selected mode ─────────────────────────────────
+    # Run selected mode
     try:
         job_data = _fetch_job_details()
         if download_type == "single" or job_data[0] in ["finished", "paused", "error"]:
             single_downloader(dest_dir)
         else:
             if not sarfis_url or not sarfis_token:
-                _log("ℹ️  Auto mode requested but no job status endpoint was provided. Falling back to single download.")
+                logger.warning("Auto mode requested but no status endpoint available. Using single download.")
                 single_downloader(dest_dir)
-                
             else:
-                _log(f"ℹ️  Mode: Auto (polling every 5s). Destination: {download_path}")
                 auto_downloader(dest_dir, poll_seconds=5)
+
         elapsed = time.perf_counter() - t_start
-            
-        
-        print(f"✅  Download Finished. Elapsed: {elapsed:.1f}s")
-        print(f"📁  Files saved to: {dest_dir}")
-        folder_ask = input("Open Folder?(y/n):").strip()
-        if folder_ask.lower() in {"y", "yes"}:
+
+        # Show success screen
+        choice = logger.logo_end(elapsed=elapsed, dest_dir=dest_dir)
+        if choice == "o":
             open_folder(dest_dir)
 
     except KeyboardInterrupt:
-        _log("\n⏹️  Download interrupted by user. You can rerun this later to resume.")
-        input("\nPress ENTER to close this window...")
+        logger.warn_block("Download interrupted. Rerun later to resume.", severity="warning")
+        try:
+            input("\nPress Enter to close.")
+        except Exception:
+            pass
     except Exception as exc:
-        _log(f"\n❌  Download failed: {exc}")
-        traceback.print_exc()
-        input("\nPress ENTER to close this window...")
+        logger.fatal(f"Download failed: {exc}")
 
 
 if __name__ == "__main__":
@@ -331,5 +350,5 @@ if __name__ == "__main__":
         main()
     except Exception as exc:
         traceback.print_exc()
-        _log(f"\n❌  Download failed before start: {exc}")
-        input("\nPress ENTER to close this window...")
+        print(f"\nDownload failed before start: {exc}")
+        input("\nPress Enter to close.")

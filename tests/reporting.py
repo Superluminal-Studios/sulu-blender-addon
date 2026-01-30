@@ -258,10 +258,10 @@ class TestReporter:
         lines.append("| Metric | Count |")
         lines.append("|--------|-------|")
         lines.append(f"| Total | {self.report.total} |")
-        lines.append(f"| ✅ Passed | {self.report.passed} |")
-        lines.append(f"| ❌ Failed | {self.report.failed} |")
-        lines.append(f"| ⏭️ Skipped | {self.report.skipped} |")
-        lines.append(f"| ⚠️ Errors | {self.report.errors} |")
+        lines.append(f"| Passed | {self.report.passed} |")
+        lines.append(f"| Failed | {self.report.failed} |")
+        lines.append(f"| Skipped | {self.report.skipped} |")
+        lines.append(f"| Errors | {self.report.errors} |")
         lines.append(f"| Success Rate | {self.report.success_rate:.1f}% |")
         lines.append("")
 
@@ -276,14 +276,14 @@ class TestReporter:
             lines.append("")
 
             for r in results:
-                status_icon = {
-                    TestStatus.PASSED: "✅",
-                    TestStatus.FAILED: "❌",
-                    TestStatus.SKIPPED: "⏭️",
-                    TestStatus.ERROR: "⚠️",
+                status_label = {
+                    TestStatus.PASSED: "[PASS]",
+                    TestStatus.FAILED: "[FAIL]",
+                    TestStatus.SKIPPED: "[SKIP]",
+                    TestStatus.ERROR: "[ERR]",
                 }[r.status]
 
-                lines.append(f"### {status_icon} {r.name}")
+                lines.append(f"### {status_label} {r.name}")
                 lines.append("")
                 lines.append(f"- **Status:** {r.status.value}")
                 lines.append(f"- **Duration:** {r.duration_ms:.0f}ms")

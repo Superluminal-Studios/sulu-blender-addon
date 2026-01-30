@@ -191,7 +191,7 @@ def download_with_bar(url: str, dest: Path, logger=None) -> None:
     )
     s.mount("https://", HTTPAdapter(max_retries=retries))
 
-    _call_logger(logger, "info", f"{_GLYPH_DOWN} Preparing rclone…")
+    _call_logger(logger, "info", f"{_GLYPH_DOWN} Preparing rclone")
     resp = s.get(url, stream=True, timeout=600)
     resp.raise_for_status()
 
@@ -228,7 +228,7 @@ def ensure_rclone(logger=None) -> Path:
     url = get_rclone_url()
     download_with_bar(url, tmp_zip, logger=logger)
 
-    _call_logger(logger, "info", "Extracting rclone…")
+    _call_logger(logger, "info", "Extracting rclone")
     with zipfile.ZipFile(tmp_zip) as zf:
         target_written = False
         for m in zf.infolist():
@@ -254,6 +254,7 @@ def ensure_rclone(logger=None) -> Path:
 
 
 def _bytes_from_stats(obj):
+    """Extract bytes transferred from rclone stats JSON."""
     s = obj.get("stats")
     if not s:
         return None
@@ -262,6 +263,47 @@ def _bytes_from_stats(obj):
     if cur is None:
         return None
     return int(cur), int(tot)
+
+
+def _extract_stats_detail(obj):
+    """
+    Extract detailed stats from rclone JSON for progress display.
+
+    Returns dict with:
+        bytes: current bytes transferred
+        totalBytes: total bytes to transfer
+        checks: number of files checked
+        transfers: number of files transferred
+        checking: list of filenames currently being checked
+        transferring: list of filenames currently being transferred
+    """
+    s = obj.get("stats")
+    if not s:
+        return None
+
+    def _extract_names(items):
+        """Extract filenames from rclone list (handles both str and dict formats)."""
+        if not items:
+            return []
+        result = []
+        for item in items:
+            if isinstance(item, str):
+                if item:
+                    result.append(item)
+            elif isinstance(item, dict):
+                name = item.get("name", "")
+                if name:
+                    result.append(name)
+        return result
+
+    return {
+        "bytes": int(s.get("bytes", 0) or 0),
+        "totalBytes": int(s.get("totalBytes", 0) or 0),
+        "checks": int(s.get("checks", 0) or 0),
+        "transfers": int(s.get("transfers", 0) or 0),
+        "checking": _extract_names(s.get("checking")),
+        "transferring": _extract_names(s.get("transferring")),
+    }
 
 
 # -------------------------------------------------------------------
@@ -617,10 +659,21 @@ def _classify_failure(
 # ────────────────────────── main runner ──────────────────────────
 
 
-def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
+def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, total_bytes=None):
     """
     Execute rclone safely with a friendly progress display.
     Raises RuntimeError on failure (message is user-friendly, no emoji).
+
+    Args:
+        base: Base rclone command list (exe + global flags)
+        verb: rclone verb (copy, move, copyto, moveto, etc.)
+        src: Source path
+        dst: Destination path
+        extra: Extra rclone flags
+        logger: Logger instance with transfer_progress() method for rich progress
+        file_count: (unused) Number of files being transferred
+        total_bytes: Pre-calculated total bytes for multi-file transfers.
+                     When provided, enables percentage progress bar from the start.
 
     Reliability patches:
     - Automatically add --local-unicode-normalization when supported
@@ -682,9 +735,13 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
 
     # Progress bar - uses logger's transfer_progress if available, else simple text
     progress_started = False
-    progress_total = 0
+    progress_total = int(total_bytes) if total_bytes and total_bytes > 0 else 0
     progress_cur = 0
     progress_last_len = 0
+    progress_checks = 0
+    progress_transfers = 0
+    progress_status = ""  # "checking", "transferring", or ""
+    progress_current_file = ""
 
     # Check if logger has transfer_progress method (rich UI)
     has_rich_progress = (
@@ -692,6 +749,24 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
         and hasattr(logger, "transfer_progress")
         and callable(getattr(logger, "transfer_progress", None))
     )
+
+    # Check if logger has extended transfer_progress_ext method
+    has_rich_progress_ext = (
+        logger is not None
+        and hasattr(logger, "transfer_progress_ext")
+        and callable(getattr(logger, "transfer_progress_ext", None))
+    )
+
+    # If we have a pre-calculated total, start progress immediately
+    if progress_total > 0:
+        progress_started = True
+        if has_rich_progress_ext:
+            logger.transfer_progress_ext(0, progress_total, status="preparing")
+        elif has_rich_progress:
+            logger.transfer_progress(0, progress_total)
+        else:
+            sys.stderr.write(f"  Preparing transfer ({_human_bytes(progress_total)})\r")
+            sys.stderr.flush()
 
     def _fmt_bytes(n: int) -> str:
         if n < 1024:
@@ -702,29 +777,90 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
             return f"{n / (1024 * 1024):.1f} MB"
         return f"{n / (1024 * 1024 * 1024):.2f} GB"
 
+    def _shorten_filename(name: str, max_len: int = 30) -> str:
+        if len(name) <= max_len:
+            return name
+        return name[:max_len - 3] + "..."
+
     def _progress_start(total: Optional[int] = None) -> None:
         nonlocal progress_started, progress_total
         progress_started = True
         progress_total = int(total) if total and total > 0 else 0
-        if has_rich_progress:
+        if has_rich_progress_ext:
+            logger.transfer_progress_ext(0, progress_total, status="starting")
+        elif has_rich_progress:
             logger.transfer_progress(0, progress_total)
         else:
             _progress_render_simple()
 
     def _progress_render_simple() -> None:
         nonlocal progress_last_len
+        # Build status suffix
+        status_suffix = ""
+        if progress_status == "checking" and progress_current_file:
+            status_suffix = f"  Verifying: {_shorten_filename(progress_current_file, 25)}"
+        elif progress_status == "checking":
+            status_suffix = f"  Verifying ({progress_checks} checked)"
+        elif progress_transfers > 0 and progress_checks > progress_transfers:
+            # More checks than transfers = some files skipped
+            skipped = progress_checks - progress_transfers
+            status_suffix = f"  ({skipped} unchanged)"
+
         if progress_total > 0:
             pct = (progress_cur / max(progress_total, 1)) * 100.0
-            bar_w = 30
+            bar_w = 24
             filled = int(bar_w * progress_cur / max(progress_total, 1))
             bar = "█" * filled + "░" * (bar_w - filled)
-            line = f"  {bar} {pct:5.1f}%  {_fmt_bytes(progress_cur)} / {_fmt_bytes(progress_total)}"
+            line = f"  {bar} {pct:5.1f}%  {_fmt_bytes(progress_cur)} / {_fmt_bytes(progress_total)}{status_suffix}"
         else:
-            line = f"  Transferred: {_fmt_bytes(progress_cur)}"
+            line = f"  Transferred: {_fmt_bytes(progress_cur)}{status_suffix}"
         pad = max(0, progress_last_len - len(line))
         sys.stderr.write("\r" + line + " " * pad)
         sys.stderr.flush()
         progress_last_len = len(line)
+
+    def _progress_update_ext(stats: dict) -> None:
+        nonlocal progress_cur, progress_total, progress_checks, progress_transfers
+        nonlocal progress_status, progress_current_file
+
+        progress_cur = stats.get("bytes", 0)
+        tot = stats.get("totalBytes", 0)
+        if tot and tot > 0:
+            progress_total = max(progress_total, tot)
+
+        progress_checks = stats.get("checks", 0)
+        progress_transfers = stats.get("transfers", 0)
+
+        # Determine current activity
+        checking = stats.get("checking", [])
+        transferring = stats.get("transferring", [])
+
+        if transferring:
+            progress_status = "transferring"
+            progress_current_file = transferring[0] if transferring else ""
+        elif checking:
+            progress_status = "checking"
+            progress_current_file = checking[0] if checking else ""
+        else:
+            progress_status = ""
+            progress_current_file = ""
+
+        if not progress_started:
+            return
+
+        if has_rich_progress_ext:
+            logger.transfer_progress_ext(
+                progress_cur,
+                progress_total,
+                status=progress_status,
+                current_file=progress_current_file,
+                checks=progress_checks,
+                transfers=progress_transfers,
+            )
+        elif has_rich_progress:
+            logger.transfer_progress(progress_cur, progress_total)
+        else:
+            _progress_render_simple()
 
     def _progress_update(cur: int, tot: Optional[int] = None) -> None:
         nonlocal progress_cur, progress_total
@@ -771,18 +907,28 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None):
                     obj = None
 
                 if obj is not None and isinstance(obj, dict):
-                    out = _bytes_from_stats(obj)
-                    if out is not None:
-                        cur, tot = out
+                    # Try extended stats extraction first
+                    stats_detail = _extract_stats_detail(obj)
+                    if stats_detail is not None:
+                        cur = stats_detail["bytes"]
+                        tot = stats_detail["totalBytes"]
 
                         if not progress_started:
-                            if (tot and tot > 0) or cur > 0:
+                            # Start progress when we have data or activity
+                            has_activity = (
+                                (tot and tot > 0) or
+                                cur > 0 or
+                                stats_detail["checks"] > 0 or
+                                stats_detail["checking"] or
+                                stats_detail["transferring"]
+                            )
+                            if has_activity:
                                 _progress_start(total=tot if tot > 0 else None)
                             else:
                                 last_bytes = cur
                                 continue
 
-                        _progress_update(cur, tot)
+                        _progress_update_ext(stats_detail)
                         last_bytes = cur
                         continue
 

@@ -1,7 +1,7 @@
 import bpy
 from .storage            import Storage
 from .utils.date_utils   import format_submitted
-from .icons              import icon_values
+from .icons              import get_status_icon_id, get_fallback_icon
 from .storage            import Storage
 
 COLUMN_ORDER = [
@@ -68,7 +68,6 @@ def refresh_jobs_collection(prefs):
         it.finished_frames  = job.get("tasks", {}).get("finished", 0)
         it.blender_version  = job.get("blender_version", "")
         it.type             = "Zip" if job.get("zip", True) else "Project"
-        it.icon             = icon_values.get(it.status.upper(), 'FILE_FOLDER')
 
 
 class SuperluminalJobItem(bpy.types.PropertyGroup):
@@ -140,7 +139,11 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
                 continue
 
             if key == "name":
-                cols.label(text=item.name, icon=icon_values.get(item.status.upper(), 'FILE_FOLDER'))
+                icon_id = get_status_icon_id(item.status)
+                if icon_id:
+                    cols.label(text=item.name, icon_value=icon_id)
+                else:
+                    cols.label(text=item.name, icon=get_fallback_icon(item.status))
             elif key == "status":
                 cols.label(text=item.status)
             elif key == "submission_time":

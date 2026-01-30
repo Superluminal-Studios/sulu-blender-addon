@@ -1,14 +1,31 @@
 # utils/worker_utils.py
+"""
+worker_utils.py — Shared utilities for Sulu worker processes.
+
+Contains:
+- Console/terminal helpers (clear, launch terminal, open folder)
+- Text formatting (pluralization, size formatting, path shortening)
+- Unicode/environment detection
+- Path utilities (drive detection, S3 key cleaning, path comparison)
+- File probing (readability checks, cloud storage detection)
+- HTTP session factory with retry logic
+- rclone command building
+"""
+
 from __future__ import annotations
 
+import os
 import platform
+import re
 import shlex
 import shutil
 import subprocess
-from typing import List, Dict
-import os
+import sys
+import tempfile
 import time
+import unicodedata
 from pathlib import Path
+from typing import Callable, Dict, List, Optional, Tuple
 
 # third-party
 import requests
@@ -84,11 +101,27 @@ def shorten_path(path: str) -> str:
     return f"{path[:left]}{dots}{path[-right:]}"
 
 
-def open_folder(path: str) -> None:
+def open_folder(path: str, logger_instance=None) -> None:
     """
     Best-effort attempt to open a folder in the OS file manager.
     Never raises; logs a friendly message on failure.
+
+    Args:
+        path: The folder path to open.
+        logger_instance: Optional SubmitLogger instance for styled output.
     """
+    def _log_info(msg: str) -> None:
+        if logger_instance and hasattr(logger_instance, "info"):
+            logger_instance.info(msg)
+        else:
+            logger(msg)
+
+    def _log_warning(msg: str) -> None:
+        if logger_instance and hasattr(logger_instance, "warning"):
+            logger_instance.warning(msg)
+        else:
+            logger(msg)
+
     try:
         if platform.system() == "Windows":
             os.startfile(path)  # type: ignore[attr-defined]
@@ -99,9 +132,9 @@ def open_folder(path: str) -> None:
             if shutil.which("xdg-open"):
                 subprocess.Popen(["xdg-open", path])
             else:
-                logger(f"ℹ️  To open the folder manually, browse to: {path}")
+                _log_info(f"To open the folder manually, browse to: {path}")
     except Exception as e:
-        logger(f"⚠️  Couldn’t open folder automatically: {e}")
+        _log_warning(f"Couldn't open folder automatically: {e}")
 
 
 def _win_quote(arg: str) -> str:
@@ -245,14 +278,30 @@ def requests_retry_session(
 
 
 # save/flush detection
-def is_blend_saved(path: str | Path) -> None:
+def is_blend_saved(path: str | Path, logger_instance=None) -> None:
     """
-    Block until a “*.blend” file is finished saving.
+    Block until a "*.blend" file is finished saving.
 
     Blender typically writes a sentinel `<file>.blend@` while saving.
     We wait for the sentinel to disappear *and* for the file size to
     remain stable for ~0.5s as an extra safety check (covers network drives).
+
+    Args:
+        path: The .blend file path to check.
+        logger_instance: Optional SubmitLogger instance for styled output.
     """
+    def _log_info(msg: str) -> None:
+        if logger_instance and hasattr(logger_instance, "info"):
+            logger_instance.info(msg)
+        else:
+            _log(msg)
+
+    def _log_success(msg: str) -> None:
+        if logger_instance and hasattr(logger_instance, "success"):
+            logger_instance.success(msg)
+        else:
+            _log(msg)
+
     path = str(path)
     warned = False
 
@@ -274,15 +323,13 @@ def is_blend_saved(path: str | Path) -> None:
 
             if stable_ticks >= 2:  # ~0.5s of stability
                 if warned:
-                    _log("✅  File is saved. Proceeding.")
+                    _log_success("File saved. Proceeding.")
                 return
         else:
             # Still saving; print a one-time friendly note
             if not warned:
-                _log("⏳  Waiting for Blender to finish saving the .blend…")
-                _log(
-                    "    If this takes a while, background sync apps (Dropbox/Drive) may be scanning the file."
-                )
+                _log_info("Waiting for Blender to finish saving")
+                _log_info("If this takes a while, background sync apps (Dropbox, Google Drive) may be scanning the file.")
                 warned = True
 
         time.sleep(0.25)
@@ -333,3 +380,349 @@ def _build_base(
     # Add our shared flags (provider, region, etc.)
     base.extend(COMMON_RCLONE_FLAGS)
     return base
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Text formatting utilities
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def plural_word(word: str) -> str:
+    """
+    Best-effort English pluralization for common cases.
+
+    Handles irregular forms used in this project (dependency -> dependencies).
+    For special cases, pass an explicit plural to count() instead.
+    """
+    w = str(word or "")
+    lw = w.lower()
+
+    # Common irregulars in this project
+    if lw == "dependency":
+        return "dependencies"
+    if lw == "directory":
+        return "directories"
+
+    # Standard heuristics
+    if lw.endswith(("s", "x", "z", "ch", "sh")):
+        return w + "es"
+    if lw.endswith("y") and len(lw) >= 2 and lw[-2] not in "aeiou":
+        return w[:-1] + "ies"
+    return w + "s"
+
+
+def count(n: int, singular: str, plural: Optional[str] = None) -> str:
+    """
+    Return '1 thing' / '2 things' with correct pluralization.
+
+    Avoids awkward '(s)' constructions for cleaner copy.
+    """
+    try:
+        n_int = int(n)
+    except Exception:
+        n_int = 0
+    if n_int == 1:
+        return f"{n_int} {singular}"
+    return f"{n_int} {plural or plural_word(singular)}"
+
+
+def format_size(size_bytes: int) -> str:
+    """
+    Format bytes as human readable string.
+
+    Uses decimal units for file/transfer size:
+      1 KB = 1000 B, 1 MB = 1000 KB, 1 GB = 1000 MB
+    """
+    try:
+        size_bytes = int(size_bytes)
+    except Exception:
+        return "unknown"
+    if size_bytes < 1000:
+        return f"{size_bytes} B"
+    if size_bytes < 1000 * 1000:
+        return f"{size_bytes / 1000:.1f} KB"
+    if size_bytes < 1000 * 1000 * 1000:
+        return f"{size_bytes / (1000 * 1000):.1f} MB"
+    return f"{size_bytes / (1000 * 1000 * 1000):.2f} GB"
+
+
+def normalize_nfc(s: str) -> str:
+    """Normalize string to NFC form (matches BAT's archive path normalization)."""
+    return unicodedata.normalize("NFC", str(s))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Environment / terminal detection
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def debug_enabled() -> bool:
+    """Check if SULU_DEBUG environment variable is set."""
+    return os.environ.get("SULU_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def is_interactive() -> bool:
+    """Check if we're running in an interactive terminal."""
+    try:
+        return sys.stdin.isatty()
+    except Exception:
+        return False
+
+
+def supports_unicode() -> bool:
+    """Best-effort check whether Unicode output is safe in this terminal."""
+    try:
+        encoding = sys.stdout.encoding or ""
+        if "utf" in encoding.lower():
+            return True
+    except Exception:
+        pass
+
+    if "utf" in os.environ.get("PYTHONIOENCODING", "").lower():
+        return True
+
+    if sys.platform == "win32":
+        # Windows Terminal / VS Code terminal
+        if os.environ.get("WT_SESSION"):
+            return True
+        if os.environ.get("TERM_PROGRAM", "").lower() in ("vscode",):
+            return True
+        return False
+
+    return True
+
+
+# Cached result for performance
+_UNICODE_SUPPORTED = supports_unicode()
+ELLIPSIS = "…" if _UNICODE_SUPPORTED else "..."
+
+
+def safe_input(prompt: str, default: str = "", log_fn: Optional[Callable[[str], None]] = None) -> str:
+    """
+    Safe input wrapper that handles non-interactive (automated) mode.
+
+    When stdin is not a TTY (e.g., in automated tests or piped input),
+    returns the default value instead of blocking on input().
+    """
+    if is_interactive():
+        return input(prompt)
+    # Non-interactive mode: log and return default
+    if log_fn:
+        log_fn(f"[auto] {prompt.strip()} -> {repr(default)}")
+    return default
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Path utilities (OS-agnostic drive detection + S3 key cleaning)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_WIN_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]+")
+_IS_MAC = sys.platform == "darwin"
+
+
+def is_win_drive_path(p: str) -> bool:
+    """Check if path looks like a Windows drive path (e.g., C:\\...)."""
+    return bool(_WIN_DRIVE_RE.match(str(p)))
+
+
+def norm_abs_for_detection(path: str) -> str:
+    """Normalize a path for comparison but keep Windows-looking/UNC paths intact on POSIX."""
+    p = str(path).replace("\\", "/")
+    if is_win_drive_path(p) or p.startswith("//") or p.startswith("\\\\"):
+        return p
+    return os.path.normpath(os.path.abspath(p)).replace("\\", "/")
+
+
+def get_drive(path: str) -> str:
+    """
+    Return a drive token representing the path's root device for cross-drive checks.
+
+    Returns:
+    - Windows letters: "C:", "D:", ...
+    - UNC: "UNC"
+    - macOS volumes: "/Volumes/NAME"
+    - Linux removable/media: "/media/USER/NAME" or "/mnt/NAME"
+    - Otherwise POSIX root "/"
+    """
+    p = str(path).replace("\\", "/")
+    if is_win_drive_path(p):
+        return (p[:2]).upper()  # "C:"
+    if p.startswith("//") or p.startswith("\\\\"):
+        return "UNC"
+    if os.name == "nt":
+        return os.path.splitdrive(p)[0].upper()
+
+    # macOS volumes
+    if p.startswith("/Volumes/"):
+        parts = p.split("/")
+        if len(parts) >= 3:
+            return "/Volumes/" + parts[2]
+        return "/Volumes"
+
+    # Linux common mounts
+    if p.startswith("/media/"):
+        parts = p.split("/")
+        if len(parts) >= 4:
+            return f"/media/{parts[2]}/{parts[3]}"
+        return "/media"
+
+    if p.startswith("/mnt/"):
+        parts = p.split("/")
+        if len(parts) >= 3:
+            return f"/mnt/{parts[2]}"
+        return "/mnt"
+
+    # Fallback: POSIX root
+    return "/"
+
+
+def relpath_safe(child: str, base: str) -> str:
+    """Safe relpath with POSIX separators. Caller must ensure same 'drive'."""
+    return os.path.relpath(child, start=base).replace("\\", "/")
+
+
+def s3key_clean(key: str) -> str:
+    """
+    Ensure S3 keys / manifest lines are clean and relative.
+
+    - Collapse duplicate slashes
+    - Strip any leading slash
+    - Normalize '.' and '..'
+    """
+    k = str(key).replace("\\", "/")
+    k = re.sub(r"/+", "/", k)  # collapse duplicate slashes
+    k = k.lstrip("/")  # forbid leading slash
+    k = os.path.normpath(k).replace("\\", "/")
+    if k == ".":
+        return ""  # do not allow '.' as a key
+    return k
+
+
+def samepath(a: str, b: str) -> bool:
+    """Case-insensitive, normalized equality check suitable for Windows/POSIX."""
+    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+
+def looks_like_cloud_storage_path(p: str) -> bool:
+    """Check if path appears to be in a cloud-synced folder."""
+    s = str(p or "").replace("\\", "/")
+    return (
+        "/Library/CloudStorage/" in s
+        or "/Dropbox" in s
+        or "/OneDrive" in s
+        or "/iCloud" in s
+        or "/Mobile Documents/" in s
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# File probing utilities
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def mac_permission_help(path: str, err: str) -> str:
+    """Generate macOS-specific help text for permission errors."""
+    lines = [
+        "macOS blocked access to a dependency needed for submission.",
+        "",
+        "Fix:",
+        "  - System Settings -> Privacy & Security -> Full Disk Access",
+        "  - Enable the app running this submission (Terminal/iTerm if you see this console; otherwise Blender).",
+    ]
+    if looks_like_cloud_storage_path(path):
+        lines += [
+            "",
+            "Cloud storage note:",
+            "  - This dependency is in a cloud-synced folder.",
+            "  - Make sure the file is downloaded and available offline, then submit again.",
+        ]
+    lines += ["", f"Technical: {err}"]
+    return "\n".join(lines)
+
+
+def probe_readable_file(
+    p: str, *, hydrate: bool = False, cloud_files_module=None
+) -> Tuple[bool, Optional[str]]:
+    """
+    Check if a file exists and can be read.
+
+    Returns (ok, error_message):
+    - ok=True: file exists and can be opened for reading
+    - ok=False: missing or not readable (permission / offline placeholder / etc.)
+
+    If hydrate=True, reads the entire file to force cloud-mounted drives (OneDrive,
+    Google Drive, iCloud, etc.) to fully download "dehydrated" placeholder files.
+    This ensures files are actually available before rclone tries to upload them.
+    """
+    path = str(p)
+
+    # Check for directory first
+    try:
+        if os.path.isdir(path):
+            return (False, "is a directory")
+    except Exception:
+        pass
+
+    # Windows cloud placeholder handling (optional module)
+    if cloud_files_module is not None:
+        return cloud_files_module.read_file_with_hydration(
+            path,
+            hydrate=hydrate,
+            timeout_seconds=30,
+        )
+
+    # Fallback: direct file access
+    try:
+        with open(path, "rb") as f:
+            if hydrate:
+                chunk_size = 1024 * 1024  # 1 MiB
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+            else:
+                f.read(1)
+        return (True, None)
+    except FileNotFoundError:
+        return (False, "not found")
+    except PermissionError as exc:
+        return (False, f"PermissionError: {exc}")
+    except OSError as exc:
+        return (False, f"OSError: {exc}")
+    except Exception as exc:
+        return (False, f"{type(exc).__name__}: {exc}")
+
+
+def should_moveto_local_file(local_path: str, original_blend_path: str) -> bool:
+    """
+    Return True only when it's safe to let rclone delete the local file after upload.
+
+    We treat `moveto` as dangerous and only allow it when:
+      - local_path is NOT the same as the user's original .blend path
+      - local_path is located under the OS temp directory
+
+    Otherwise use `copyto` (never deletes).
+    """
+    lp = str(local_path or "").strip()
+    op = str(original_blend_path or "").strip()
+    if not lp:
+        return False
+
+    # Never move the user's actual blend file.
+    try:
+        if op and samepath(lp, op):
+            return False
+    except Exception:
+        return False
+
+    # Only allow move when file is under temp dir.
+    try:
+        lp_abs = os.path.abspath(lp)
+        tmp_abs = os.path.abspath(tempfile.gettempdir())
+        common = os.path.commonpath([lp_abs, tmp_abs])
+        if samepath(common, tmp_abs):
+            return True
+    except Exception:
+        return False
+
+    return False

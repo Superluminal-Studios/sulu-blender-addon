@@ -20,491 +20,52 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-# Import vendored rich library (local to addon) with fallbacks.
-RICH_AVAILABLE = False
-Console = None
-Table = None
-Panel = None
-Text = None
-Style = None
-Rule = None
-Theme = None
-Align = None
-Live = None
-box = None
+# Import shared utilities
+from .worker_utils import count as _count, format_size, supports_unicode
 
-
-def _try_import_rich() -> None:
-    """Try to import rich from various locations."""
-    global RICH_AVAILABLE, Console, Table, Panel, Text, Style, Rule, Theme, Align, Live, box
-
-    # Method 1: Relative import (works when imported as part of package)
-    try:
-        from ..rich.console import Console as _Console
-        from ..rich.panel import Panel as _Panel
-        from ..rich.table import Table as _Table
-        from ..rich.text import Text as _Text
-        from ..rich.style import Style as _Style
-        from ..rich.rule import Rule as _Rule
-        from ..rich.theme import Theme as _Theme
-        from ..rich.align import Align as _Align
-        from ..rich.live import Live as _Live
-        from ..rich import box as _box
-
-        Console = _Console
-        Panel = _Panel
-        Table = _Table
-        Text = _Text
-        Style = _Style
-        Rule = _Rule
-        Theme = _Theme
-        Align = _Align
-        Live = _Live
-        box = _box
-        RICH_AVAILABLE = True
-        return
-    except (ImportError, ValueError):
-        pass
-
-    # Method 2: Try importing from addon's rich directory directly
-    try:
-        addon_dir = Path(__file__).parent.parent
-        rich_dir = addon_dir / "rich"
-        if rich_dir.exists() and str(addon_dir) not in sys.path:
-            sys.path.insert(0, str(addon_dir))
-
-        import rich.console
-        import rich.panel
-        import rich.table
-        import rich.text
-        import rich.style
-        import rich.rule
-        import rich.theme
-        import rich.align
-        import rich.live
-        import rich.box
-
-        Console = rich.console.Console
-        Panel = rich.panel.Panel
-        Table = rich.table.Table
-        Text = rich.text.Text
-        Style = rich.style.Style
-        Rule = rich.rule.Rule
-        Theme = rich.theme.Theme
-        Align = rich.align.Align
-        Live = rich.live.Live
-        box = rich.box
-        RICH_AVAILABLE = True
-        return
-    except ImportError:
-        pass
-
-    # Method 3: System rich as last resort
-    try:
-        from rich.console import Console as _Console
-        from rich.panel import Panel as _Panel
-        from rich.table import Table as _Table
-        from rich.text import Text as _Text
-        from rich.style import Style as _Style
-        from rich.rule import Rule as _Rule
-        from rich.theme import Theme as _Theme
-        from rich.align import Align as _Align
-        from rich.live import Live as _Live
-        from rich import box as _box
-
-        Console = _Console
-        Panel = _Panel
-        Table = _Table
-        Text = _Text
-        Style = _Style
-        Rule = _Rule
-        Theme = _Theme
-        Align = _Align
-        Live = _Live
-        box = _box
-        RICH_AVAILABLE = True
-        return
-    except ImportError:
-        pass
-
-
-_try_import_rich()
-
-# ─────────────────────────── Unicode + glyphs ───────────────────────────
-
-
-def _supports_unicode() -> bool:
-    """Best-effort check whether we should emit Unicode glyphs."""
-    try:
-        encoding = sys.stdout.encoding or ""
-        if "utf" in encoding.lower():
-            return True
-    except Exception:
-        pass
-
-    if "utf" in os.environ.get("PYTHONIOENCODING", "").lower():
-        return True
-
-    if sys.platform == "win32":
-        if os.environ.get("WT_SESSION"):
-            return True
-        if os.environ.get("TERM_PROGRAM", "").lower() in ("vscode",):
-            return True
-        return False
-
-    return True
-
-
-_UNICODE = _supports_unicode()
-
-ELLIPSIS = "…" if _UNICODE else "..."
-
-GLYPH_STAGE = "▸" if _UNICODE else ">"
-GLYPH_OK = "✓" if _UNICODE else "OK"
-GLYPH_FAIL = "✕" if _UNICODE else "X"
-GLYPH_WARN = "!"
-GLYPH_INFO = "ⓘ" if _UNICODE else "i"
-GLYPH_ARROW = "→" if _UNICODE else "->"
-GLYPH_BULLET = "•" if _UNICODE else "-"
-GLYPH_SEAM = "┆" if _UNICODE else "|"
-GLYPH_DASH = "┄" if _UNICODE else "-"
-
-GLYPH_HEX = "⬡" if _UNICODE else "#"
-GLYPH_LINK = "⟐" if _UNICODE else "*"
-
-BAR_FULL = "█" if _UNICODE else "#"
-BAR_EMPTY = "░" if _UNICODE else "-"
-
-# ─────────────────────────── Copy helpers ───────────────────────────
-
-
-def _plural_word(word: str) -> str:
-    """
-    Best-effort English pluralization for a few common cases.
-    If you need something special, pass an explicit plural form to _count().
-    """
-    w = str(word or "")
-    lw = w.lower()
-
-    # Common irregulars in this project.
-    if lw == "dependency":
-        return "dependencies"
-    if lw == "directory":
-        return "directories"
-
-    # Heuristics.
-    if lw.endswith(("s", "x", "z", "ch", "sh")):
-        return w + "es"
-    if lw.endswith("y") and len(lw) >= 2 and lw[-2] not in "aeiou":
-        return w[:-1] + "ies"
-    return w + "s"
-
-
-def _count(n: int, singular: str, plural: Optional[str] = None) -> str:
-    """Return '1 thing' / '2 things' with correct pluralization (no '(s)')."""
-    try:
-        n_int = int(n)
-    except Exception:
-        n_int = 0
-    if n_int == 1:
-        return f"{n_int} {singular}"
-    return f"{n_int} {plural or _plural_word(singular)}"
-
-
-# ─────────────────────────── Superluminal logo marks ───────────────────────────
-
-LOGO_MARK = "\n".join(
-    [
-        "                                        ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀",
-        "                                    ▄▖█▌█▌█▌█▌▀▘",
-        "                                  █▌█▌█▌█▌",
-        "                                █▌█▌█▌▀▘",
-        "                              █▌█▌█▌█▌",
-        "                            █▌█▌█▌█▌        █▌",
-        "  █████████  █████  █████   █▌█▌█▌          █▌   █████       █████  █████",
-        " ███░░░░░███░░███  ░░███    █▌█▌█▌          █▌  ░░███       ░░███  ░░███",
-        "░███    ░░░  ░███   ░███    █▌█▌            █▌   ░███        ░███   ░███",
-        "░░█████████  ░███   ░███    █▌█▌          █▌█▌   ░███        ░███   ░███",
-        " ░░░░░░░░███ ░███   ░███    █▌▀▘          █▌█▌   ░███        ░███   ░███",
-        " ███    ░███ ░███   ░███    █▌          ▄▖█▌█▌   ░███      █ ░███   ░███",
-        "░░█████████  ░░████████     █▌          █▌█▌█▌   ███████████ ░░████████",
-        " ░░░░░░░░░    ░░░░░░░░      █▌        █▌█▌█▌█▌  ░░░░░░░░░░░   ░░░░░░░░",
-        "                                The Superluminal Computing Corporation",
-        "                                  ▄▖█▌█▌█▌▀▘",
-        "                                ▄▖█▌█▌█▌▀▘",
-        "                            ▄▖█▌█▌█▌▀▘",
-        "                ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀▘",
-    ]
+# Import TUI utilities from logger_utils
+from .logger_utils import (
+    # Rich library
+    RICH_AVAILABLE,
+    Console,
+    Table,
+    Panel,
+    Text,
+    Style,
+    Rule,
+    Theme,
+    Align,
+    Live,
+    box,
+    # Glyphs
+    ELLIPSIS,
+    GLYPH_STAGE,
+    GLYPH_OK,
+    GLYPH_FAIL,
+    GLYPH_WARN,
+    GLYPH_INFO,
+    GLYPH_ARROW,
+    GLYPH_BULLET,
+    GLYPH_SEAM,
+    GLYPH_DASH,
+    GLYPH_HEX,
+    GLYPH_LINK,
+    BAR_FULL,
+    BAR_EMPTY,
+    # Theme and console
+    SULU_TUI_THEME,
+    SULU_PANEL_BOX,
+    SULU_TABLE_BOX,
+    PANEL_PADDING,
+    get_console,
+    get_logo_mark as _get_logo_mark,
+    # Data models
+    TraceEntry,
+    BLOCK_TYPE_NAMES,
 )
 
-LOGO_TINY = "\n".join(
-    [
-        "                  ▖▖▌▘▘▘",
-        "╔═╗╦ ╦╔═╗╔═╗╦═╗ ▖▌▌▘ ▖ ╦  ╦ ╦╔╦╗╦╔╗╔╔═╗╦",
-        "╚═╗║ ║╠═╝║╣ ╠╦╝ ▌▌▘ ▖▌ ║  ║ ║║║║║║║║╠═╣║",
-        "╚═╝╚═╝╩  ╚═╝╩╚═ ▌▘  ▌▌ ╩═╝╚═╝╩ ╩╩╝╚╝╩ ╩╩═╝",
-        "                ▘ ▖▌▌▘",
-        "             ▖▖▖▖▖▘▘",
-    ]
-)
-
-LOGO_MARK_ASCII = "\n".join(
-    [
-        "  SUPERLUMINAL COMPUTING CORPORATION",
-        "  S U L U   S U B M I T T E R",
-    ]
-)
-
-LOGO_WIDE = "\n".join(
-    [
-        "                                                                              ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀",
-        "                                                                          ▄▖█▌█▌█▌█▌▀▘",
-        "                                                                        █▌█▌█▌█▌",
-        "                                                                      █▌█▌█▌▀▘",
-        "                                                                    █▌█▌█▌█▌",
-        "                                                                  █▌█▌█▌█▌        █▌",
-        "  █████████  █████  ████████████████  ██████████ ███████████      █▌█▌█▌          █▌   █████      █████  ███████████   █████████████████   █████  █████████  █████",
-        " ███░░░░░███░░███  ░░███░░███░░░░░███░░███░░░░░█░░███░░░░░███     █▌█▌█▌          █▌  ░░███      ░░███  ░░███░░██████ ██████░░███░░██████ ░░███  ███░░░░░███░░███",
-        "░███    ░░░  ░███   ░███ ░███    ░███ ░███  █ ░  ░███    ░███     █▌█▌            █▌   ░███       ░███   ░███ ░███░█████░███ ░███ ░███░███ ░███ ░███    ░███ ░███",
-        "░░█████████  ░███   ░███ ░██████████  ░██████    ░██████████      █▌█▌          █▌█▌   ░███       ░███   ░███ ░███░░███ ░███ ░███ ░███░░███░███ ░███████████ ░███",
-        " ░░░░░░░░███ ░███   ░███ ░███░░░░░░   ░███░░█    ░███░░░░░███     █▌▀▘          █▌█▌   ░███       ░███   ░███ ░███ ░░░  ░███ ░███ ░███ ░░██████ ░███░░░░░███ ░███",
-        " ███    ░███ ░███   ░███ ░███         ░███ ░   █ ░███    ░███     █▌          ▄▖█▌█▌   ░███      █░███   ░███ ░███      ░███ ░███ ░███  ░░█████ ░███    ░███ ░███      █",
-        "░░█████████  ░░████████  █████        ██████████ █████   █████    █▌          █▌█▌█▌   ███████████░░████████  █████     ███████████████  ░░██████████   ████████████████",
-        " ░░░░░░░░░    ░░░░░░░░  ░░░░░        ░░░░░░░░░░ ░░░░░   ░░░░░     █▌        █▌█▌█▌█▌  ░░░░░░░░░░░  ░░░░░░░░  ░░░░░     ░░░░░░░░░░░░░░░    ░░░░░░░░░░   ░░░░░░░░░░░░░░░░",
-        "                                                                          ▄▖█▌█▌█▌",
-        "                                                                        ▄▖█▌█▌█▌▀▘    The Superluminal Computing Corporation",
-        "                                                                      ▄▖█▌█▌█▌▀▘",
-        "                                                                  ▄▖█▌█▌█▌▀▘",
-        "                                                      ▄▖▄▖▄▖▄▖█▌█▌█▌▀▘▀▘",
-    ]
-)
-
-
-def _normalize_logo_mark(raw: str) -> str:
-    lines = raw.splitlines()
-    while lines and not lines[0].strip():
-        lines.pop(0)
-    while lines and not lines[-1].strip():
-        lines.pop()
-    return "\n".join([ln.rstrip() for ln in lines])
-
-
-def _get_logo_width(raw: str) -> int:
-    lines = raw.splitlines()
-    return max((len(ln) for ln in lines), default=0)
-
-
-_LOGO_MARK_NORM = _normalize_logo_mark(LOGO_MARK)
-_LOGO_WIDE_NORM = _normalize_logo_mark(LOGO_WIDE)
-_LOGO_TINY_NORM = _normalize_logo_mark(LOGO_TINY)
-_LOGO_ASCII_NORM = _normalize_logo_mark(LOGO_MARK_ASCII)
-
-_LOGO_MARK_WIDTH = _get_logo_width(_LOGO_MARK_NORM)
-_LOGO_WIDE_WIDTH = _get_logo_width(_LOGO_WIDE_NORM)
-_LOGO_TINY_WIDTH = _get_logo_width(_LOGO_TINY_NORM)
-_LOGO_ASCII_WIDTH = _get_logo_width(_LOGO_ASCII_NORM)
-
-
-def _get_logo_mark(terminal_width: int = 120) -> str:
-    """
-    Return the appropriate logo mark text, or empty string if terminal too narrow.
-
-    Selection rules:
-      - If Unicode is supported:
-          wide (if it fits) → normal mark (if it fits) → tiny (if it fits) → ASCII (if it fits)
-      - If Unicode is not supported:
-          ASCII (if it fits) → empty
-    """
-    if terminal_width <= 0:
-        terminal_width = 80
-
-    if _UNICODE:
-        if terminal_width >= _LOGO_WIDE_WIDTH and _LOGO_WIDE_NORM:
-            return _LOGO_WIDE_NORM
-        if terminal_width >= _LOGO_MARK_WIDTH and _LOGO_MARK_NORM:
-            return _LOGO_MARK_NORM
-        if terminal_width >= _LOGO_TINY_WIDTH and _LOGO_TINY_NORM:
-            return _LOGO_TINY_NORM
-        if terminal_width >= _LOGO_ASCII_WIDTH and _LOGO_ASCII_NORM:
-            return _LOGO_ASCII_NORM
-        return ""
-
-    if terminal_width >= _LOGO_ASCII_WIDTH and _LOGO_ASCII_NORM:
-        return _LOGO_ASCII_NORM
-    return ""
-
-
-# ─────────────────────────── Sulu terminal theme ───────────────────────────
-
-
-def _build_sulu_theme():
-    if Theme is None:
-        return None
-    return Theme(
-        {
-            "sulu.fg": "#D8DEEC",
-            "sulu.muted": "#A2A6AF",
-            "sulu.dim": "#7E828B",
-            "sulu.accent": "#5250FF",
-            "sulu.ring": "#757EFF",
-            "sulu.ok": "#1EA138",
-            "sulu.warn": "#E17100",
-            "sulu.err": "#FF2056",
-            "sulu.stroke": "#454A56",
-            "sulu.stroke_subtle": "#3A3E48",
-            "sulu.stroke_strong": "#545A69",
-            "sulu.panel": "on #1E2027",
-            "sulu.well": "on #21232B",
-            "sulu.control": "on #24272E",
-            "sulu.overlay": "on #2C2F36",
-            "sulu.title": "bold #D8DEEC",
-            "sulu.stage": "bold #5250FF",
-            "sulu.ok_b": "bold #1EA138",
-            "sulu.warn_b": "bold #E17100",
-            "sulu.err_b": "bold #FF2056",
-            "sulu.link": "underline #5250FF",
-            "sulu.pill": "#A2A6AF on #24272E",
-        }
-    )
-
-
-SULU_TUI_THEME = _build_sulu_theme()
-
-SULU_PANEL_BOX = getattr(box, "SQUARE", None) if box is not None else None
-SULU_TABLE_BOX = getattr(box, "SIMPLE_HEAD", None) if box is not None else None
-
-PANEL_PADDING = (1, 2)
-
-# ─────────────────────────── Console setup ───────────────────────────
-
-
-def get_console() -> Any:
-    """
-    Get a rich Console instance or a fallback (None).
-
-    Windows note:
-      - legacy_windows=True collapses hex colors into the 16‑color palette.
-        Dark “on #1E2027” often becomes “on black”, making panel fills look absent.
-      - Prefer ANSI Truecolor on modern Windows terminals so panel backgrounds render.
-    """
-    if not (RICH_AVAILABLE and Console is not None):
-        return None
-
-    kwargs: Dict[str, Any] = dict(
-        force_terminal=True,
-        highlight=False,
-        color_system="auto",
-    )
-    if SULU_TUI_THEME is not None:
-        kwargs["theme"] = SULU_TUI_THEME
-
-    if sys.platform == "win32":
-        legacy_env = os.environ.get("SULU_LEGACY_WINDOWS", "").strip().lower()
-        use_legacy = legacy_env in ("1", "true", "yes", "on")
-        if not use_legacy:
-            kwargs["color_system"] = "truecolor"
-        kwargs["legacy_windows"] = use_legacy
-
-    def _try_console(k: Dict[str, Any]) -> Any:
-        try:
-            return Console(**k, emoji=False)
-        except TypeError:
-            try:
-                return Console(**k)
-            except TypeError:
-                return None
-
-    con = _try_console(kwargs)
-    if con is not None:
-        return con
-
-    k2 = dict(kwargs)
-    k2.pop("legacy_windows", None)
-    con = _try_console(k2)
-    if con is not None:
-        return con
-
-    k3 = dict(k2)
-    k3.pop("color_system", None)
-    con = _try_console(k3)
-    if con is not None:
-        return con
-
-    return None
-
-
-# ─────────────────────────── Size formatting ───────────────────────────
-
-
-def format_size(size_bytes: int) -> str:
-    """
-    Format bytes as human readable.
-
-    Uses decimal units for file/transfer size:
-      1 KB = 1000 B, 1 MB = 1000 KB, 1 GB = 1000 MB
-    """
-    try:
-        size_bytes = int(size_bytes)
-    except Exception:
-        return "unknown"
-    if size_bytes < 1000:
-        return f"{size_bytes} B"
-    if size_bytes < 1000 * 1000:
-        return f"{size_bytes / 1000:.1f} KB"
-    if size_bytes < 1000 * 1000 * 1000:
-        return f"{size_bytes / (1000 * 1000):.1f} MB"
-    return f"{size_bytes / (1000 * 1000 * 1000):.2f} GB"
-
-
-# ─────────────────────────── Trace entry model ───────────────────────────
-
-
-class TraceEntry:
-    """Represents a single traced dependency for display."""
-
-    def __init__(
-        self,
-        source_blend: str,
-        block_type: str,
-        block_name: str,
-        found_file: str,
-        status: str,  # "ok", "missing", "unreadable"
-        error_msg: Optional[str] = None,
-    ):
-        self.source_blend = source_blend
-        self.block_type = block_type
-        self.block_name = block_name
-        self.found_file = found_file
-        self.status = status
-        self.error_msg = error_msg
-
-
-BLOCK_TYPE_NAMES = {
-    "Library": "Library",
-    "Image": "Image",
-    "MovieClip": "Movie",
-    "Sound": "Sound",
-    "VFont": "Font",
-    "FreestyleLineStyle": "LineStyle",
-    "PointCache": "Cache",
-    "Modifier": "Modifier",
-    "ParticleSettings": "Particles",
-    "Sequence": "Sequence",
-    "bNodeTree": "NodeTree",
-    "Object": "Object",
-    "Mesh": "Mesh",
-    "Material": "Material",
-    "Scene": "Scene",
-    "World": "World",
-    "Light": "Light",
-    "Camera": "Camera",
-    "Armature": "Armature",
-    "Action": "Action",
-    "bGPdata": "GPencil",
-    "GreasePencil": "GPencil",
-    "Curves": "Curves",
-    "Volume": "Volume",
-}
+# Check for Unicode support
+_UNICODE = supports_unicode()
 
 
 # ─────────────────────────── Submit Logger ───────────────────────────
@@ -1462,6 +1023,49 @@ class SubmitLogger:
                 )
                 sys.stderr.flush()
 
+    def transfer_progress_ext(
+        self,
+        cur: int,
+        total: int,
+        checks: int = 0,
+        transfers: int = 0,
+        status: str = "",
+        current_file: str = "",
+    ) -> None:
+        """
+        Extended progress update with verification/checking status.
+
+        Args:
+            cur: Bytes transferred so far
+            total: Total bytes to transfer
+            checks: Number of files checked by rclone
+            transfers: Number of files actually transferred
+            status: "checking", "transferring", or ""
+            current_file: Name of file currently being checked/transferred
+        """
+        self._transfer_cur = cur
+        self._transfer_total = total
+
+        if self.console and Text is not None:
+            self._render_progress_bar_ext(cur, total, checks, transfers, status, current_file)
+        else:
+            # Plain text fallback with status suffix
+            status_suffix = ""
+            if status == "checking":
+                status_suffix = f"  [{checks}] Checking previously uploaded files"
+            elif transfers > 0 and checks > transfers:
+                skipped = checks - transfers
+                status_suffix = f"  ({skipped} unchanged)"
+
+            if total > 0:
+                pct = (cur / max(total, 1)) * 100
+                sys.stderr.write(
+                    f"\r  {format_size(cur)} / {format_size(total)} ({pct:.1f}%){status_suffix} "
+                )
+            else:
+                sys.stderr.write(f"\r  {format_size(cur)} transferred{status_suffix} ")
+            sys.stderr.flush()
+
     def _render_progress_bar(self, cur: int, total: int) -> None:
         if not self.console or Text is None:
             return
@@ -1473,6 +1077,117 @@ class SubmitLogger:
 
         self._start_live_progress()
         renderable = self._build_progress_line(cur, total)
+
+        if self._live is not None:
+            self._live_update(renderable)
+            return
+
+        # Fallback: CR update (still no newlines)
+        try:
+            self.console.file.write("\r\033[2K")
+            self.console.file.flush()
+        except Exception:
+            pass
+        try:
+            self.console.print(renderable, end="")
+            try:
+                self.console.file.flush()
+            except Exception:
+                pass
+            self._inline_progress_active = True
+        except Exception:
+            pass
+
+    def _build_progress_line_ext(
+        self,
+        cur: int,
+        total: int,
+        checks: int,
+        transfers: int,
+        status: str,
+        current_file: str,
+    ) -> Any:
+        """Build progress line with extended status (checking/verifying info)."""
+        if not self.console or Text is None:
+            return ""
+
+        bar_width = self._progress_bar_width or self._compute_progress_bar_width()
+        # Reduce bar width to make room for status suffix
+        bar_width = max(12, bar_width - 20)
+
+        line = Text()
+        line.no_wrap = True
+        line.overflow = "crop"
+
+        line.append("  ", style="sulu.dim")
+        line.append(f"{GLYPH_SEAM} ", style="sulu.stroke_subtle")
+
+        if total > 0:
+            pct = cur / max(total, 1)
+            pct = 0.0 if pct < 0.0 else (1.0 if pct > 1.0 else pct)
+
+            filled = int(bar_width * pct)
+            empty = max(0, bar_width - filled)
+
+            bar = Text()
+            bar.no_wrap = True
+            bar.overflow = "crop"
+            if filled:
+                bar.append(BAR_FULL * filled, style="sulu.accent")
+            if empty:
+                bar.append(BAR_EMPTY * empty, style="sulu.stroke_subtle")
+
+            line.append_text(bar)
+            line.append(f" {GLYPH_SEAM} ", style="sulu.stroke_subtle")
+
+            line.append(f"{pct * 100:5.1f}%", style="sulu.accent")
+            line.append("  ", style="sulu.stroke_subtle")
+            line.append(f"{format_size(cur)}", style="sulu.fg")
+            line.append(" / ", style="sulu.dim")
+            line.append(f"{format_size(total)}", style="sulu.muted")
+        else:
+            bar = Text(BAR_EMPTY * bar_width, style="sulu.stroke_subtle")
+            bar.no_wrap = True
+            bar.overflow = "crop"
+            line.append_text(bar)
+            line.append(f" {GLYPH_SEAM} ", style="sulu.stroke_subtle")
+            line.append(f"{format_size(cur)}", style="sulu.fg")
+            line.append(" transferred", style="sulu.dim")
+
+        # Add status suffix based on checking/transferring state
+        if status == "checking":
+            line.append("  ", style="sulu.dim")
+            line.append(f"[{checks}]", style="sulu.muted")
+            line.append(" Checking previously uploaded files", style="sulu.dim")
+        elif transfers > 0 and checks > transfers:
+            skipped = checks - transfers
+            line.append("  ", style="sulu.dim")
+            line.append(f"({skipped} unchanged)", style="sulu.muted")
+
+        return line
+
+    def _render_progress_bar_ext(
+        self,
+        cur: int,
+        total: int,
+        checks: int,
+        transfers: int,
+        status: str,
+        current_file: str,
+    ) -> None:
+        """Render extended progress bar with verification status."""
+        if not self.console or Text is None:
+            return
+
+        now = time.time()
+        if (now - self._last_progress_time) < 0.1:
+            return
+        self._last_progress_time = now
+
+        self._start_live_progress()
+        renderable = self._build_progress_line_ext(
+            cur, total, checks, transfers, status, current_file
+        )
 
         if self._live is not None:
             self._live_update(renderable)
@@ -1993,6 +1708,8 @@ class SubmitLogger:
             if prompt and options:
                 prompt_cursor = Text()
                 prompt_cursor.append("  ❯ ", style="sulu.accent")
+                if default:
+                    prompt_cursor.append(f"[{default}] ", style="sulu.dim")
                 self.console.print(prompt_cursor, end="")
 
                 try:

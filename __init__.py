@@ -16,6 +16,7 @@ from .storage import Storage
 Storage.load()
 
 from . import constants
+from . import icons
 from . import properties
 from . import preferences
 from .transfers.submit import submit_operator
@@ -31,6 +32,7 @@ def get_prefs():
 
 def register():
     atexit.register(Storage.save)
+    icons.register()
     properties.register()
     preferences.register()
     submit_operator.register()
@@ -46,6 +48,7 @@ def unregister():
     submit_operator.unregister()
     preferences.unregister()
     properties.unregister()
+    icons.unregister()
 
 
 if __name__ == "__main__":

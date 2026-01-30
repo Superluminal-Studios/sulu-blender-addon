@@ -26,106 +26,16 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import re
 import sys
 import shutil
 import tempfile
 import time
 import types
-import unicodedata
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 import webbrowser
 
 import requests
-
-
-# ─── Copy helpers (no '(s)' plurals) ─────────────────────────────
-
-
-def _plural_word(word: str) -> str:
-    w = str(word or "")
-    lw = w.lower()
-
-    if lw == "dependency":
-        return "dependencies"
-    if lw == "directory":
-        return "directories"
-
-    if lw.endswith(("s", "x", "z", "ch", "sh")):
-        return w + "es"
-    if lw.endswith("y") and len(lw) >= 2 and lw[-2] not in "aeiou":
-        return w[:-1] + "ies"
-    return w + "s"
-
-
-def _count(n: int, singular: str, plural: Optional[str] = None) -> str:
-    try:
-        n_int = int(n)
-    except Exception:
-        n_int = 0
-    if n_int == 1:
-        return f"{n_int} {singular}"
-    return f"{n_int} {plural or _plural_word(singular)}"
-
-
-def _debug_enabled() -> bool:
-    return os.environ.get("SULU_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
-
-
-def _nfc(s: str) -> str:
-    """Normalize string to NFC form (matches BAT's archive path normalization)."""
-    return unicodedata.normalize("NFC", str(s))
-
-
-def _is_interactive() -> bool:
-    """Check if we're running in an interactive terminal."""
-    try:
-        return sys.stdin.isatty()
-    except Exception:
-        return False
-
-
-
-def _supports_unicode() -> bool:
-    """Best-effort check whether Unicode output is safe in this terminal."""
-    try:
-        encoding = sys.stdout.encoding or ""
-        if "utf" in encoding.lower():
-            return True
-    except Exception:
-        pass
-
-    if "utf" in os.environ.get("PYTHONIOENCODING", "").lower():
-        return True
-
-    if sys.platform == "win32":
-        # Windows Terminal / VS Code terminal
-        if os.environ.get("WT_SESSION"):
-            return True
-        if os.environ.get("TERM_PROGRAM", "").lower() in ("vscode",):
-            return True
-        return False
-
-    return True
-
-
-_UNICODE = _supports_unicode()
-ELLIPSIS = "…" if _UNICODE else "..."
-
-
-def _safe_input(prompt: str, default: str = "") -> str:
-    """
-    Safe input wrapper that handles non-interactive (automated) mode.
-
-    When stdin is not a TTY (e.g., in automated tests or piped input),
-    returns the default value instead of blocking on input().
-    """
-    if _is_interactive():
-        return input(prompt)
-    # Non-interactive mode: log and return default
-    _LOG(f"[auto] {prompt.strip()} -> {repr(default)}")
-    return default
 
 
 # ─── Lightweight logger fallback ──────────────────────────────────
@@ -142,326 +52,21 @@ def _set_logger(fn) -> None:
     _LOG = fn if callable(fn) else _default_logger
 
 
-# ─── Path helpers (OS-agnostic drive detection + S3 key cleaning) ────────────
-
-_WIN_DRIVE = re.compile(r"^[A-Za-z]:[\\/]+")
+# ─── Utilities imported after bootstrap ───────────────────────────
+# These will be set by _bootstrap_addon_modules() at runtime.
+# Declared here to satisfy static analysis and allow early use in type hints.
+_count = None
+_format_size = None
+_nfc = None
+_debug_enabled = None
+_is_interactive = None
+_safe_input = None
+_norm_abs_for_detection = None
+_relpath_safe = None
+_s3key_clean = None
+_samepath = None
+_mac_permission_help = None
 _IS_MAC = sys.platform == "darwin"
-
-
-def _is_win_drive_path(p: str) -> bool:
-    return bool(_WIN_DRIVE.match(str(p)))
-
-
-def _norm_abs_for_detection(path: str) -> str:
-    """Normalize a path for comparison but keep Windows-looking/UNC paths intact on POSIX."""
-    p = str(path).replace("\\", "/")
-    if _is_win_drive_path(p) or p.startswith("//") or p.startswith("\\\\"):
-        return p
-    return os.path.normpath(os.path.abspath(p)).replace("\\", "/")
-
-
-def _drive(path: str) -> str:
-    """
-    Return a drive token representing the path's root device for cross-drive checks.
-
-    - Windows letters: "C:", "D:", ...
-    - UNC: "UNC"
-    - macOS volumes: "/Volumes/NAME"
-    - Linux removable/media: "/media/USER/NAME" or "/mnt/NAME"
-    - Otherwise POSIX root "/"
-    """
-    p = str(path).replace("\\", "/")
-    if _is_win_drive_path(p):
-        return (p[:2]).upper()  # "C:"
-    if p.startswith("//") or p.startswith("\\\\"):
-        return "UNC"
-    if os.name == "nt":
-        return os.path.splitdrive(p)[0].upper()
-
-    # macOS volumes
-    if p.startswith("/Volumes/"):
-        parts = p.split("/")
-        if len(parts) >= 3:
-            return "/Volumes/" + parts[2]
-        return "/Volumes"
-
-    # Linux common mounts
-    if p.startswith("/media/"):
-        parts = p.split("/")
-        if len(parts) >= 4:
-            return f"/media/{parts[2]}/{parts[3]}"
-        return "/media"
-
-    if p.startswith("/mnt/"):
-        parts = p.split("/")
-        if len(parts) >= 3:
-            return f"/mnt/{parts[2]}"
-        return "/mnt"
-
-    # Fallback: POSIX root
-    return "/"
-
-
-def _relpath_safe(child: str, base: str) -> str:
-    """Safe relpath (POSIX separators). Caller must ensure same 'drive'."""
-    return os.path.relpath(child, start=base).replace("\\", "/")
-
-
-def _s3key_clean(key: str) -> str:
-    """
-    Ensure S3 keys / manifest lines are clean and relative:
-    - collapse duplicate slashes
-    - strip any leading slash
-    - normalize '.' and '..'
-    """
-    k = str(key).replace("\\", "/")
-    k = re.sub(r"/+", "/", k)  # collapse duplicate slashes
-    k = k.lstrip("/")  # forbid leading slash
-    k = os.path.normpath(k).replace("\\", "/")
-    if k == ".":
-        return ""  # do not allow '.' as a key
-    return k
-
-
-def _samepath(a: str, b: str) -> bool:
-    """Case-insensitive, normalized equality check suitable for Windows/POSIX."""
-    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(
-        os.path.normpath(b)
-    )
-
-
-def _looks_like_cloud_storage_path(p: str) -> bool:
-    s = str(p or "").replace("\\", "/")
-    return (
-        "/Library/CloudStorage/" in s
-        or "/Dropbox" in s
-        or "/OneDrive" in s
-        or "/iCloud" in s
-        or "/Mobile Documents/" in s
-    )
-
-
-def _mac_permission_help(path: str, err: str) -> str:
-    lines = [
-        "macOS blocked access to a dependency needed for submission.",
-        "",
-        "Fix:",
-        "  - System Settings -> Privacy & Security -> Full Disk Access",
-        "  - Enable the app running this submission (Terminal/iTerm if you see this console; otherwise Blender).",
-    ]
-    if _looks_like_cloud_storage_path(path):
-        lines += [
-            "",
-            "Cloud storage note:",
-            "  - This dependency is in a cloud-synced folder.",
-            "  - Make sure the file is downloaded and available offline, then submit again.",
-        ]
-    lines += ["", f"Technical: {err}"]
-    return "\n".join(lines)
-
-
-def _probe_readable_file(
-    p: str, *, hydrate: bool = False, cloud_files_module=None
-) -> Tuple[bool, Optional[str]]:
-    """
-    Returns (ok, error_message).
-    - ok=True: file exists and can be opened for reading
-    - ok=False: missing or not readable (permission / offline placeholder / etc.)
-
-    If hydrate=True, reads the entire file to force cloud-mounted drives (OneDrive,
-    Google Drive, iCloud, etc.) to fully download "dehydrated" placeholder files.
-    This ensures files are actually available before rclone tries to upload them.
-    """
-    path = str(p)
-
-    # Check for directory first
-    try:
-        if os.path.isdir(path):
-            return (False, "is a directory")
-    except Exception:
-        pass
-
-    # Windows cloud placeholder handling (optional module)
-    if cloud_files_module is not None:
-        return cloud_files_module.read_file_with_hydration(
-            path,
-            hydrate=hydrate,
-            timeout_seconds=30,
-        )
-
-    # Fallback: direct file access
-    try:
-        with open(path, "rb") as f:
-            if hydrate:
-                chunk_size = 1024 * 1024  # 1 MiB
-                while True:
-                    chunk = f.read(chunk_size)
-                    if not chunk:
-                        break
-            else:
-                f.read(1)
-        return (True, None)
-    except FileNotFoundError:
-        return (False, "not found")
-    except PermissionError as exc:
-        return (False, f"PermissionError: {exc}")
-    except OSError as exc:
-        return (False, f"OSError: {exc}")
-    except Exception as exc:
-        return (False, f"{type(exc).__name__}: {exc}")
-
-
-def _should_moveto_local_file(local_path: str, original_blend_path: str) -> bool:
-    """
-    Return True only when it's safe to let rclone delete the local file after upload.
-
-    We treat `moveto` as dangerous and only allow it when:
-      - local_path is NOT the same as the user's original .blend path
-      - local_path is located under the OS temp directory
-
-    Otherwise use `copyto` (never deletes).
-    """
-    lp = str(local_path or "").strip()
-    op = str(original_blend_path or "").strip()
-    if not lp:
-        return False
-
-    # Never move the user's actual blend file.
-    try:
-        if op and _samepath(lp, op):
-            return False
-    except Exception:
-        return False
-
-    # Only allow move when file is under temp dir.
-    try:
-        lp_abs = os.path.abspath(lp)
-        tmp_abs = os.path.abspath(tempfile.gettempdir())
-        common = os.path.commonpath([lp_abs, tmp_abs])
-        if _samepath(common, tmp_abs):
-            return True
-    except Exception:
-        return False
-
-    return False
-
-
-# ─── Report generation helpers ─────────────────────────────────────
-
-
-def _format_size(size_bytes: int) -> str:
-    """
-    Format bytes as human readable (decimal).
-
-    Uses decimal units for file/transfer size:
-      1 KB = 1000 B, 1 MB = 1000 KB, 1 GB = 1000 MB
-    """
-    if size_bytes < 1000:
-        return f"{size_bytes} B"
-    elif size_bytes < 1000 * 1000:
-        return f"{size_bytes / 1000:.1f} KB"
-    elif size_bytes < 1000 * 1000 * 1000:
-        return f"{size_bytes / (1000 * 1000):.1f} MB"
-    else:
-        return f"{size_bytes / (1000 * 1000 * 1000):.2f} GB"
-
-
-def _generate_report(
-    blend_path: str,
-    dep_paths: List[Path],
-    missing_set: set,
-    unreadable_dict: dict,
-    project_root: Path,
-    same_drive_deps: List[Path],
-    cross_drive_deps: List[Path],
-    upload_type: str,
-    addon_dir: Optional[str] = None,
-    job_id: Optional[str] = None,
-    mode: str = "test",
-) -> Tuple[dict, Optional[Path]]:
-    """
-    Generate a diagnostic report and save it to the reports directory.
-
-    Returns: (report_dict, report_path) where report_path is None if saving failed.
-    """
-    from datetime import datetime
-
-    # Build report data
-    blend_size = 0
-    try:
-        blend_size = os.path.getsize(blend_path)
-    except:
-        pass
-
-    # Classify by extension
-    by_ext: Dict[str, int] = {}
-    total_size = 0
-    for dep in dep_paths:
-        ext = dep.suffix.lower() if dep.suffix else "(no ext)"
-        by_ext[ext] = by_ext.get(ext, 0) + 1
-        if dep.exists() and dep.is_file():
-            try:
-                total_size += dep.stat().st_size
-            except:
-                pass
-
-    report = {
-        "report_version": "1.0",
-        "generated_at": datetime.now().isoformat(),
-        "mode": mode,
-        "upload_type": upload_type,
-        "blend_file": {
-            "path": str(blend_path),
-            "name": os.path.basename(blend_path),
-            "size_bytes": blend_size,
-            "size_human": _format_size(blend_size),
-        },
-        "project_root": str(project_root),
-        "dependencies": {
-            "total_count": len(dep_paths),
-            "total_size_bytes": total_size,
-            "total_size_human": _format_size(total_size),
-            "by_extension": dict(sorted(by_ext.items(), key=lambda x: -x[1])),
-            "same_drive_count": len(same_drive_deps),
-            "cross_drive_count": len(cross_drive_deps),
-        },
-        "issues": {
-            "missing_count": len(missing_set),
-            "missing_files": [str(p) for p in sorted(missing_set)],
-            "unreadable_count": len(unreadable_dict),
-            "unreadable_files": {str(k): v for k, v in sorted(unreadable_dict.items())},
-            "cross_drive_count": len(cross_drive_deps),
-            "cross_drive_files": [str(p) for p in sorted(cross_drive_deps)],
-        },
-        "all_dependencies": [str(p) for p in sorted(dep_paths)],
-    }
-
-    if job_id:
-        report["job_id"] = job_id
-
-    report_path = None
-    try:
-        if addon_dir:
-            reports_dir = Path(addon_dir) / "reports"
-        else:
-            reports_dir = Path(__file__).parent.parent.parent / "reports"
-
-        reports_dir.mkdir(parents=True, exist_ok=True)
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        blend_name = Path(blend_path).stem[:30]
-        blend_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in blend_name)
-        filename = f"submit_report_{timestamp}_{blend_name}.json"
-
-        report_path = reports_dir / filename
-        with open(report_path, "w", encoding="utf-8") as f:
-            json.dump(report, f, indent=2, default=str)
-
-    except Exception as e:
-        _LOG(f"Diagnostic report not saved: {e}")
-        report_path = None
-
-    return report, report_path
 
 
 # ─── Worker bootstrap (safe to import) ────────────────────────────
@@ -483,6 +88,9 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     Import internal add-on modules based on addon_dir in the handoff file.
     Returns a dict with required callables/values.
     """
+    global _count, _format_size, _nfc, _debug_enabled, _is_interactive, _safe_input
+    global _norm_abs_for_detection, _relpath_safe, _s3key_clean, _samepath, _mac_permission_help
+
     addon_dir = Path(data["addon_dir"]).resolve()
     pkg_name = addon_dir.name.replace("-", "_")
 
@@ -493,6 +101,29 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     sys.modules[pkg_name] = pkg
 
     worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
+
+    # Set logger for this script
+    _set_logger(worker_utils.logger)
+
+    # Import utility functions from worker_utils
+    _count = worker_utils.count
+    _format_size = worker_utils.format_size
+    _nfc = worker_utils.normalize_nfc
+    _debug_enabled = worker_utils.debug_enabled
+    _is_interactive = worker_utils.is_interactive
+    _norm_abs_for_detection = worker_utils.norm_abs_for_detection
+    _relpath_safe = worker_utils.relpath_safe
+    _s3key_clean = worker_utils.s3key_clean
+    _samepath = worker_utils.samepath
+    _mac_permission_help = worker_utils.mac_permission_help
+
+    # Create a safe_input wrapper that uses the global _LOG
+    def _safe_input_wrapper(prompt: str, default: str = "") -> str:
+        return worker_utils.safe_input(prompt, default, log_fn=_LOG)
+
+    _safe_input = _safe_input_wrapper
+
+    # Other imports
     clear_console = worker_utils.clear_console
     shorten_path = worker_utils.shorten_path
     is_blend_saved = worker_utils.is_blend_saved
@@ -500,9 +131,6 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     _build_base = worker_utils._build_base
     CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
     open_folder = worker_utils.open_folder
-
-    # Set logger for this script
-    _set_logger(worker_utils.logger)
 
     bat_utils = importlib.import_module(f"{pkg_name}.utils.bat_utils")
     pack_blend = bat_utils.pack_blend
@@ -520,6 +148,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
 
     diagnostic_report_mod = importlib.import_module(f"{pkg_name}.utils.diagnostic_report")
     DiagnosticReport = diagnostic_report_mod.DiagnosticReport
+    generate_test_report = diagnostic_report_mod.generate_test_report
 
     return {
         "pkg_name": pkg_name,
@@ -538,6 +167,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "run_rclone": run_rclone,
         "ensure_rclone": ensure_rclone,
         "DiagnosticReport": DiagnosticReport,
+        "generate_test_report": generate_test_report,
     }
 
 
@@ -563,6 +193,7 @@ def main() -> None:
     run_rclone = mods["run_rclone"]
     ensure_rclone = mods["ensure_rclone"]
     DiagnosticReport = mods["DiagnosticReport"]
+    generate_test_report = mods["generate_test_report"]
 
     proj = data["project"]
 
@@ -677,7 +308,7 @@ def main() -> None:
     project_name = proj["name"]
 
     # Wait until .blend is fully written
-    is_blend_saved(blend_path)
+    is_blend_saved(blend_path, logger_instance=logger)
 
     # Create diagnostic report for continuous logging
     report = DiagnosticReport(
@@ -842,7 +473,7 @@ def main() -> None:
                     except:
                         pass
 
-            test_report_data, test_report_path = _generate_report(
+            test_report_data, test_report_path = generate_test_report(
                 blend_path=blend_path,
                 dep_paths=dep_paths,
                 missing_set=missing_set,
@@ -853,6 +484,7 @@ def main() -> None:
                 upload_type="PROJECT",
                 addon_dir=str(data["addon_dir"]),
                 mode="test",
+                format_size_fn=_format_size,
             )
             logger.test_report(
                 blend_path=blend_path,
@@ -887,7 +519,7 @@ def main() -> None:
             )
             if answer == "r":
                 logger.report_info(str(report.get_path()))
-                open_folder(str(report.get_reports_dir()))
+                open_folder(str(report.get_reports_dir()), logger_instance=logger)
                 answer = logger.ask_choice(
                     "Continue with submission?",
                     [
@@ -923,7 +555,7 @@ def main() -> None:
 
         abs_blend = _norm_abs_for_detection(blend_path)
         rel_manifest: List[str] = []
-        required_storage = 0
+        dependency_total_size = 0  # Track dependency size separately for progress bar
 
         total_files = len(fmap)
         logger.pack_start()
@@ -946,7 +578,7 @@ def main() -> None:
             size = 0
             try:
                 size = os.path.getsize(src_str)
-                required_storage += size
+                dependency_total_size += size
             except Exception:
                 pass
 
@@ -958,7 +590,8 @@ def main() -> None:
                 rel_manifest.append(rel)
                 report.add_pack_entry(src_str, rel, file_size=size, status="ok")
 
-        # Include main blend in storage calculation
+        # Calculate total required storage (dependencies + main blend)
+        required_storage = dependency_total_size
         try:
             required_storage += os.path.getsize(blend_path)
         except Exception:
@@ -1031,7 +664,7 @@ def main() -> None:
             )
             if answer == "r":
                 logger.report_info(str(report.get_path()))
-                open_folder(str(report.get_reports_dir()))
+                open_folder(str(report.get_reports_dir()), logger_instance=logger)
                 answer = logger.ask_choice(
                     "Continue with submission?",
                     [
@@ -1057,7 +690,7 @@ def main() -> None:
                     except:
                         pass
 
-            test_report_data, test_report_path = _generate_report(
+            test_report_data, test_report_path = generate_test_report(
                 blend_path=blend_path,
                 dep_paths=dep_paths,
                 missing_set=missing_set,
@@ -1068,6 +701,7 @@ def main() -> None:
                 upload_type="ZIP",
                 addon_dir=str(data["addon_dir"]),
                 mode="test",
+                format_size_fn=_format_size,
             )
             logger.test_report(
                 blend_path=blend_path,
@@ -1170,7 +804,6 @@ def main() -> None:
     report.start_stage("upload")
 
     # R2 credentials
-    logger.storage_connect("connecting")
     try:
         s3_response = session.get(
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
@@ -1183,7 +816,6 @@ def main() -> None:
         s3_response.raise_for_status()
         s3info = s3_response.json()["items"][0]
         bucket = s3info["bucket_name"]
-        logger.storage_connect("connected")
     except Exception as exc:
         logger.fatal(f"Storage credentials unavailable. Check your connection and try again.\nTechnical: {exc}")
 
@@ -1221,12 +853,7 @@ def main() -> None:
             step = 1
             logger.upload_start(total_steps)
 
-            logger.upload_step(
-                step,
-                total_steps,
-                "Uploading archive",
-                f"{zip_file.name} ({_format_size(required_storage)})",
-            )
+            logger.upload_step(step, total_steps, "Uploading archive")
             report.start_upload_step(step, total_steps, "Uploading archive")
             run_rclone(
                 base_cmd,
@@ -1241,12 +868,7 @@ def main() -> None:
             step += 1
 
             if has_addons:
-                logger.upload_step(
-                    step,
-                    total_steps,
-                    "Uploading add-ons",
-                    _count(len(data["packed_addons"]), "add-on"),
-                )
+                logger.upload_step(step, total_steps, "Uploading add-ons")
                 report.start_upload_step(step, total_steps, "Uploading add-ons")
                 run_rclone(
                     base_cmd,
@@ -1274,12 +896,7 @@ def main() -> None:
                 blend_size = os.path.getsize(blend_path)
             except:
                 pass
-            logger.upload_step(
-                step,
-                total_steps,
-                "Uploading main blend",
-                f"{Path(blend_path).name} ({_format_size(blend_size)})",
-            )
+            logger.upload_step(step, total_steps, "Uploading main blend")
             report.start_upload_step(step, total_steps, "Uploading main blend")
             move_to_path = _nfc(_s3key_clean(f"{project_name}/{main_blend_s3}"))
             remote_main = f":s3:{bucket}/{move_to_path}"
@@ -1296,12 +913,7 @@ def main() -> None:
             step += 1
 
             if rel_manifest:
-                logger.upload_step(
-                    step,
-                    total_steps,
-                    "Uploading dependencies",
-                    _count(len(rel_manifest), "dependency"),
-                )
+                logger.upload_step(step, total_steps, "Uploading dependencies")
                 report.start_upload_step(step, total_steps, "Uploading dependencies")
                 dependency_rclone_settings = ["--files-from", str(filelist)]
                 dependency_rclone_settings.extend(rclone_settings)
@@ -1312,15 +924,16 @@ def main() -> None:
                     f":s3:{bucket}/{project_name}/",
                     extra=dependency_rclone_settings,
                     logger=logger,
+                    total_bytes=dependency_total_size,
                 )
                 logger.upload_complete("Dependencies uploaded")
-                report.complete_upload_step()
+                report.complete_upload_step(bytes_transferred=dependency_total_size)
                 step += 1
 
             with filelist.open("a", encoding="utf-8") as fp:
                 fp.write(_nfc(_s3key_clean(main_blend_s3)) + "\n")
 
-            logger.upload_step(step, total_steps, "Uploading manifest", filelist.name)
+            logger.upload_step(step, total_steps, "Uploading manifest")
             report.start_upload_step(step, total_steps, "Uploading manifest")
             run_rclone(
                 base_cmd,
@@ -1335,12 +948,7 @@ def main() -> None:
             step += 1
 
             if has_addons:
-                logger.upload_step(
-                    step,
-                    total_steps,
-                    "Uploading add-ons",
-                    _count(len(data["packed_addons"]), "add-on"),
-                )
+                logger.upload_step(step, total_steps, "Uploading add-ons")
                 report.start_upload_step(step, total_steps, "Uploading add-ons")
                 run_rclone(
                     base_cmd,
@@ -1459,7 +1067,7 @@ def main() -> None:
 
     if selection == "r":
         try:
-            open_folder(str(report.get_reports_dir()))
+            open_folder(str(report.get_reports_dir()), logger_instance=logger)
             logger.info("Diagnostic reports folder opened.")
         except Exception:
             pass
