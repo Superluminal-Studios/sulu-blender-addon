@@ -412,11 +412,17 @@ class ZipTransferrer(transfer.FileTransferer):
                                                 _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files} Zstd not available; stored .blend as-is: {shorten_path(arcname)}")
                                             continue
 
-                                        # If the source .blend is already Zstd-compressed, keep it as-is.
+                                        # If the source .blend is already compressed, keep it as-is.
+                                        # Blender can save with Zstd (3.0+) or Gzip (legacy/preference).
+                                        # Re-compressing either would corrupt the file.
                                         if head == _ZSTD_MAGIC:
-                                            _entry_label = "Store"
+                                            _entry_label = "Store (zstd)"
+                                            shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
+                                        elif head[:2] == _GZIP_MAGIC:
+                                            _entry_label = "Store (gzip)"
                                             shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
                                         else:
+                                            # Uncompressed .blend - apply Zstd compression
                                             _entry_label = "Zstd"
                                             zstd_compressor = zstd.ZstdCompressor(level=1)
                                             zstd_compressor.copy_stream(fp, zf, read_size=ZIP_IO_BUFSIZE)
@@ -424,7 +430,7 @@ class ZipTransferrer(transfer.FileTransferer):
                                         if _zip_entry_cb:
                                             _zip_entry_cb(idx, total_files, arcname, size, _entry_label)
                                         else:
-                                            _icon = "[S]" if _entry_label == "Store" else "[C]"
+                                            _icon = "[S]" if _entry_label.startswith("Store") else "[C]"
                                             _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files} {_icon} {_entry_label}: {shorten_path(arcname)}")
                                     else:
                                         _entry_label = COMPRESSION_LEVELS.get(compress_type, str(compress_type))

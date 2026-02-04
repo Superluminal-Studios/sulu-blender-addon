@@ -1,0 +1,119 @@
+15:55:09 [INFO] operations.op_exe: Command succeeded:
+15:55:09 [INFO] operations.op_exe: Transferred:   	    9.875 MiB / 453.058 MiB, 2%, 0 B/s, ETA -
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         0.4s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip:  2% /453.058Mi, 0/s, -Transferred:   	   54.625 MiB / 453.058 MiB, 12%, 0 B/s, ETA -
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         0.9s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip: 12% /453.058Mi, 0/s, -Transferred:   	  113.875 MiB / 453.058 MiB, 25%, 60.869 MiB/s, ETA 5s
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         1.4s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip: 25% /453.058Mi, 60.991Mi/s, 5sTransferred:   	  195.500 MiB / 453.058 MiB, 43%, 60.869 MiB/s, ETA 4s
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         1.9s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip: 43% /453.058Mi, 60.991Mi/s, 4sTransferred:   	  250.125 MiB / 453.058 MiB, 55%, 100.060 MiB/s, ETA 2s
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         2.4s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip: 55% /453.058Mi, 100.184Mi/s, 2Transferred:   	  289.875 MiB / 453.058 MiB, 64%, 100.060 MiB/s, ETA 1s
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         2.9s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip: 63% /453.058Mi, 100.184Mi/s, 1Transferred:   	  326.875 MiB / 453.058 MiB, 72%, 99.498 MiB/s, ETA 1s
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         3.4s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip: 72% /453.058Mi, 99.539Mi/s, 1sTransferred:   	  363.683 MiB / 453.058 MiB, 80%, 99.498 MiB/s, ETA 0s
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         3.9s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip: 80% /453.058Mi, 99.539Mi/s, 0sTransferred:   	  403.058 MiB / 453.058 MiB, 89%, 92.888 MiB/s, ETA 0s
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         4.4s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip: 88% /453.058Mi, 92.918Mi/s, 0sTransferred:   	  439.933 MiB / 453.058 MiB, 97%, 92.888 MiB/s, ETA 0s
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         4.9s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip: 97% /453.058Mi, 92.918Mi/s, 0sTransferred:   	  453.058 MiB / 453.058 MiB, 100%, 88.235 MiB/s, ETA 0s
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         5.4s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip:100% /453.058Mi, 88.235Mi/s, 0sTransferred:   	  453.058 MiB / 453.058 MiB, 100%, 88.235 MiB/s, ETA 0s
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         5.9s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip:100% /453.058Mi, 88.235Mi/s, 0sTransferred:   	  453.058 MiB / 453.058 MiB, 100%, 75.509 MiB/s, ETA 0s
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         6.4s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip:100% /453.058Mi, 75.508Mi/s, 0sTransferred:   	  453.058 MiB / 453.058 MiB, 100%, 75.509 MiB/s, ETA 0s
+15:55:09 [INFO] operations.op_exe: Transferred:            0 / 1, 0%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         6.9s
+15:55:09 [INFO] operations.op_exe: Transferring:
+15:55:09 [INFO] operations.op_exe:  *      fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip:100% /453.058Mi, 75.508Mi/s, 0sTransferred:   	  453.058 MiB / 453.058 MiB, 100%, 64.722 MiB/s, ETA 0s
+15:55:09 [INFO] operations.op_exe: Transferred:            1 / 1, 100%
+15:55:09 [INFO] operations.op_exe: Elapsed time:         7.2s
+15:55:09 [INFO] operations.op_exe: 
+15:55:09 [INFO] operations.op_exe: Unpacking /tmp/fbe2e1f7-4f6b-43d9-9cde-ef417df5261c/input/fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.zip …
+15:55:10 [INFO] operations.op_exe: Finished zip extraction.
+15:55:10 [INFO] operations.op_exe: > rclone copy :s3:render-l5hz/fbe2e1f7-4f6b-43d9-9cde-ef417df5261c/addons/ /tmp/addons/ --s3-endpoint https://f09fa628d989ddd93cbe3bf7f7935591.r2.cloudflarestorage.com --s3-access-key-id e803d1529491d204170e369270c0af9c --s3-secret-access-key e877cda6a5b5a76d8291f3837370a68b3128321ed6af07991366fc6b2eef3b44 --s3-session-token and0L2V5SmhiR2NpT2lKSVV6STFOaUlzSW5SNWNDSTZJa3BYVkNKOS5leUppZFdOclpYUWlPaUp5Wlc1a1pYSXRiRFZvZWlJc0luTmpiM0JsSWpvaWIySnFaV04wTFhKbFlXUXRkM0pwZEdVaUxDSnpkV0lpT2lKbU1EbG1ZVFl5T0dRNU9EbGtaR1E1TTJOaVpUTmlaamRtTnprek5UVTVNU0lzSW1saGRDSTZNVGMzTURJeU1EQXlOaXdpYVhOeklqb2laVGd3TTJReE5USTVORGt4WkRJd05ERTNNR1V6TmpreU56QmpNR0ZtT1dNaUxDSmhkV1FpT2lKbU1EbG1ZVFl5T0dRNU9EbGtaR1E1TTJOaVpUTmlaamRtTnprek5UVTVNUzV5TWk1amJHOTFaR1pzWVhKbGMzUnZjbUZuWlM1amIyMGlMQ0psZUhBaU9qRTNOekE0TWpRNE1qWjkuX2dxNUtkTFZlS2pkNnhyR1ZPSFdwa3dGem4tQ3hWWmxLYXM5MjAxTWR2Zw== --progress --config 
+15:55:10 [INFO] operations.op_exe: Command succeeded:
+15:55:10 [INFO] operations.op_exe: Transferred:   	  193.664 KiB / 193.664 KiB, 100%, 0 B/s, ETA -
+15:55:10 [INFO] operations.op_exe: Checks:                 0 / 0, -, Listed 1
+15:55:10 [INFO] operations.op_exe: Transferred:            1 / 1, 100%
+15:55:10 [INFO] operations.op_exe: Elapsed time:         0.3s
+15:55:10 [INFO] operations.op_exe: 
+15:55:10 [INFO] operations.op_exe: Download complete.
+15:55:10 [INFO] lib.op_executor: Running operation Render
+15:55:10 [INFO] root: ensuring correct server
+15:55:10 [INFO] root: Starting Blender
+15:55:10 [INFO] root: Blender process started successfully.
+15:55:10 [INFO] root: Spawned Blender: /blenders/blender-5.0.1-linux-x64/blender -b -noaudio -y --addons camera_shakify /tmp/fbe2e1f7-4f6b-43d9-9cde-ef417df5261c/input/Animation Files/Animations/Mariana Trench CH-03/Mariana-Trench-CH-03-FINAL.blend -o /tmp/fbe2e1f7-4f6b-43d9-9cde-ef417df5261c/2354/output/composite/ -P /srv/sarfis-pro-node/assets/scripts/blender/superluminal.py -P /srv/sarfis-pro-node/assets/scripts/blender/bserver.py --log render.* --log-level 0 -- --job-id fbe2e1f7-4f6b-43d9-9cde-ef417df5261c
+15:55:10 [INFO] root: Log file       : /tmp/fbe2e1f7-4f6b-43d9-9cde-ef417df5261c.log
+15:55:10 [INFO] root: PID file       : /tmp/blender_server.pid
+15:55:10 [INFO] root: PID            : 213
+15:55:10 [INFO] root: Waiting for bserver
+15:55:11 [INFO] root: 00:00.406  reports          | ERROR File format is not supported in file "/tmp/fbe2e1f7-4f6b-43d9-9cde-ef417df5261c/input/Animation Files/Animations/Mariana Trench CH-03/Mariana-Trench-CH-03-FINAL.blend"
+15:55:11 [INFO] root: Blender 5.0.1 (hash a3db93c5b259 built 2025-12-16 01:30:59)
+15:55:11 [INFO] root: 
+15:55:11 [INFO] root: Blender quit
+15:55:13 [ERROR] root: ensure_correct_server failed
+Traceback (most recent call last):
+  File "/srv/sarfis-pro-node/assets/scripts/blender/bserver_client_sarfis.py", line 311, in _run
+    ensure_correct_server(args, log_path, pid_path)
+  File "/srv/sarfis-pro-node/assets/scripts/blender/bserver_client_sarfis.py", line 195, in ensure_correct_server
+    wait_server(args, up=True, pid_path=pid_path)
+  File "/srv/sarfis-pro-node/assets/scripts/blender/bserver_client_sarfis.py", line 90, in wait_server
+    raise Exception("Blender process is not running")
+Exception: Blender process is not running
+15:55:13 [WARNING] lib.op_executor: Error in operation Render:
+15:55:13 [ERROR] lib.node: Task caused exception:
+Traceback (most recent call last):
+  File "/srv/sarfis-pro-node/lib/node.py", line 128, in __step
+    cls.executor.execute_op(op, i)
+  File "/srv/sarfis-pro-node/lib/op_executor.py", line 55, in execute_op
+    raise ex
+  File "/srv/sarfis-pro-node/lib/op_executor.py", line 46, in execute_op
+    operation.execute()
+  File "/srv/sarfis-pro-node/operations/op_python_disk.py", line 71, in execute
+    function.main(var_to_attribute(substituted_variables))
+  File "/srv/sarfis-pro-node/assets/scripts/blender/bserver_client_sarfis.py", line 363, in main
+    raise Exception(f"ensuring correct server failed, statis: {current_task.status} inner exception: \n{'\n'.join(traceback.format_exception(current_task.ex))}")
+Exception: ensuring correct server failed, statis: error inner exception: 
+Traceback (most recent call last):
+
+  File "/srv/sarfis-pro-node/assets/scripts/blender/bserver_client_sarfis.py", line 311, in _run
+    ensure_correct_server(args, log_path, pid_path)
+
+  File "/srv/sarfis-pro-node/assets/scripts/blender/bserver_client_sarfis.py", line 195, in ensure_correct_server
+    wait_server(args, up=True, pid_path=pid_path)
+
+  File "/srv/sarfis-pro-node/assets/scripts/blender/bserver_client_sarfis.py", line 90, in wait_server
+    raise Exception("Blender process is not running")
+
+Exception: Blender process is not running
