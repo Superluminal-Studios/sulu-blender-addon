@@ -8,12 +8,16 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set, Tuple
 
-from ..blender_asset_tracer import trace
+from ..blender_asset_tracer import trace, bpathlib
 from ..blender_asset_tracer.pack import Packer
 from ..blender_asset_tracer.pack import zipped
 
 # Import cloud file utilities for handling OneDrive/Google Drive/iCloud placeholders
 from . import cloud_files
+
+import logging
+
+_log = logging.getLogger(__name__)
 
 
 # ─── Drive detection helpers (OS-agnostic) ───────────────────────────────────
@@ -156,16 +160,30 @@ def trace_dependencies(
         # Use usage.files() to properly expand sequences (UDIM, image sequences, etc.)
         # This handles glob patterns and returns actual file paths.
         # For non-sequences, it yields the single file path.
-        expanded_files = []
+        expanded_files: List[Path] = []
+        files_error: Optional[str] = None
         try:
             expanded_files = list(usage.files())
+        except FileNotFoundError as e:
+            # Expected for missing directories - not an error, just means file doesn't exist
+            files_error = str(e)
+            _log.debug("files() raised FileNotFoundError for %s: %s", usage.asset_path, e)
         except Exception as e:
-            # files() can raise exceptions for missing directories, etc.
-            pass
+            # Unexpected error - log it for debugging
+            files_error = str(e)
+            _log.warning("files() raised unexpected exception for %s: %s", usage.asset_path, e)
 
         if not expanded_files:
             # No files found - either pattern didn't match or file doesn't exist
-            abs_path = usage.abspath
+            # Use bpathlib.make_absolute() for consistent path normalization (like native BAT)
+            # This handles ../../ resolution without following symlinks, and Windows paths on POSIX
+            try:
+                abs_path = bpathlib.make_absolute(usage.abspath)
+            except Exception as e:
+                # Fallback if make_absolute fails (e.g., invalid path characters)
+                abs_path = usage.abspath
+                _log.debug("make_absolute failed for %s: %s", usage.abspath, e)
+
             deps.append(abs_path)
             missing.add(abs_path)
 
@@ -176,7 +194,7 @@ def trace_dependencies(
                     block_name=block_name,
                     found_file=abs_path.name,
                     status="missing",
-                    error_msg=None,
+                    error_msg=files_error,
                 )
 
             if diagnostic_report is not None:
@@ -186,12 +204,20 @@ def trace_dependencies(
                     block_name=block_name,
                     resolved_path=str(abs_path),
                     status="missing",
-                    error_msg=None,
+                    error_msg=files_error,
                     file_size=0,
                 )
         else:
             # Check each expanded file
-            for file_path in expanded_files:
+            for raw_file_path in expanded_files:
+                # Normalize the path using bpathlib.make_absolute() for consistency
+                # This is what native BAT does in list_deps.py
+                try:
+                    file_path = bpathlib.make_absolute(raw_file_path)
+                except Exception:
+                    # Fallback if make_absolute fails
+                    file_path = raw_file_path
+
                 deps.append(file_path)
 
                 # Try to read the file (and hydrate if on cloud drive)

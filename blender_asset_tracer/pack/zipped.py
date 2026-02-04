@@ -46,6 +46,7 @@ log = logging.getLogger(__name__)
 
 _ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 _GZIP_MAGIC = b"\x1f\x8b"
+_BLENDFILE_MAGIC = b"BLENDER"
 
 def shorten_path(path: str) -> str:
     """
@@ -394,9 +395,10 @@ class ZipTransferrer(transfer.FileTransferer):
                             with open(src, "rb") as fp:
                                 with outzip.open(zi, mode="w", force_zip64=True) as zf:
                                     if arcname.endswith(".blend"):
+                                        # Read 7 bytes to detect format (longest magic is "BLENDER")
                                         head = b""
                                         try:
-                                            head = fp.read(4)
+                                            head = fp.read(7)
                                             fp.seek(0)
                                         except Exception:
                                             head = b""
@@ -412,20 +414,32 @@ class ZipTransferrer(transfer.FileTransferer):
                                                 _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files} Zstd not available; stored .blend as-is: {shorten_path(arcname)}")
                                             continue
 
-                                        # If the source .blend is already compressed, keep it as-is.
-                                        # Blender can save with Zstd (3.0+) or Gzip (legacy/preference).
-                                        # Re-compressing either would corrupt the file.
-                                        if head == _ZSTD_MAGIC:
+                                        # Detect .blend file format and handle appropriately.
+                                        # Order matters: check compression magics first, then uncompressed header.
+                                        #
+                                        # Formats:
+                                        #   - Zstd: 0x28 0xB5 0x2F 0xFD (Blender 3.0+)
+                                        #   - Gzip: 0x1F 0x8B (legacy/preference)
+                                        #   - Uncompressed: starts with "BLENDER"
+                                        #   - Unknown: don't modify (safety)
+                                        if head[:4] == _ZSTD_MAGIC:
+                                            # Already Zstd compressed - store as-is
                                             _entry_label = "Store (zstd)"
                                             shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
                                         elif head[:2] == _GZIP_MAGIC:
+                                            # Already Gzip compressed - store as-is
                                             _entry_label = "Store (gzip)"
                                             shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
-                                        else:
+                                        elif head[:7] == _BLENDFILE_MAGIC:
                                             # Uncompressed .blend - apply Zstd compression
                                             _entry_label = "Zstd"
                                             zstd_compressor = zstd.ZstdCompressor(level=1)
                                             zstd_compressor.copy_stream(fp, zf, read_size=ZIP_IO_BUFSIZE)
+                                        else:
+                                            # Unknown format - store as-is to avoid corruption
+                                            # This handles future compression formats or corrupted files
+                                            _entry_label = "Store (unknown)"
+                                            shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
 
                                         if _zip_entry_cb:
                                             _zip_entry_cb(idx, total_files, arcname, size, _entry_label)
