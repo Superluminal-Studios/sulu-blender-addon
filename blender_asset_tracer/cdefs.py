@@ -72,7 +72,10 @@ OB_DUPLIGROUP = 1 << 8
 PTCACHE_DISK_CACHE = 64
 PTCACHE_EXTERNAL = 512
 
-# DNA_ID_types.h
+# DNA_ID_types.h (Library.flag)
+LIBRARY_FLAG_ARCHIVE = 1 << 0  # Library is an archive containing packed linked data
+
+# DNA_ID_types.h (IDProperty.type)
 IDP_STRING = 0
 IDP_INT = 1
 IDP_FLOAT = 2

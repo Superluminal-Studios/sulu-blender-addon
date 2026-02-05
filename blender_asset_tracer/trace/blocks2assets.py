@@ -25,6 +25,7 @@ From a Blend file data block, iter_assts() yields all the referred-to assets.
 
 import functools
 import logging
+import pathlib
 import typing
 
 from .. import blendfile, bpathlib, cdefs
@@ -123,11 +124,30 @@ def image(block: blendfile.BlendFileBlock) -> typing.Iterator[result.BlockUsage]
 def library(block: blendfile.BlendFileBlock) -> typing.Iterator[result.BlockUsage]:
     """Library data blocks."""
     path, field = block.get(b"name", return_field=True)
-    yield result.BlockUsage(block, path, path_full_field=field)
 
-    # The 'filepath' also points to the blend file. However, this is set to the
-    # absolute path of the file by Blender (see BKE_library_filepath_set). This
-    # is thus not a property we have to report or rewrite.
+    # Blender 5.0+: archive libraries have packed data, so the external file is optional.
+    is_optional = (
+        block.bfile.header.version >= 500
+        and path in _get_archived_paths(block.bfile)
+    )
+
+    yield result.BlockUsage(block, path, path_full_field=field, is_optional=is_optional)
+
+
+# Cache of library paths that have an archive, keyed by blend file path.
+_archived_paths_cache = {}  # type: typing.Dict[pathlib.Path, typing.Set[bytes]]
+
+
+def _get_archived_paths(bfile: blendfile.BlendFile) -> typing.Set[bytes]:
+    """Get set of library paths that have an archive (packed data). Cached per file."""
+    cache_key = bfile.filepath
+    if cache_key not in _archived_paths_cache:
+        _archived_paths_cache[cache_key] = {
+            lib.get(b"name", default=b"")
+            for lib in bfile.find_blocks_from_code(b"LI")
+            if lib.get(b"flag", default=0) & cdefs.LIBRARY_FLAG_ARCHIVE
+        }
+    return _archived_paths_cache[cache_key]
 
 
 @dna_code("ME")

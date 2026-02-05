@@ -94,7 +94,7 @@ def main():
     # Run trace_dependencies with diagnostic_report
     print("  Tracing dependencies (this may take a while)...")
     try:
-        dep_paths, missing_set, unreadable_dict, raw_usages = trace_dependencies(
+        dep_paths, missing_set, unreadable_dict, raw_usages, optional_set = trace_dependencies(
             Path(blend_path),
             logger=None,  # No visual logging
             hydrate=False,  # Don't hydrate for quick test
@@ -103,17 +103,19 @@ def main():
         print(f"    Found {len(dep_paths)} dependencies")
         print(f"    Missing: {len(missing_set)}")
         print(f"    Unreadable: {len(unreadable_dict)}")
+        print(f"    Optional: {len(optional_set)}")
     except Exception as e:
         print(f"    ERROR during trace: {e}")
         report.set_status("failed")
         report.flush()
         raise
 
-    # Compute project root (excluding missing/unreadable files)
+    # Compute project root (excluding missing/unreadable/optional files)
     project_root, same_drive_deps, cross_drive_deps = compute_project_root(
         Path(blend_path), dep_paths,
         missing_files=missing_set,
         unreadable_files=unreadable_dict,
+        optional_files=optional_set,
     )
     print(f"    Project root: {project_root}")
     print(f"    Same-drive deps: {len(same_drive_deps)}")

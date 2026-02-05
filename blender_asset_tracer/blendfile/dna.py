@@ -258,6 +258,7 @@ class Struct:
             b"uchar": endian.read_char,
             b"int": endian.read_int,
             b"short": endian.read_short,
+            b"ushort": endian.read_ushort,
             b"uint64_t": endian.read_ulong,
             b"float": endian.read_float,
             b"int8_t": endian.read_int8,

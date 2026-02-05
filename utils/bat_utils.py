@@ -122,7 +122,7 @@ def trace_dependencies(
     *,
     hydrate: bool = False,
     diagnostic_report: Optional[Any] = None,
-) -> Tuple[List[Path], Set[Path], Dict[Path, str], List[Any]]:
+) -> Tuple[List[Path], Set[Path], Dict[Path, str], List[Any], Set[Path]]:
     """
     Lightweight dependency trace using BAT's trace.deps().
 
@@ -135,20 +135,24 @@ def trace_dependencies(
                  "dehydrated" placeholder files. Use for PROJECT mode uploads.
 
     Returns:
-        (dependency_paths, missing_files, unreadable_files, raw_usages)
+        (dependency_paths, missing_files, unreadable_files, raw_usages, optional_paths)
 
     Where:
         - dependency_paths: List of absolute paths to all dependencies (expanded from sequences)
         - missing_files: Set of paths that don't exist on disk
         - unreadable_files: Dict of path -> error message for files that exist but can't be read
         - raw_usages: List of BlockUsage objects (can be passed to Packer to avoid re-tracing)
+        - optional_paths: Set of paths that are optional (e.g. linked-packed libraries) and
+                          should NOT affect project root calculation
     """
     deps: List[Path] = []
     missing: Set[Path] = set()
     unreadable: Dict[Path, str] = {}
     raw_usages: List[Any] = []
+    optional: Set[Path] = set()
 
     for usage in trace.deps(blend_path):
+        is_optional = getattr(usage, "is_optional", False)
         raw_usages.append(usage)
 
         # Get source info for logging (needed for both logger and diagnostic_report)
@@ -185,28 +189,32 @@ def trace_dependencies(
                 _log.debug("make_absolute failed for %s: %s", usage.abspath, e)
 
             deps.append(abs_path)
-            missing.add(abs_path)
+            if is_optional:
+                optional.add(abs_path)
+                # Don't log or report optional missing files - they're expected
+            else:
+                missing.add(abs_path)
 
-            if logger is not None:
-                logger.trace_entry(
-                    source_blend=source_blend,
-                    block_type=block_type,
-                    block_name=block_name,
-                    found_file=abs_path.name,
-                    status="missing",
-                    error_msg=files_error,
-                )
+                if logger is not None:
+                    logger.trace_entry(
+                        source_blend=source_blend,
+                        block_type=block_type,
+                        block_name=block_name,
+                        found_file=abs_path.name,
+                        status="missing",
+                        error_msg=files_error,
+                    )
 
-            if diagnostic_report is not None:
-                diagnostic_report.add_trace_entry(
-                    source_blend=source_blend,
-                    block_type=block_type,
-                    block_name=block_name,
-                    resolved_path=str(abs_path),
-                    status="missing",
-                    error_msg=files_error,
-                    file_size=0,
-                )
+                if diagnostic_report is not None:
+                    diagnostic_report.add_trace_entry(
+                        source_blend=source_blend,
+                        block_type=block_type,
+                        block_name=block_name,
+                        resolved_path=str(abs_path),
+                        status="missing",
+                        error_msg=files_error,
+                        file_size=0,
+                    )
         else:
             # Check each expanded file
             for raw_file_path in expanded_files:
@@ -219,6 +227,8 @@ def trace_dependencies(
                     file_path = raw_file_path
 
                 deps.append(file_path)
+                if is_optional:
+                    optional.add(file_path)
 
                 # Try to read the file (and hydrate if on cloud drive)
                 ok, err = cloud_files.read_file_with_hydration(
@@ -231,6 +241,9 @@ def trace_dependencies(
                     status = "ok"
                     error_msg = None
                 elif err == "File not found":
+                    if is_optional:
+                        # Optional missing files are expected - skip logging
+                        continue
                     missing.add(file_path)
                     status = "missing"
                     error_msg = None
@@ -267,7 +280,7 @@ def trace_dependencies(
                         file_size=file_size,
                     )
 
-    return deps, missing, unreadable, raw_usages
+    return deps, missing, unreadable, raw_usages, optional
 
 
 # ─── Project root computation ────────────────────────────────────────────────
@@ -279,6 +292,7 @@ def compute_project_root(
     custom_project_path: Optional[Path] = None,
     missing_files: Optional[Set[Path]] = None,
     unreadable_files: Optional[Dict[Path, str]] = None,
+    optional_files: Optional[Set[Path]] = None,
 ) -> Tuple[Path, List[Path], List[Path]]:
     """
     Compute optimal project root from blend file and its dependencies.
@@ -295,6 +309,8 @@ def compute_project_root(
         custom_project_path: Optional user-specified project root
         missing_files: Optional set of paths that don't exist (excluded from root calculation)
         unreadable_files: Optional dict of paths that can't be read (excluded from root calculation)
+        optional_files: Optional set of paths that are optional (e.g. linked-packed libraries)
+                        and should not affect root calculation
 
     Returns:
         (project_root, same_drive_paths, cross_drive_paths)
@@ -315,11 +331,12 @@ def compute_project_root(
     same_drive_paths: List[Path] = []
     cross_drive_paths: List[Path] = []
 
-    # Normalize missing/unreadable sets for comparison - these files won't be uploaded,
-    # so they shouldn't influence the project root calculation
+    # Normalize missing/unreadable/optional sets for comparison - these files won't be uploaded
+    # or shouldn't affect project root, so exclude from calculation
     missing_norm = {_norm_path(str(p)) for p in (missing_files or set())}
     unreadable_norm = {_norm_path(str(p)) for p in (unreadable_files or {}).keys()}
-    excluded_paths = missing_norm | unreadable_norm
+    optional_norm = {_norm_path(str(p)) for p in (optional_files or set())}
+    excluded_paths = missing_norm | unreadable_norm | optional_norm
 
     for dep in dependency_paths:
         dep_norm = _norm_path(str(dep))

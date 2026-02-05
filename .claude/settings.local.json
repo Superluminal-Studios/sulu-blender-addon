@@ -31,7 +31,12 @@
       "Bash(python3 -m py_compile:*)",
       "Bash(python3 -m compileall:*)",
       "WebSearch",
-      "Bash(unzip:*)"
+      "Bash(unzip:*)",
+      "Bash(cd:*)",
+      "WebFetch(domain:projects.blender.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:developer.blender.org)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

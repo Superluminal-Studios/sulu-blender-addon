@@ -612,7 +612,8 @@ class Packer:
         assert usage.is_sequence
 
         def handle_missing_file():
-            self._record_missing(asset_path)
+            if not usage.is_optional:
+                self._record_missing(asset_path)
 
         try:
             for file_path in file_sequence.expand_sequence(asset_path):
@@ -636,6 +637,12 @@ class Packer:
         Determines where this asset will be packed, whether it needs rewriting,
         and records the blend file data block referring to it.
         """
+        # Optional assets (e.g. linked-packed libraries) are only included if within project.
+        # Skip silently if outside - their data is already embedded in the blend.
+        if usage.is_optional and not self._path_in_project(asset_path):
+            log.debug("Skipping optional asset outside project: %s", asset_path)
+            return
+
         is_udim_placeholder = _UDIM_MARKER in asset_path.name
         udim_tiles = self._find_udim_tiles(asset_path) if (is_udim_placeholder) else []
 
@@ -650,7 +657,8 @@ class Packer:
                     len(udim_tiles),
                 )
             else:
-                self._record_missing(asset_path)
+                if not usage.is_optional:
+                    self._record_missing(asset_path)
                 return
 
         bfile_path = usage.block.bfile.filepath.absolute()

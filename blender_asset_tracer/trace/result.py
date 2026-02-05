@@ -51,6 +51,8 @@ class BlockUsage:
     :ivar path_dir_field: field containing the parent path (i.e. the
         directory) of this asset.
     :ivar path_base_field: field containing the basename of this asset.
+    :ivar is_optional: if True, this asset is optional (e.g. linked-packed
+        library). Missing optional assets are not reported as errors.
     """
 
     def __init__(
@@ -62,6 +64,7 @@ class BlockUsage:
         path_dir_field: Optional[dna.Field] = None,
         path_base_field: Optional[dna.Field] = None,
         block_name: bytes = b"",
+        is_optional: bool = False,
     ) -> None:
         if block_name:
             self.block_name = block_name
@@ -94,6 +97,7 @@ class BlockUsage:
         self.path_full_field = path_full_field
         self.path_dir_field = path_dir_field
         self.path_base_field = path_base_field
+        self.is_optional = bool(is_optional)
 
         # cached by __fspath__()
         self._abspath = None  # type: typing.Optional[pathlib.Path]

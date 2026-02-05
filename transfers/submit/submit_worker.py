@@ -394,7 +394,7 @@ def main() -> None:
     # Pack assets
     if use_project:
         # Trace dependencies (hydrate cloud placeholders)
-        dep_paths, missing_set, unreadable_dict, raw_usages = trace_dependencies(
+        dep_paths, missing_set, unreadable_dict, raw_usages, optional_set = trace_dependencies(
             Path(blend_path), logger=logger, hydrate=True, diagnostic_report=report
         )
 
@@ -402,6 +402,9 @@ def main() -> None:
         absolute_path_deps: List[Path] = []
         for usage in raw_usages:
             try:
+                # Skip optional assets (e.g. linked-packed libraries) - no warnings needed
+                if getattr(usage, "is_optional", False):
+                    continue
                 # Check if the path stored in the blend file is absolute (not //-relative)
                 if not usage.asset_path.is_blendfile_relative():
                     abs_path = usage.abspath
@@ -432,6 +435,7 @@ def main() -> None:
             custom_root,
             missing_files=missing_set,
             unreadable_files=unreadable_dict,
+            optional_files=optional_set,
         )
         common_path = str(project_root).replace("\\", "/")
         report.set_metadata("project_root", common_path)
@@ -686,7 +690,7 @@ def main() -> None:
         report.complete_stage("pack")
 
     else:  # ZIP mode
-        dep_paths, missing_set, unreadable_dict, raw_usages = trace_dependencies(
+        dep_paths, missing_set, unreadable_dict, raw_usages, optional_set = trace_dependencies(
             Path(blend_path), logger=logger, diagnostic_report=report
         )
 
@@ -695,6 +699,7 @@ def main() -> None:
             dep_paths,
             missing_files=missing_set,
             unreadable_files=unreadable_dict,
+            optional_files=optional_set,
         )
         project_root_str = str(project_root).replace("\\", "/")
         report.set_metadata("project_root", project_root_str)
