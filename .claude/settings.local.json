@@ -36,7 +36,14 @@
       "WebFetch(domain:projects.blender.org)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:developer.blender.org)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git -C \"D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\" log -p --follow -- .github/workflows/main.yml)",
+      "Bash(git -C \"D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\" log -p --follow -- deploy.py)",
+      "Bash(git rm:*)",
+      "Bash(del \"\\\\?\\\\D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\\\\nul\")",
+      "Bash(cmd /c \"del \\\\?\\\\D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\\\\nul\")",
+      "Bash(cmd /c \"del /f /q \"\"\\\\?\\\\D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\\\\nul\"\"\")",
+      "Bash(git -C \"D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\" show HEAD:deploy.py)"
     ]
   }
 }

@@ -176,6 +176,9 @@ cython_debug/
 # Rclone
 rclone/
 
+# Release metadata (GitHub is source of truth)
+releases/
+
 session.json
 
 # Dev config (contains local paths)

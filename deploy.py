@@ -1,220 +1,86 @@
-import sys
-import zipfile
+"""Build a release zip for the Superluminal Blender add-on."""
+
+import argparse
 import os
 import re
-from datetime import datetime
+import shutil
+import tempfile
+import zipfile
 
 ADDON_NAME = "SuperluminalRender"
 
-
-def get_arg_value(flag: str):
-    if flag in sys.argv:
-        idx = sys.argv.index(flag)
-        if idx + 1 < len(sys.argv):
-            return sys.argv[idx + 1]
-    return None
-
-
-def sanitize_filename(part: str) -> str:
-    # Keep common safe chars; replace everything else with "_"
-    return re.sub(r"[^0-9A-Za-z._-]+", "_", part).strip("_")
+EXCLUDE = {
+    # directories
+    "__pycache__", ".git", ".github", ".claude", "tests", "reports", "releases", "rclone",
+    # files
+    ".gitignore", ".gitkeep", ".gitattributes",
+    "README.md", "CLAUDE.md",
+    "extensions_index.json", "manifest.py", "update_manifest.py", "blender_manifest.toml",
+    "deploy.py", "test_deploy.ps1",
+    "dev_config.json", "dev_config.example.json",
+    "session.json",
+    "rclone.exe",
+    "nul",
+}
 
 
 def version_tuple(tag: str) -> str:
-    """
-    Blender add-ons expect a 3-int tuple (major, minor, patch).
-    Extract the first three integers from the tag string.
-    Examples:
-      "1.2.3" -> "1, 2, 3"
-      "v1.2.3" -> "1, 2, 3"
-      "1.2.3-alpha.1" -> "1, 2, 3"
-    """
+    """'v1.2.3-beta' -> '1, 2, 3'"""
     nums = re.findall(r"\d+", tag)
     nums = (nums + ["0", "0", "0"])[:3]
     return ", ".join(nums)
 
 
-def should_exclude(rel_path: str) -> bool:
-    """
-    Exclude dev/build artifacts and rclone binaries. Keep all source .py files.
-    """
-    rel = rel_path.replace("\\", "/")
-    parts = rel.split("/")
-    filename = parts[-1]
-    parent_dirs = parts[:-1]
+def main():
+    parser = argparse.ArgumentParser(description="Build release zip")
+    parser.add_argument("--version", default=None)
+    parser.add_argument("--output", default=None)
+    args = parser.parse_args()
 
-    # --- Excluded directories (applies to all files) ---
-    EXCLUDE_DIRS = {
-        "__pycache__",
-        ".git",
-        ".github",
-        ".claude",
-        "tests",
-        "reports",
-        "rclone",  # Downloaded rclone binaries live here
-    }
-    if any(d in EXCLUDE_DIRS for d in parent_dirs):
-        return True
-
-    # --- Excluded files by exact name ---
-    EXCLUDE_FILES = {
-        # VCS
-        ".gitignore",
-        ".gitkeep",
-        ".gitattributes",
-        # Docs
-        "README.md",
-        "CLAUDE.md",
-        # Manifest/extension stuff
-        "extensions_index.json",
-        "manifest.py",
-        "update_manifest.py",
-        "blender_manifest.toml",
-        # Build/deploy scripts
-        "deploy.py",
-        "test_deploy.ps1",
-        # Dev files
-        "dev_config.json",
-        "dev_config.example.json",
-        # Session data
-        "session.json",
-        # rclone binaries (in case they're not in rclone/ dir)
-        "rclone",
-        "rclone.exe",
-    }
-    if filename in EXCLUDE_FILES:
-        return True
-
-    return False
-
-
-# Experimental mode: quick export for testers
-# Usage:
-#   python deploy.py --experimental [--version <string>] [--output path/to/output.zip]
-experimental_mode = "--experimental" in sys.argv
-output_override = get_arg_value("--output")
-
-if experimental_mode:
-    # Use current directory as source
-    addon_directory = os.path.dirname(os.path.abspath(__file__))
-
-    # Optional custom version label in experimental mode; otherwise timestamped
-    version = (
-        get_arg_value("--version")
-        or f"experimental-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    )
-    safe_version = sanitize_filename(version) or version
-
-    # Output path
-    if output_override:
-        addon_path = output_override
-    else:
-        downloads = os.path.join(os.path.expanduser("~"), "Downloads")
-        filename = f"{ADDON_NAME}-{safe_version}.zip"
-        if os.path.isdir(downloads):
-            addon_path = os.path.join(downloads, filename)
-        else:
-            addon_path = os.path.join(addon_directory, filename)
-
-else:
-    # Release mode
-    version = get_arg_value("--version")
-    if not version:
-        raise SystemExit(
-            "Release mode requires: python deploy.py --version <tag> [--output <path>]"
+    tmpdir = tempfile.gettempdir()
+    if args.output is None:
+        args.output = (
+            os.path.join(tmpdir, f"{ADDON_NAME}.zip")
+            if args.version
+            else os.path.join(os.path.expanduser("~"), "Downloads", f"{ADDON_NAME}.zip")
         )
 
-    version = version.split("/")[-1] if "/" in version else version
-    safe_version = sanitize_filename(version) or version
+    src = os.path.dirname(os.path.abspath(__file__))
+    stage = os.path.join(tmpdir, ADDON_NAME)
 
-    addon_directory = f"/tmp/{ADDON_NAME}"
+    # Stage: copy source tree, skipping excluded names
+    if os.path.exists(stage):
+        shutil.rmtree(stage)
+    shutil.copytree(src, stage, ignore=shutil.ignore_patterns(*EXCLUDE))
 
-    # Default: /tmp/SuperLuminalRender-<version>.zip (unless overridden)
-    if output_override:
-        addon_path = output_override
-    else:
-        addon_path = f"/tmp/{ADDON_NAME}-{safe_version}.zip"
-
-init_path = os.path.join(addon_directory, "__init__.py")
-
-if experimental_mode:
-    # Experimental mode: don't modify files in place, just zip current working tree
-    archive_root = ADDON_NAME
-
-    with zipfile.ZipFile(addon_path, "w", zipfile.ZIP_DEFLATED) as addon_archive:
-        for root, dirs, files in os.walk(addon_directory):
-            # Prune obvious excluded dirs early (but NOT rclone; handled by should_exclude + allowlist)
-            dirs[:] = [
-                d
-                for d in dirs
-                if d
-                not in {"__pycache__", ".git", ".github", ".claude", "tests", "reports"}
-            ]
-
-            for file in files:
-                file_path = os.path.join(root, file)
-                rel_path = os.path.relpath(file_path, addon_directory)
-
-                if should_exclude(rel_path):
-                    continue
-
-                # Skip output zip itself if created inside source dir
-                if os.path.abspath(file_path) == os.path.abspath(addon_path):
-                    continue
-
-                archive_name = os.path.join(archive_root, rel_path).replace("\\", "/")
-                addon_archive.write(file_path, archive_name)
-
-    print(f"Experimental build created: {addon_path}")
-    print(f"Version tag: {version}")
-
-else:
-    # Release mode: modify __init__.py in /tmp staging folder
-    with open(init_path, "r", encoding="utf-8") as f:
-        init_content = f.read()
-
-    new_tuple = f"({version_tuple(version)})"
-
-    # Prefer a targeted replacement of the 'version' key in bl_info
-    updated, n = re.subn(
-        r"([\"']version[\"']\s*:\s*)\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)",
-        rf"\1{new_tuple}",
-        init_content,
-        count=1,
-    )
-
-    if n == 0:
-        # Fallback to previous behavior if pattern wasn't found
-        updated = init_content.replace("(1, 0, 0)", new_tuple).replace(
-            "(1,0,0)", new_tuple
+    # Patch version in staged __init__.py
+    if args.version:
+        init_path = os.path.join(stage, "__init__.py")
+        with open(init_path, "r", encoding="utf-8") as f:
+            text = f.read()
+        new_tuple = f"({version_tuple(args.version)})"
+        text, n = re.subn(
+            r"([\"']version[\"']\s*:\s*)\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)",
+            rf"\1{new_tuple}",
+            text,
+            count=1,
         )
+        if n == 0:
+            raise SystemExit("Could not find version tuple in __init__.py")
+        with open(init_path, "w", encoding="utf-8") as f:
+            f.write(text)
 
-    with open(init_path, "w", encoding="utf-8") as f:
-        f.write(updated)
+    # Zip
+    with zipfile.ZipFile(args.output, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in os.walk(stage):
+            for name in files:
+                full = os.path.join(root, name)
+                arc = os.path.join(ADDON_NAME, os.path.relpath(full, stage))
+                zf.write(full, arc.replace("\\", "/"))
 
-    with zipfile.ZipFile(addon_path, "w", zipfile.ZIP_DEFLATED) as addon_archive:
-        for root, dirs, files in os.walk(addon_directory):
-            dirs[:] = [
-                d
-                for d in dirs
-                if d
-                not in {"__pycache__", ".git", ".github", ".claude", "tests", "reports", "rclone"}
-            ]
+    label = f"version {args.version}" if args.version else "dev build"
+    print(f"Created {args.output}  ({label})")
 
-            for file in files:
-                file_path = os.path.join(root, file)
 
-                rel_path_from_addon = os.path.relpath(file_path, addon_directory)
-                if should_exclude(rel_path_from_addon):
-                    continue
-
-                # Safety: don't include the output zip if it lives under addon_directory
-                if os.path.abspath(file_path) == os.path.abspath(addon_path):
-                    continue
-
-                # Archive path: SuperluminalRender/<relative_path>
-                archive_name = os.path.join(ADDON_NAME, rel_path_from_addon).replace("\\", "/")
-                addon_archive.write(file_path, archive_name)
-
-    print(f"Release build created: {addon_path}")
-    print(f"Version tag: {version}")
+if __name__ == "__main__":
+    main()
