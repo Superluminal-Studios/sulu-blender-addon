@@ -90,7 +90,9 @@ def _get_rclone_tail(result) -> list:
 
 
 def _log_upload_result(result, expected_bytes: int = 0, label: str = "") -> None:
-    """Log a brief summary of rclone transfer stats to the terminal."""
+    """Log a brief summary of rclone transfer stats to the terminal (debug only)."""
+    if not _debug_enabled or not _debug_enabled():
+        return
     if result is None:
         _LOG(f"  {label}result: no stats (rclone returned None)")
         return
@@ -120,6 +122,20 @@ def _log_upload_result(result, expected_bytes: int = 0, label: str = "") -> None
     cmd = result.get("command")
     if cmd:
         _LOG(f"  {label}cmd: {cmd}")
+
+
+def _check_rclone_errors(result, label: str = "") -> None:
+    """Log a warning if rclone reported errors > 0 despite exit code 0 (debug only)."""
+    if not _debug_enabled or not _debug_enabled():
+        return
+    if not isinstance(result, dict):
+        return
+    errors = result.get("errors", 0) or 0
+    if errors > 0:
+        _LOG(
+            f"  WARNING ({label}): rclone reported {errors} error(s) "
+            "despite exit code 0 — some files may not have uploaded"
+        )
 
 
 _WIN_DRIVE_ROOT_RE = re.compile(r"^[A-Za-z]:[\\/]?$")
@@ -605,7 +621,7 @@ def main() -> None:
         else:
             report.set_metadata("project_root_method", "automatic")
 
-        if _is_filesystem_root(common_path):
+        if _is_filesystem_root(common_path) and _debug_enabled():
             _LOG(
                 f"NOTE: Project root is a filesystem root ({common_path}). "
                 "Dependencies span multiple top-level directories on the same drive."
@@ -857,6 +873,26 @@ def main() -> None:
         with filelist.open("w", encoding="utf-8") as fp:
             for rel in rel_manifest:
                 fp.write(f"{rel}\n")
+
+        # Validate manifest write-back
+        try:
+            written_lines = filelist.read_text("utf-8").splitlines()
+            written_count = len([line for line in written_lines if line.strip()])
+            if written_count != len(rel_manifest):
+                if _debug_enabled():
+                    _LOG(
+                        f"WARNING: Manifest line count mismatch — "
+                        f"expected {len(rel_manifest)}, got {written_count}"
+                    )
+                report.set_metadata("manifest_validation", "mismatch")
+                report.set_metadata("manifest_expected", len(rel_manifest))
+                report.set_metadata("manifest_written", written_count)
+            else:
+                report.set_metadata("manifest_validation", "ok")
+        except Exception as exc:
+            if _debug_enabled():
+                _LOG(f"WARNING: Could not validate manifest: {exc}")
+            report.set_metadata("manifest_validation", f"error: {exc}")
 
         blend_rel = _relpath_safe(abs_blend, common_path)
         main_blend_s3 = _nfc(_s3key_clean(blend_rel) or os.path.basename(abs_blend))
@@ -1110,6 +1146,8 @@ def main() -> None:
         "4",
         "--s3-chunk-size",
         "64M",
+        "--s3-upload-cutoff",
+        "64M",
         "--s3-upload-concurrency",
         "4",
         "--buffer-size",
@@ -1122,6 +1160,9 @@ def main() -> None:
         "5s",
         "--timeout",
         "5m",
+        "--contimeout",
+        "30s",
+        "--no-traverse",
         "--stats",
         "0.1s",
     ]
@@ -1150,9 +1191,13 @@ def main() -> None:
                 f":s3:{bucket}/",
                 extra=rclone_settings,
                 logger=logger,
+                total_bytes=required_storage,
             )
+            if required_storage > 0 and logger._transfer_total == 0:
+                logger._transfer_total = required_storage
             logger.upload_complete("Archive uploaded")
             _log_upload_result(rclone_result, expected_bytes=required_storage, label="Archive: ")
+            _check_rclone_errors(rclone_result, label="Archive")
             report.complete_upload_step(
                 bytes_transferred=_rclone_bytes(rclone_result),
                 rclone_stats=_rclone_stats(rclone_result),
@@ -1177,6 +1222,7 @@ def main() -> None:
                 )
                 logger.upload_complete("Add-ons uploaded")
                 _log_upload_result(rclone_result, label="Add-ons: ")
+                _check_rclone_errors(rclone_result, label="Add-ons")
                 report.complete_upload_step(
                     bytes_transferred=_rclone_bytes(rclone_result),
                     rclone_stats=_rclone_stats(rclone_result),
@@ -1214,7 +1260,12 @@ def main() -> None:
                 remote_main,
                 extra=rclone_settings,
                 logger=logger,
+                total_bytes=blend_size,
             )
+            # Ensure completion panel shows the blend size even if rclone
+            # finished too fast to emit stats (stats_received=False).
+            if blend_size > 0 and logger._transfer_total == 0:
+                logger._transfer_total = blend_size
             logger.upload_complete("Main blend uploaded")
             _log_upload_result(rclone_result, expected_bytes=blend_size, label="Blend: ")
             report.complete_upload_step(
@@ -1225,13 +1276,16 @@ def main() -> None:
 
             if rel_manifest:
                 logger.upload_step(step, total_steps, "Uploading dependencies")
-                _LOG(f"Manifest: {len(rel_manifest)} files, {_format_size(dependency_total_size)} expected")
+                if _debug_enabled():
+                    _LOG(f"Manifest: {len(rel_manifest)} files, {_format_size(dependency_total_size)} expected")
 
                 if _is_filesystem_root(common_path):
                     # --- SPLIT PATH: filesystem root source ---
-                    _LOG(f"Project root is a filesystem root ({common_path}), splitting upload by directory")
+                    if _debug_enabled():
+                        _LOG(f"Project root is a filesystem root ({common_path}), splitting upload by directory")
                     groups = _split_manifest_by_first_dir(rel_manifest)
-                    _LOG(f"Split into {len(groups)} group(s): {list(groups.keys())}")
+                    if _debug_enabled():
+                        _LOG(f"Split into {len(groups)} group(s): {list(groups.keys())}")
 
                     report.start_upload_step(
                         step, total_steps, "Uploading dependencies (split)",
@@ -1267,16 +1321,30 @@ def main() -> None:
                             for entry in group_entries:
                                 fp.write(f"{entry}\n")
 
+                        # Validate group filelist write-back
+                        try:
+                            gl = group_filelist.read_text("utf-8").splitlines()
+                            gc = len([line for line in gl if line.strip()])
+                            if gc != len(group_entries) and _debug_enabled():
+                                _LOG(
+                                    f"  WARNING: Group '{group_name}' filelist mismatch — "
+                                    f"expected {len(group_entries)}, got {gc}"
+                                )
+                        except Exception:
+                            pass
+
                         group_rclone = ["--files-from", str(group_filelist)]
                         group_rclone.extend(rclone_settings)
 
-                        _LOG(f"  Group '{group_name}': {len(group_entries)} files, source={group_source}")
+                        if _debug_enabled():
+                            _LOG(f"  Group '{group_name}': {len(group_entries)} files, source={group_source}")
                         grp_result = run_rclone(
                             base_cmd, "copy", group_source, group_dest,
                             extra=group_rclone, logger=logger,
                             total_bytes=dependency_total_size,
                         )
                         _log_upload_result(grp_result, label=f"  Group '{group_name}': ")
+                        _check_rclone_errors(grp_result, label=f"Group '{group_name}'")
                         report.add_upload_split_group(
                             group_name=group_name or "(root)",
                             file_count=len(group_entries),
@@ -1299,19 +1367,23 @@ def main() -> None:
                             agg_errors += grp_result.get("errors", 0)
                         if _is_empty_upload(grp_result, len(group_entries)):
                             any_empty = True
-                            grp_tail = _get_rclone_tail(grp_result)
-                            _LOG(f"  WARNING: Group '{group_name}' transferred 0 files")
-                            if grp_tail:
-                                for line in grp_tail[-5:]:
-                                    _LOG(f"    {line}")
+                            if _debug_enabled():
+                                grp_tail = _get_rclone_tail(grp_result)
+                                _LOG(f"  WARNING: Group '{group_name}' transferred 0 files")
+                                if grp_tail:
+                                    for line in grp_tail[-5:]:
+                                        _LOG(f"    {line}")
 
+                    # Set aggregated total so upload_complete panel shows correct size
+                    logger._transfer_total = dependency_total_size
                     logger.upload_complete("Dependencies uploaded")
-                    _LOG(
-                        f"  Split upload totals: "
-                        f"transferred={_format_size(agg_bytes)}, "
-                        f"checks={agg_checks}, transfers={agg_transfers}, "
-                        f"errors={agg_errors}, groups={len(groups)}"
-                    )
+                    if _debug_enabled():
+                        _LOG(
+                            f"  Split upload totals: "
+                            f"transferred={_format_size(agg_bytes)}, "
+                            f"checks={agg_checks}, transfers={agg_transfers}, "
+                            f"errors={agg_errors}, groups={len(groups)}"
+                        )
                     agg_stats = {
                         "bytes_transferred": agg_bytes,
                         "checks": agg_checks,
@@ -1324,10 +1396,18 @@ def main() -> None:
                         bytes_transferred=agg_bytes,
                         rclone_stats=agg_stats,
                     )
-                    if any_empty and dependency_total_size > 0:
+                    if any_empty and dependency_total_size > 0 and _debug_enabled():
                         _LOG(
-                            f"WARNING: Some dependency groups transferred 0 files. "
+                            "WARNING: Some dependency groups transferred 0 files. "
                             "See diagnostic report."
+                        )
+                    # Post-upload transfer count validation
+                    total_touched = agg_transfers + agg_checks
+                    if total_touched > 0 and total_touched < len(rel_manifest) and _debug_enabled():
+                        _LOG(
+                            f"WARNING: rclone touched {total_touched} of "
+                            f"{len(rel_manifest)} manifest files — "
+                            f"{len(rel_manifest) - total_touched} file(s) may have been skipped"
                         )
                 else:
                     # --- NORMAL PATH: non-root source (existing behavior) ---
@@ -1352,12 +1432,13 @@ def main() -> None:
                     )
                     logger.upload_complete("Dependencies uploaded")
                     _log_upload_result(rclone_result, expected_bytes=dependency_total_size, label="Dependencies: ")
+                    _check_rclone_errors(rclone_result, label="Dependencies")
                     stats = _rclone_stats(rclone_result)
                     report.complete_upload_step(
                         bytes_transferred=_rclone_bytes(rclone_result),
                         rclone_stats=stats,
                     )
-                    if _is_empty_upload(rclone_result, len(rel_manifest)):
+                    if _is_empty_upload(rclone_result, len(rel_manifest)) and _debug_enabled():
                         tail = _get_rclone_tail(rclone_result)
                         _LOG(
                             f"WARNING: Expected {_format_size(dependency_total_size)} "
@@ -1368,6 +1449,15 @@ def main() -> None:
                             _LOG("rclone tail log:")
                             for line in tail[-10:]:
                                 _LOG(f"  {line}")
+                    # Post-upload transfer count validation
+                    if stats and _debug_enabled():
+                        total_touched = (stats.get("transfers", 0) or 0) + (stats.get("checks", 0) or 0)
+                        if total_touched > 0 and total_touched < len(rel_manifest):
+                            _LOG(
+                                f"WARNING: rclone touched {total_touched} of "
+                                f"{len(rel_manifest)} manifest files — "
+                                f"{len(rel_manifest) - total_touched} file(s) may have been skipped"
+                            )
                 step += 1
 
             with filelist.open("a", encoding="utf-8") as fp:
@@ -1390,6 +1480,7 @@ def main() -> None:
             )
             logger.upload_complete("Manifest uploaded")
             _log_upload_result(rclone_result, label="Manifest: ")
+            _check_rclone_errors(rclone_result, label="Manifest")
             report.complete_upload_step(
                 bytes_transferred=_rclone_bytes(rclone_result),
                 rclone_stats=_rclone_stats(rclone_result),
@@ -1414,6 +1505,7 @@ def main() -> None:
                 )
                 logger.upload_complete("Add-ons uploaded")
                 _log_upload_result(rclone_result, label="Add-ons: ")
+                _check_rclone_errors(rclone_result, label="Add-ons")
                 report.complete_upload_step(
                     bytes_transferred=_rclone_bytes(rclone_result),
                     rclone_stats=_rclone_stats(rclone_result),

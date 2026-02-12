@@ -45,7 +45,31 @@
       "Bash(cmd /c \"del /f /q \"\"\\\\?\\\\D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\\\\nul\"\"\")",
       "Bash(git -C \"D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\" show HEAD:deploy.py)",
       "Bash(wc:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "WebFetch(domain:forum.rclone.org)",
+      "WebFetch(domain:rclone.org)",
+      "WebFetch(domain:developers.cloudflare.com)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon log --oneline -20)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon diff HEAD~1..HEAD -- transfers/submit/submit_worker.py)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon log --all --oneline --diff-filter=M -p -- transfers/submit/submit_worker.py)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon log --all --oneline -40)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon log --all --oneline -40 --skip=40)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon log --all -p --follow -- transfers/submit/submit_worker.py)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon log --all --oneline --diff-filter=M -- transfers/submit/submit_worker.py)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon log --all -p -- transfers/submit/submit_worker.py)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon log --all --oneline -S \"_is_filesystem_root\" -- transfers/submit/submit_worker.py)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon show 7882435 --stat)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon show 7882435 -- transfers/submit/submit_worker.py)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon show 7882435 -- transfers/rclone_utils.py)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon log --since=\"24 hours ago\" --oneline --all)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon diff 7882435~1..51139a8 -- transfers/submit/submit_worker.py transfers/rclone_utils.py utils/bat_utils.py utils/worker_utils.py)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon diff 7882435~1..51139a8 -- transfers/submit/submit_worker.py)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon log --all --oneline -20 --skip=40)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon log --all -p -S \"files-from-raw\" -- transfers/submit/submit_worker.py)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon log:*)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon show:*)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon diff 7882435~1..51139a8 -- utils/bat_utils.py)",
+      "Bash(git -C /home/jonas/Desktop/dev/blender_scripts/scripts/addons/sulu-addon diff 7882435~1..7882435 -- transfers/submit/submit_worker.py)"
     ]
   }
 }

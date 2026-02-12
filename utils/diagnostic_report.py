@@ -529,6 +529,15 @@ class DiagnosticReport:
                             else:
                                 warning = mismatch
 
+                    # 4. Non-zero errors despite exit 0
+                    errors = rclone_stats.get("errors", 0) or 0
+                    if errors > 0:
+                        error_warning = (
+                            f"rclone reported {errors} error(s) despite "
+                            "exit code 0 — some files may not have uploaded"
+                        )
+                        warning = (warning + "; " + error_warning) if warning else error_warning
+
                     if warning:
                         self._current_upload_step["warning"] = warning
                 self._current_upload_step = None

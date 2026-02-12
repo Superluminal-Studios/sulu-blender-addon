@@ -165,6 +165,53 @@ class TestUploadStepWarnings(unittest.TestCase):
         # No checks/transfers anomaly, no bytes mismatch
         self.assertNotIn("warning", step)
 
+    # ── errors > 0 despite exit 0 ──
+
+    def test_errors_nonzero_exit_zero(self):
+        """errors > 0 despite successful checks/transfers should warn."""
+        step = self._run_step(500_000, {
+            "stats_received": True,
+            "checks": 50,
+            "transfers": 50,
+            "errors": 3,
+        }, expected_bytes=500_000)
+        self.assertIn("warning", step)
+        self.assertIn("3 error(s)", step["warning"])
+        self.assertIn("some files may not have uploaded", step["warning"])
+
+    def test_errors_zero_no_extra_warning(self):
+        """errors=0 should NOT add the errors warning."""
+        step = self._run_step(500_000, {
+            "stats_received": True,
+            "checks": 50,
+            "transfers": 50,
+            "errors": 0,
+        }, expected_bytes=500_000)
+        self.assertNotIn("warning", step)
+
+    def test_errors_nonzero_combined_with_checks_warning(self):
+        """errors > 0 combined with checks anomaly should produce both warnings."""
+        step = self._run_step(0, {
+            "stats_received": True,
+            "checks": 10,
+            "transfers": 0,
+            "errors": 2,
+        }, expected_bytes=100_000)
+        self.assertIn("warning", step)
+        self.assertIn("checked 10 files but transferred 0", step["warning"])
+        self.assertIn("2 error(s)", step["warning"])
+        self.assertIn("Expected 100000 bytes", step["warning"])
+
+    def test_errors_none_treated_as_zero(self):
+        """errors=None in stats should not trigger the errors warning."""
+        step = self._run_step(500_000, {
+            "stats_received": True,
+            "checks": 50,
+            "transfers": 50,
+            "errors": None,
+        }, expected_bytes=500_000)
+        self.assertNotIn("warning", step)
+
     # ── normal success ──
 
     def test_no_warning_on_success(self):
@@ -322,15 +369,18 @@ class TestLogUploadResult(unittest.TestCase):
         self._log_upload_result = self._mod._log_upload_result
         self._captured = []
 
-        # Patch _LOG and _format_size
+        # Patch _LOG, _format_size, and _debug_enabled
         self._orig_log = self._mod._LOG
         self._orig_fmt = self._mod._format_size
+        self._orig_debug = self._mod._debug_enabled
         self._mod._LOG = lambda msg: self._captured.append(str(msg))
         self._mod._format_size = lambda n: f"{n} B"
+        self._mod._debug_enabled = lambda: True
 
     def tearDown(self):
         self._mod._LOG = self._orig_log
         self._mod._format_size = self._orig_fmt
+        self._mod._debug_enabled = self._orig_debug
 
     def test_none_result(self):
         """None result should log 'no stats'."""
