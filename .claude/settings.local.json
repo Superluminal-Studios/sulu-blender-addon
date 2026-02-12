@@ -43,7 +43,8 @@
       "Bash(del \"\\\\?\\\\D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\\\\nul\")",
       "Bash(cmd /c \"del \\\\?\\\\D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\\\\nul\")",
       "Bash(cmd /c \"del /f /q \"\"\\\\?\\\\D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\\\\nul\"\"\")",
-      "Bash(git -C \"D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\" show HEAD:deploy.py)"
+      "Bash(git -C \"D:\\\\dev\\\\blender_scripts\\\\scripts\\\\addons\\\\sulu-blender-addon\" show HEAD:deploy.py)",
+      "Bash(wc:*)"
     ]
   }
 }

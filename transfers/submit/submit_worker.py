@@ -25,6 +25,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import re
 import sys
 import shutil
 import tempfile
@@ -49,6 +50,109 @@ _LOG = _default_logger
 def _set_logger(fn) -> None:
     global _LOG
     _LOG = fn if callable(fn) else _default_logger
+
+
+def _rclone_bytes(result) -> int:
+    """Extract bytes_transferred from run_rclone's dict-or-None return."""
+    if result is None:
+        return 0
+    if isinstance(result, dict):
+        return result.get("bytes_transferred", 0)
+    return int(result)  # backward compat if somehow still int
+
+
+def _rclone_stats(result):
+    """Extract the stats dict from run_rclone's return, or None."""
+    if isinstance(result, dict):
+        return result
+    return None
+
+
+def _is_empty_upload(result, expected_file_count: int) -> bool:
+    """True if rclone transferred nothing despite files being expected."""
+    if expected_file_count <= 0:
+        return False
+    if result is None:
+        return True
+    if isinstance(result, dict):
+        if not result.get("stats_received", True):
+            return True
+        return result.get("transfers", 0) == 0
+    return False
+
+
+def _get_rclone_tail(result) -> list:
+    """Extract tail log lines from run_rclone result."""
+    if isinstance(result, dict):
+        return result.get("tail_lines", [])
+    return []
+
+
+def _log_upload_result(result, expected_bytes: int = 0, label: str = "") -> None:
+    """Log a brief summary of rclone transfer stats to the terminal."""
+    if result is None:
+        _LOG(f"  {label}result: no stats (rclone returned None)")
+        return
+    if not isinstance(result, dict):
+        _LOG(f"  {label}result: {result}")
+        return
+
+    actual = result.get("bytes_transferred", 0)
+    checks = result.get("checks", 0)
+    transfers = result.get("transfers", 0)
+    errors = result.get("errors", 0)
+    received = result.get("stats_received", True)
+
+    parts = []
+    if not received:
+        parts.append("stats_received=False")
+    parts.append(f"transferred={_format_size(actual)}")
+    if expected_bytes > 0:
+        parts.append(f"expected={_format_size(expected_bytes)}")
+    parts.append(f"checks={checks}")
+    parts.append(f"transfers={transfers}")
+    if errors:
+        parts.append(f"errors={errors}")
+
+    _LOG(f"  {label}{', '.join(parts)}")
+
+
+_WIN_DRIVE_ROOT_RE = re.compile(r"^[A-Za-z]:[\\/]?$")
+
+
+def _is_filesystem_root(path: str) -> bool:
+    """True if path is a filesystem root where rclone --files-from is unreliable."""
+    p = str(path).replace("\\", "/").rstrip("/")
+    if not p:
+        return True
+    if _WIN_DRIVE_ROOT_RE.match(p):
+        return True
+    if p == "":
+        return True
+    # macOS volume root: /Volumes/VolumeName
+    if re.match(r"^/Volumes/[^/]+$", p):
+        return True
+    # Linux: /mnt/X or /media/user/X
+    if re.match(r"^/mnt/[^/]+$", p):
+        return True
+    if re.match(r"^/media/[^/]+/[^/]+$", p):
+        return True
+    return False
+
+
+def _split_manifest_by_first_dir(rel_manifest):
+    """Group manifest entries by first path component. Returns {dir_name: [sub_paths]}."""
+    groups = {}
+    for rel in rel_manifest:
+        slash_pos = rel.find("/")
+        if slash_pos > 0:
+            first_dir = rel[:slash_pos]
+            remainder = rel[slash_pos + 1:]
+        else:
+            first_dir = ""
+            remainder = rel
+        groups.setdefault(first_dir, []).append(remainder)
+    return groups
 
 
 # ─── Utilities imported after bootstrap ───────────────────────────
@@ -414,6 +518,20 @@ def main() -> None:
             except Exception:
                 pass  # Skip if we can't check the path
 
+        # Log absolute-path dependencies as trace entries in the diagnostic report
+        for abs_dep in absolute_path_deps:
+            try:
+                report.add_trace_entry(
+                    source_blend=blend_path,
+                    block_type="",
+                    block_name="",
+                    resolved_path=str(abs_dep),
+                    status="absolute_path",
+                    error_msg="Absolute path — farm cannot resolve. Make relative or use Zip upload.",
+                )
+            except Exception:
+                pass
+
         ok_files_set = set(
             p for p in dep_paths if p not in missing_set and p not in unreadable_dict
         )
@@ -439,6 +557,11 @@ def main() -> None:
         )
         common_path = str(project_root).replace("\\", "/")
         report.set_metadata("project_root", common_path)
+        if _is_filesystem_root(common_path):
+            _LOG(
+                f"NOTE: Project root is a filesystem root ({common_path}). "
+                "Dependencies span multiple top-level directories on the same drive."
+            )
         if cross_drive_deps:
             report.add_cross_drive_files([str(p) for p in cross_drive_deps])
         if absolute_path_deps:
@@ -945,7 +1068,7 @@ def main() -> None:
 
             logger.upload_step(step, total_steps, "Uploading archive")
             report.start_upload_step(step, total_steps, "Uploading archive")
-            run_rclone(
+            rclone_result = run_rclone(
                 base_cmd,
                 "move",
                 str(zip_file),
@@ -954,13 +1077,17 @@ def main() -> None:
                 logger=logger,
             )
             logger.upload_complete("Archive uploaded")
-            report.complete_upload_step(bytes_transferred=required_storage)
+            _log_upload_result(rclone_result, expected_bytes=required_storage, label="Archive: ")
+            report.complete_upload_step(
+                bytes_transferred=_rclone_bytes(rclone_result),
+                rclone_stats=_rclone_stats(rclone_result),
+            )
             step += 1
 
             if has_addons:
                 logger.upload_step(step, total_steps, "Uploading add-ons")
                 report.start_upload_step(step, total_steps, "Uploading add-ons")
-                run_rclone(
+                rclone_result = run_rclone(
                     base_cmd,
                     "moveto",
                     data["packed_addons_path"],
@@ -969,7 +1096,10 @@ def main() -> None:
                     logger=logger,
                 )
                 logger.upload_complete("Add-ons uploaded")
-                report.complete_upload_step()
+                report.complete_upload_step(
+                    bytes_transferred=_rclone_bytes(rclone_result),
+                    rclone_stats=_rclone_stats(rclone_result),
+                )
 
             report.complete_stage("upload")
 
@@ -990,7 +1120,7 @@ def main() -> None:
             report.start_upload_step(step, total_steps, "Uploading main blend")
             move_to_path = _nfc(_s3key_clean(f"{project_name}/{main_blend_s3}"))
             remote_main = f":s3:{bucket}/{move_to_path}"
-            run_rclone(
+            rclone_result = run_rclone(
                 base_cmd,
                 "copyto",
                 blend_path,
@@ -999,25 +1129,144 @@ def main() -> None:
                 logger=logger,
             )
             logger.upload_complete("Main blend uploaded")
-            report.complete_upload_step(bytes_transferred=blend_size)
+            _log_upload_result(rclone_result, expected_bytes=blend_size, label="Blend: ")
+            report.complete_upload_step(
+                bytes_transferred=_rclone_bytes(rclone_result),
+                rclone_stats=_rclone_stats(rclone_result),
+            )
             step += 1
 
             if rel_manifest:
                 logger.upload_step(step, total_steps, "Uploading dependencies")
-                report.start_upload_step(step, total_steps, "Uploading dependencies")
-                dependency_rclone_settings = ["--files-from", str(filelist)]
-                dependency_rclone_settings.extend(rclone_settings)
-                run_rclone(
-                    base_cmd,
-                    "copy",
-                    str(common_path),
-                    f":s3:{bucket}/{project_name}/",
-                    extra=dependency_rclone_settings,
-                    logger=logger,
-                    total_bytes=dependency_total_size,
-                )
-                logger.upload_complete("Dependencies uploaded")
-                report.complete_upload_step(bytes_transferred=dependency_total_size)
+                _LOG(f"Manifest: {len(rel_manifest)} files, {_format_size(dependency_total_size)} expected")
+
+                if _is_filesystem_root(common_path):
+                    # --- SPLIT PATH: filesystem root source ---
+                    _LOG(f"Project root is a filesystem root ({common_path}), splitting upload by directory")
+                    groups = _split_manifest_by_first_dir(rel_manifest)
+                    _LOG(f"Split into {len(groups)} group(s): {list(groups.keys())}")
+
+                    report.start_upload_step(
+                        step, total_steps, "Uploading dependencies",
+                        manifest_entries=len(rel_manifest),
+                        expected_bytes=dependency_total_size,
+                    )
+
+                    agg_bytes = 0
+                    agg_checks = 0
+                    agg_transfers = 0
+                    agg_errors = 0
+                    any_empty = False
+
+                    for group_name, group_entries in groups.items():
+                        if not group_entries:
+                            continue
+
+                        # Build group source and dest
+                        if group_name:
+                            group_source = common_path.rstrip("/") + "/" + group_name
+                            group_dest = f":s3:{bucket}/{project_name}/{group_name}/"
+                        else:
+                            # Files directly at root level (rare)
+                            group_source = common_path
+                            group_dest = f":s3:{bucket}/{project_name}/"
+
+                        # Write temporary filelist for this group
+                        group_filelist = Path(tempfile.gettempdir()) / f"{job_id}_g_{hash(group_name) & 0xFFFF:04x}.txt"
+                        with group_filelist.open("w", encoding="utf-8") as fp:
+                            for entry in group_entries:
+                                fp.write(f"{entry}\n")
+
+                        group_rclone = ["--files-from", str(group_filelist)]
+                        group_rclone.extend(rclone_settings)
+
+                        _LOG(f"  Group '{group_name}': {len(group_entries)} files, source={group_source}")
+                        grp_result = run_rclone(
+                            base_cmd, "copy", group_source, group_dest,
+                            extra=group_rclone, logger=logger,
+                            total_bytes=dependency_total_size,
+                        )
+
+                        # Clean up temp filelist
+                        try:
+                            group_filelist.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+
+                        # Accumulate stats
+                        agg_bytes += _rclone_bytes(grp_result)
+                        if isinstance(grp_result, dict):
+                            agg_checks += grp_result.get("checks", 0)
+                            agg_transfers += grp_result.get("transfers", 0)
+                            agg_errors += grp_result.get("errors", 0)
+                        if _is_empty_upload(grp_result, len(group_entries)):
+                            any_empty = True
+                            grp_tail = _get_rclone_tail(grp_result)
+                            _LOG(f"  WARNING: Group '{group_name}' transferred 0 files")
+                            if grp_tail:
+                                for line in grp_tail[-5:]:
+                                    _LOG(f"    {line}")
+
+                    logger.upload_complete("Dependencies uploaded")
+                    _LOG(
+                        f"  Split upload totals: "
+                        f"transferred={_format_size(agg_bytes)}, "
+                        f"checks={agg_checks}, transfers={agg_transfers}, "
+                        f"errors={agg_errors}, groups={len(groups)}"
+                    )
+                    agg_stats = {
+                        "bytes_transferred": agg_bytes,
+                        "checks": agg_checks,
+                        "transfers": agg_transfers,
+                        "errors": agg_errors,
+                        "stats_received": True,
+                        "split_groups": len(groups),
+                    }
+                    report.complete_upload_step(
+                        bytes_transferred=agg_bytes,
+                        rclone_stats=agg_stats,
+                    )
+                    if any_empty and dependency_total_size > 0:
+                        _LOG(
+                            f"WARNING: Some dependency groups transferred 0 files. "
+                            "See diagnostic report."
+                        )
+                else:
+                    # --- NORMAL PATH: non-root source (existing behavior) ---
+                    report.start_upload_step(
+                        step, total_steps, "Uploading dependencies",
+                        manifest_entries=len(rel_manifest),
+                        expected_bytes=dependency_total_size,
+                    )
+                    dependency_rclone_settings = ["--files-from", str(filelist)]
+                    dependency_rclone_settings.extend(rclone_settings)
+                    rclone_result = run_rclone(
+                        base_cmd,
+                        "copy",
+                        str(common_path),
+                        f":s3:{bucket}/{project_name}/",
+                        extra=dependency_rclone_settings,
+                        logger=logger,
+                        total_bytes=dependency_total_size,
+                    )
+                    logger.upload_complete("Dependencies uploaded")
+                    _log_upload_result(rclone_result, expected_bytes=dependency_total_size, label="Dependencies: ")
+                    stats = _rclone_stats(rclone_result)
+                    report.complete_upload_step(
+                        bytes_transferred=_rclone_bytes(rclone_result),
+                        rclone_stats=stats,
+                    )
+                    if _is_empty_upload(rclone_result, len(rel_manifest)):
+                        tail = _get_rclone_tail(rclone_result)
+                        _LOG(
+                            f"WARNING: Expected {_format_size(dependency_total_size)} "
+                            f"across {len(rel_manifest)} files, but rclone transferred 0. "
+                            "See diagnostic report for details."
+                        )
+                        if tail:
+                            _LOG("rclone tail log:")
+                            for line in tail[-10:]:
+                                _LOG(f"  {line}")
                 step += 1
 
             with filelist.open("a", encoding="utf-8") as fp:
@@ -1025,7 +1274,7 @@ def main() -> None:
 
             logger.upload_step(step, total_steps, "Uploading manifest")
             report.start_upload_step(step, total_steps, "Uploading manifest")
-            run_rclone(
+            rclone_result = run_rclone(
                 base_cmd,
                 "move",
                 str(filelist),
@@ -1034,13 +1283,16 @@ def main() -> None:
                 logger=logger,
             )
             logger.upload_complete("Manifest uploaded")
-            report.complete_upload_step()
+            report.complete_upload_step(
+                bytes_transferred=_rclone_bytes(rclone_result),
+                rclone_stats=_rclone_stats(rclone_result),
+            )
             step += 1
 
             if has_addons:
                 logger.upload_step(step, total_steps, "Uploading add-ons")
                 report.start_upload_step(step, total_steps, "Uploading add-ons")
-                run_rclone(
+                rclone_result = run_rclone(
                     base_cmd,
                     "moveto",
                     data["packed_addons_path"],
@@ -1049,7 +1301,10 @@ def main() -> None:
                     logger=logger,
                 )
                 logger.upload_complete("Add-ons uploaded")
-                report.complete_upload_step()
+                report.complete_upload_step(
+                    bytes_transferred=_rclone_bytes(rclone_result),
+                    rclone_stats=_rclone_stats(rclone_result),
+                )
 
         report.complete_stage("upload")
 

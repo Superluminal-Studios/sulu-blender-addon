@@ -25,7 +25,7 @@ class DiagnosticReport:
     - JSON schema with version field for future evolution
     """
 
-    REPORT_VERSION = "2.0"
+    REPORT_VERSION = "2.1"
     FLUSH_THRESHOLD = 50  # Flush after this many entries
 
     def __init__(
@@ -74,7 +74,7 @@ class DiagnosticReport:
                     "started_at": None,
                     "completed_at": None,
                     "entries": [],
-                    "summary": {"total": 0, "ok": 0, "missing": 0, "unreadable": 0},
+                    "summary": {"total": 0, "ok": 0, "missing": 0, "unreadable": 0, "packed": 0},
                 },
                 "pack": {
                     "started_at": None,
@@ -174,11 +174,15 @@ class DiagnosticReport:
                     ok = sum(1 for e in entries if e.get("status") == "ok")
                     missing = sum(1 for e in entries if e.get("status") == "missing")
                     unreadable = sum(1 for e in entries if e.get("status") == "unreadable")
+                    packed = sum(1 for e in entries if e.get("status") == "packed")
+                    absolute_path = sum(1 for e in entries if e.get("status") == "absolute_path")
                     self._data["stages"]["trace"]["summary"] = {
                         "total": len(entries),
                         "ok": ok,
                         "missing": missing,
                         "unreadable": unreadable,
+                        "packed": packed,
+                        "absolute_path": absolute_path,
                     }
 
                     # Populate issues section
@@ -189,6 +193,9 @@ class DiagnosticReport:
                         e.get("resolved_path", ""): e.get("error_message", "Unknown error")
                         for e in entries if e.get("status") == "unreadable"
                     }
+                    self._data["issues"]["absolute_path_files"] = [
+                        e.get("resolved_path", "") for e in entries if e.get("status") == "absolute_path"
+                    ]
 
                 # Update summary for pack stage
                 elif stage == "pack":
@@ -270,6 +277,8 @@ class DiagnosticReport:
         step_num: int,
         total_steps: int,
         title: str,
+        manifest_entries: Optional[int] = None,
+        expected_bytes: Optional[int] = None,
     ) -> None:
         """
         Start an upload step.
@@ -278,6 +287,8 @@ class DiagnosticReport:
             step_num: Current step number (1-indexed)
             total_steps: Total number of steps
             title: Step title/description
+            manifest_entries: Number of files in the manifest (for dependency uploads)
+            expected_bytes: Expected total bytes to transfer
         """
         with self._lock:
             self._current_upload_step = {
@@ -288,16 +299,87 @@ class DiagnosticReport:
                 "completed_at": None,
                 "bytes_transferred": 0,
             }
+            if manifest_entries is not None:
+                self._current_upload_step["manifest_entries"] = manifest_entries
+            if expected_bytes is not None:
+                self._current_upload_step["expected_bytes"] = expected_bytes
             self._data["stages"]["upload"]["steps"].append(self._current_upload_step)
             self._entries_since_flush += 1
             self._maybe_flush()
 
-    def complete_upload_step(self, bytes_transferred: int = 0) -> None:
-        """Complete the current upload step."""
+    def complete_upload_step(
+        self,
+        bytes_transferred: int = 0,
+        rclone_stats: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Complete the current upload step.
+
+        Args:
+            bytes_transferred: Bytes transferred during this step
+            rclone_stats: Full rclone stats dict from run_rclone() return value
+        """
         with self._lock:
             if self._current_upload_step is not None:
                 self._current_upload_step["completed_at"] = datetime.now().isoformat()
                 self._current_upload_step["bytes_transferred"] = bytes_transferred
+                if rclone_stats is not None:
+                    self._current_upload_step["rclone_stats"] = rclone_stats
+
+                    # --- Generate anomaly warnings (most specific wins) ---
+                    checks = rclone_stats.get("checks", 0) or 0
+                    transfers = rclone_stats.get("transfers", 0) or 0
+                    stats_received = rclone_stats.get("stats_received", True)
+                    expected = self._current_upload_step.get("expected_bytes")
+
+                    warning = ""
+
+                    # 1. Most fundamental: rclone emitted no stats at all
+                    if not stats_received:
+                        warning = (
+                            "rclone emitted no transfer stats — "
+                            "source path may be invalid or transfer "
+                            "completed instantly"
+                        )
+                    # 2. checks/transfers counters
+                    elif checks == 0 and transfers == 0:
+                        warning = (
+                            "rclone checked 0 files — manifest may be "
+                            "empty or source path doesn't match"
+                        )
+                    elif checks > 0 and transfers == 0:
+                        warning = (
+                            f"rclone checked {checks} files but "
+                            "transferred 0 — destination may already "
+                            "have matching files, or PUT permissions "
+                            "missing"
+                        )
+
+                    # 3. bytes_transferred vs expected_bytes mismatch
+                    if expected and expected > 0:
+                        if bytes_transferred == 0:
+                            mismatch = (
+                                f"Expected {expected} bytes but "
+                                "transferred 0 — files may not have "
+                                "been uploaded"
+                            )
+                            if warning:
+                                warning += "; " + mismatch
+                            else:
+                                warning = mismatch
+                        elif bytes_transferred < expected * 0.5:
+                            pct = bytes_transferred * 100 // expected
+                            mismatch = (
+                                f"Transferred {bytes_transferred} of "
+                                f"{expected} expected bytes ({pct}%)"
+                            )
+                            if warning:
+                                warning += "; " + mismatch
+                            else:
+                                warning = mismatch
+
+                    if warning:
+                        self._current_upload_step["warning"] = warning
                 self._current_upload_step = None
             self.flush()
 

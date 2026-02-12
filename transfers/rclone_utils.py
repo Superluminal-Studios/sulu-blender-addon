@@ -301,6 +301,8 @@ def _extract_stats_detail(obj):
         "totalBytes": int(s.get("totalBytes", 0) or 0),
         "checks": int(s.get("checks", 0) or 0),
         "transfers": int(s.get("transfers", 0) or 0),
+        "errors": int(s.get("errors", 0) or 0),
+        "elapsedTime": float(s.get("elapsedTime", 0) or 0),
         "checking": _extract_names(s.get("checking")),
         "transferring": _extract_names(s.get("transferring")),
     }
@@ -624,6 +626,12 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
     Execute rclone safely with a friendly progress display.
     Raises RuntimeError on failure (message is user-friendly, no emoji).
 
+    Returns:
+        dict: Transfer stats dict with keys: bytes_transferred, total_bytes,
+            checks, transfers, errors, elapsed_time, stats_received, tail_lines.
+            When rclone emits no stats (e.g. very fast operation or silent failure),
+            stats_received is False and numeric fields are 0.
+
     Args:
         base: Base rclone command list (exe + global flags)
         verb: rclone verb (copy, move, copyto, moveto, etc.)
@@ -701,6 +709,8 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
     progress_checks = 0
     progress_transfers = 0
     progress_status = ""  # "checking", "transferring", or ""
+    _stats_received = False  # True once at least one rclone stats line is processed
+    _last_stats_detail = None  # Last full stats dict for final return
     progress_current_file = ""
 
     # Check if logger has transfer_progress method (rich UI)
@@ -781,8 +791,10 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
 
     def _progress_update_ext(stats: dict) -> None:
         nonlocal progress_cur, progress_total, progress_checks, progress_transfers
-        nonlocal progress_status, progress_current_file
+        nonlocal progress_status, progress_current_file, _stats_received, _last_stats_detail
 
+        _stats_received = True
+        _last_stats_detail = stats
         progress_cur = stats.get("bytes", 0)
         tot = stats.get("totalBytes", 0)
         if tot and tot > 0:
@@ -823,7 +835,8 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
             _progress_render_simple()
 
     def _progress_update(cur: int, tot: Optional[int] = None) -> None:
-        nonlocal progress_cur, progress_total
+        nonlocal progress_cur, progress_total, _stats_received
+        _stats_received = True
         progress_cur = cur
         if tot and tot > 0:
             progress_total = max(progress_total, tot)
@@ -932,3 +945,27 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
                     pass
 
             raise RuntimeError(user_msg)
+
+        tail_lines = list(tail)
+
+        if not _stats_received:
+            return {
+                "bytes_transferred": 0,
+                "total_bytes": 0,
+                "checks": 0,
+                "transfers": 0,
+                "errors": 0,
+                "elapsed_time": 0,
+                "stats_received": False,
+                "tail_lines": tail_lines,
+            }
+        return {
+            "bytes_transferred": progress_cur,
+            "total_bytes": progress_total,
+            "checks": _last_stats_detail.get("checks", 0) if _last_stats_detail else 0,
+            "transfers": _last_stats_detail.get("transfers", 0) if _last_stats_detail else 0,
+            "errors": _last_stats_detail.get("errors", 0) if _last_stats_detail else 0,
+            "elapsed_time": _last_stats_detail.get("elapsedTime", 0) if _last_stats_detail else 0,
+            "stats_received": True,
+            "tail_lines": tail_lines,
+        }

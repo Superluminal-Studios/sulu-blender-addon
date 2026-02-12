@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set, Tuple
 
-from ..blender_asset_tracer import trace, bpathlib
+from ..blender_asset_tracer import trace, bpathlib, blendfile
 from ..blender_asset_tracer.pack import Packer
 from ..blender_asset_tracer.pack import zipped
 
@@ -279,6 +279,40 @@ def trace_dependencies(
                         error_msg=error_msg,
                         file_size=file_size,
                     )
+
+    # Second pass: scan visited .blend files for packed images so they appear
+    # in the diagnostic report (BAT's @skip_packed hides them from trace output).
+    if diagnostic_report is not None:
+        visited_blends: Set[Path] = {blend_path}
+        for usage in raw_usages:
+            try:
+                src = usage.block.bfile.filepath
+                if src is not None:
+                    visited_blends.add(Path(src))
+            except Exception:
+                pass
+
+        for bp in visited_blends:
+            try:
+                bf = blendfile.open_cached(bp)
+                for block in bf.find_blocks_from_code(b"IM"):
+                    if block.get(b"packedfile", default=False):
+                        name = block.id_name
+                        if isinstance(name, bytes):
+                            name = name.decode("utf-8", errors="replace")
+                            # Strip type prefix (e.g. "IMtexture.png" -> "texture.png")
+                            if len(name) >= 2 and name[:2].isupper():
+                                name = name[2:]
+                        diagnostic_report.add_trace_entry(
+                            source_blend=str(bp),
+                            block_type="Image",
+                            block_name=name or "unknown",
+                            resolved_path="(packed)",
+                            status="packed",
+                            file_size=0,
+                        )
+            except Exception:
+                pass  # Best effort — don't crash if blend can't be re-opened
 
     return deps, missing, unreadable, raw_usages, optional
 
