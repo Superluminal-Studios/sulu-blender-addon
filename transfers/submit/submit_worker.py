@@ -116,6 +116,10 @@ def _log_upload_result(result, expected_bytes: int = 0, label: str = "") -> None
 
     _LOG(f"  {label}{', '.join(parts)}")
 
+    cmd = result.get("command")
+    if cmd:
+        _LOG(f"  {label}cmd: {cmd}")
+
 
 _WIN_DRIVE_ROOT_RE = re.compile(r"^[A-Za-z]:[\\/]?$")
 
@@ -347,6 +351,7 @@ def main() -> None:
         storage_checks=storage_checks,
     )
 
+    _preflight_user_override = None  # recorded into report after it's created
     if not preflight_ok and preflight_issues:
         issue_text = "\n".join(f"• {issue}" for issue in preflight_issues)
         answer = logger.ask_choice(
@@ -359,6 +364,7 @@ def main() -> None:
         )
         if answer != "y":
             sys.exit(1)
+        _preflight_user_override = True
 
     # Optional: check for addon update
     try:
@@ -480,6 +486,10 @@ def main() -> None:
         },
     )
 
+    # Record preflight results and environment into the diagnostic report
+    report.record_preflight(preflight_ok, preflight_issues, _preflight_user_override)
+    report.set_environment("rclone_bin", str(rclone_bin))
+
     # ═══════════════════════════════════════════════════════════════════════════
     # Stage 1: Tracing — discover dependencies
     # ═══════════════════════════════════════════════════════════════════════════
@@ -557,6 +567,15 @@ def main() -> None:
         )
         common_path = str(project_root).replace("\\", "/")
         report.set_metadata("project_root", common_path)
+
+        # Determine project_root_method for the report
+        if not automatic_project_path:
+            report.set_metadata("project_root_method", "custom")
+        elif _is_filesystem_root(common_path):
+            report.set_metadata("project_root_method", "filesystem_root")
+        else:
+            report.set_metadata("project_root_method", "automatic")
+
         if _is_filesystem_root(common_path):
             _LOG(
                 f"NOTE: Project root is a filesystem root ({common_path}). "
@@ -718,6 +737,10 @@ def main() -> None:
                 ],
                 default="y",
             )
+            report.record_user_choice(
+                "Dependency issues found", answer,
+                options=["Continue", "Cancel", "Open reports"],
+            )
             if answer == "r":
                 logger.report_info(str(report.get_path()))
                 open_folder(str(report.get_reports_dir()), logger_instance=logger)
@@ -728,6 +751,10 @@ def main() -> None:
                         ("n", "Cancel", "Cancel and close"),
                     ],
                     default="y",
+                )
+                report.record_user_choice(
+                    "Continue after viewing reports?", answer,
+                    options=["Continue", "Cancel"],
                 )
             if answer != "y":
                 report.set_status("cancelled")
@@ -810,6 +837,7 @@ def main() -> None:
             total_size=required_storage,
             title="Manifest complete",
         )
+        report.set_pack_dependency_size(dependency_total_size)
         report.complete_stage("pack")
 
     else:  # ZIP mode
@@ -826,6 +854,7 @@ def main() -> None:
         )
         project_root_str = str(project_root).replace("\\", "/")
         report.set_metadata("project_root", project_root_str)
+        report.set_metadata("project_root_method", "automatic")
         if cross_drive_deps:
             report.add_cross_drive_files([str(p) for p in cross_drive_deps])
 
@@ -870,6 +899,10 @@ def main() -> None:
                 ],
                 default="y",
             )
+            report.record_user_choice(
+                "Dependency issues found", answer,
+                options=["Continue", "Cancel", "Open reports"],
+            )
             if answer == "r":
                 logger.report_info(str(report.get_path()))
                 open_folder(str(report.get_reports_dir()), logger_instance=logger)
@@ -880,6 +913,10 @@ def main() -> None:
                         ("n", "Cancel", "Cancel and close"),
                     ],
                     default="y",
+                )
+                report.record_user_choice(
+                    "Continue after viewing reports?", answer,
+                    options=["Continue", "Cancel"],
                 )
             if answer != "y":
                 report.set_status("cancelled")
@@ -1067,7 +1104,13 @@ def main() -> None:
             logger.upload_start(total_steps)
 
             logger.upload_step(step, total_steps, "Uploading archive")
-            report.start_upload_step(step, total_steps, "Uploading archive")
+            report.start_upload_step(
+                step, total_steps, "Uploading archive",
+                expected_bytes=required_storage,
+                source=str(zip_file),
+                destination=f":s3:{bucket}/",
+                verb="move",
+            )
             rclone_result = run_rclone(
                 base_cmd,
                 "move",
@@ -1086,7 +1129,12 @@ def main() -> None:
 
             if has_addons:
                 logger.upload_step(step, total_steps, "Uploading add-ons")
-                report.start_upload_step(step, total_steps, "Uploading add-ons")
+                report.start_upload_step(
+                    step, total_steps, "Uploading add-ons",
+                    source=data["packed_addons_path"],
+                    destination=f":s3:{bucket}/{job_id}/addons/",
+                    verb="moveto",
+                )
                 rclone_result = run_rclone(
                     base_cmd,
                     "moveto",
@@ -1096,6 +1144,7 @@ def main() -> None:
                     logger=logger,
                 )
                 logger.upload_complete("Add-ons uploaded")
+                _log_upload_result(rclone_result, label="Add-ons: ")
                 report.complete_upload_step(
                     bytes_transferred=_rclone_bytes(rclone_result),
                     rclone_stats=_rclone_stats(rclone_result),
@@ -1117,9 +1166,15 @@ def main() -> None:
             except:
                 pass
             logger.upload_step(step, total_steps, "Uploading main blend")
-            report.start_upload_step(step, total_steps, "Uploading main blend")
             move_to_path = _nfc(_s3key_clean(f"{project_name}/{main_blend_s3}"))
             remote_main = f":s3:{bucket}/{move_to_path}"
+            report.start_upload_step(
+                step, total_steps, "Uploading main blend",
+                expected_bytes=blend_size,
+                source=blend_path,
+                destination=remote_main,
+                verb="copyto",
+            )
             rclone_result = run_rclone(
                 base_cmd,
                 "copyto",
@@ -1147,9 +1202,12 @@ def main() -> None:
                     _LOG(f"Split into {len(groups)} group(s): {list(groups.keys())}")
 
                     report.start_upload_step(
-                        step, total_steps, "Uploading dependencies",
+                        step, total_steps, "Uploading dependencies (split)",
                         manifest_entries=len(rel_manifest),
                         expected_bytes=dependency_total_size,
+                        source=common_path,
+                        destination=f":s3:{bucket}/{project_name}/",
+                        verb="copy",
                     )
 
                     agg_bytes = 0
@@ -1185,6 +1243,14 @@ def main() -> None:
                             base_cmd, "copy", group_source, group_dest,
                             extra=group_rclone, logger=logger,
                             total_bytes=dependency_total_size,
+                        )
+                        _log_upload_result(grp_result, label=f"  Group '{group_name}': ")
+                        report.add_upload_split_group(
+                            group_name=group_name or "(root)",
+                            file_count=len(group_entries),
+                            source=group_source,
+                            destination=group_dest,
+                            rclone_stats=_rclone_stats(grp_result),
                         )
 
                         # Clean up temp filelist
@@ -1237,6 +1303,9 @@ def main() -> None:
                         step, total_steps, "Uploading dependencies",
                         manifest_entries=len(rel_manifest),
                         expected_bytes=dependency_total_size,
+                        source=str(common_path),
+                        destination=f":s3:{bucket}/{project_name}/",
+                        verb="copy",
                     )
                     dependency_rclone_settings = ["--files-from", str(filelist)]
                     dependency_rclone_settings.extend(rclone_settings)
@@ -1273,7 +1342,12 @@ def main() -> None:
                 fp.write(_nfc(_s3key_clean(main_blend_s3)) + "\n")
 
             logger.upload_step(step, total_steps, "Uploading manifest")
-            report.start_upload_step(step, total_steps, "Uploading manifest")
+            report.start_upload_step(
+                step, total_steps, "Uploading manifest",
+                source=str(filelist),
+                destination=f":s3:{bucket}/{project_name}/",
+                verb="move",
+            )
             rclone_result = run_rclone(
                 base_cmd,
                 "move",
@@ -1283,6 +1357,7 @@ def main() -> None:
                 logger=logger,
             )
             logger.upload_complete("Manifest uploaded")
+            _log_upload_result(rclone_result, label="Manifest: ")
             report.complete_upload_step(
                 bytes_transferred=_rclone_bytes(rclone_result),
                 rclone_stats=_rclone_stats(rclone_result),
@@ -1291,7 +1366,12 @@ def main() -> None:
 
             if has_addons:
                 logger.upload_step(step, total_steps, "Uploading add-ons")
-                report.start_upload_step(step, total_steps, "Uploading add-ons")
+                report.start_upload_step(
+                    step, total_steps, "Uploading add-ons",
+                    source=data["packed_addons_path"],
+                    destination=f":s3:{bucket}/{job_id}/addons/",
+                    verb="moveto",
+                )
                 rclone_result = run_rclone(
                     base_cmd,
                     "moveto",
@@ -1301,6 +1381,7 @@ def main() -> None:
                     logger=logger,
                 )
                 logger.upload_complete("Add-ons uploaded")
+                _log_upload_result(rclone_result, label="Add-ons: ")
                 report.complete_upload_step(
                     bytes_transferred=_rclone_bytes(rclone_result),
                     rclone_stats=_rclone_stats(rclone_result),

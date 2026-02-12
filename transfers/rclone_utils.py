@@ -486,6 +486,30 @@ def _pick_technical_line(tail_lines: List[str]) -> str:
     return ""
 
 
+_SENSITIVE_FLAGS = frozenset({
+    "--s3-access-key-id",
+    "--s3-secret-access-key",
+    "--s3-session-token",
+})
+
+
+def _redact_cmd(cmd: list) -> str:
+    """Return a shell-style string with credential values masked."""
+    parts = []
+    skip_next = False
+    for i, tok in enumerate(cmd):
+        if skip_next:
+            parts.append("***")
+            skip_next = False
+            continue
+        if tok in _SENSITIVE_FLAGS and i + 1 < len(cmd):
+            parts.append(tok)
+            skip_next = True
+            continue
+        parts.append(tok)
+    return " ".join(parts)
+
+
 def _classify_failure(
     verb: str, src: str, dst: str, exit_code: int, tail_lines: List[str]
 ) -> Tuple[str, str]:
@@ -947,6 +971,7 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
             raise RuntimeError(user_msg)
 
         tail_lines = list(tail)
+        redacted_cmd = _redact_cmd(cmd)
 
         if not _stats_received:
             return {
@@ -958,6 +983,7 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
                 "elapsed_time": 0,
                 "stats_received": False,
                 "tail_lines": tail_lines,
+                "command": redacted_cmd,
             }
         return {
             "bytes_transferred": progress_cur,
@@ -968,4 +994,5 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
             "elapsed_time": _last_stats_detail.get("elapsedTime", 0) if _last_stats_detail else 0,
             "stats_received": True,
             "tail_lines": tail_lines,
+            "command": redacted_cmd,
         }

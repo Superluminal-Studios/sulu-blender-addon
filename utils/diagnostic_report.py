@@ -9,10 +9,18 @@ from __future__ import annotations
 
 import json
 import os
+import platform
+import sys
 import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+
+# Maximum tail_lines stored per upload step in the report JSON.
+# rclone_utils keeps up to 160 lines in memory; we only persist the last N
+# to avoid bloating the report file.
+_MAX_TAIL_LINES = 20
 
 
 class DiagnosticReport:
@@ -25,7 +33,7 @@ class DiagnosticReport:
     - JSON schema with version field for future evolution
     """
 
-    REPORT_VERSION = "2.1"
+    REPORT_VERSION = "3.0"
     FLUSH_THRESHOLD = 50  # Flush after this many entries
 
     def __init__(
@@ -63,31 +71,62 @@ class DiagnosticReport:
                 "source_blend": "",
                 "upload_type": "",
                 "project_root": "",
+                "project_root_method": "",  # "automatic", "custom", "filesystem_root"
                 "blender_version": "",
                 "addon_version": [],
                 "started_at": datetime.now().isoformat(),
                 "completed_at": None,
                 "status": "in_progress",
             },
+            "environment": {
+                "os": platform.system(),
+                "os_version": platform.version(),
+                "python_version": platform.python_version(),
+                "architecture": platform.machine(),
+                "rclone_version": "",
+            },
+            "preflight": {
+                "passed": None,
+                "issues": [],
+                "user_override": None,  # True if user continued despite issues
+            },
             "stages": {
                 "trace": {
                     "started_at": None,
                     "completed_at": None,
                     "entries": [],
-                    "summary": {"total": 0, "ok": 0, "missing": 0, "unreadable": 0, "packed": 0},
+                    "summary": {
+                        "total": 0, "ok": 0, "missing": 0,
+                        "unreadable": 0, "packed": 0,
+                        "total_size_bytes": 0,
+                    },
                 },
                 "pack": {
                     "started_at": None,
                     "completed_at": None,
                     "entries": [],
-                    "summary": {"files_packed": 0, "total_size": 0},
+                    "summary": {
+                        "files_packed": 0,
+                        "total_size": 0,
+                        "dependency_total_size": 0,
+                    },
                 },
                 "upload": {
                     "started_at": None,
                     "completed_at": None,
                     "steps": [],
+                    "summary": {
+                        "total_bytes_transferred": 0,
+                        "total_checks": 0,
+                        "total_transfers": 0,
+                        "total_errors": 0,
+                        "total_elapsed_seconds": 0.0,
+                        "step_count": 0,
+                        "has_warnings": False,
+                    },
                 },
             },
+            "user_choices": [],
             "issues": {
                 "missing_files": [],
                 "unreadable_files": {},
@@ -154,6 +193,47 @@ class DiagnosticReport:
             self._entries_since_flush += 1
             self._maybe_flush()
 
+    def set_environment(self, key: str, value: Any) -> None:
+        """Set an environment field (e.g., rclone_version)."""
+        with self._lock:
+            self._data["environment"][key] = value
+            self._entries_since_flush += 1
+            self._maybe_flush()
+
+    def record_preflight(
+        self,
+        passed: bool,
+        issues: List[str],
+        user_override: Optional[bool] = None,
+    ) -> None:
+        """Record preflight check results."""
+        with self._lock:
+            self._data["preflight"]["passed"] = passed
+            self._data["preflight"]["issues"] = issues
+            if user_override is not None:
+                self._data["preflight"]["user_override"] = user_override
+            self._entries_since_flush += 1
+            self._maybe_flush()
+
+    def record_user_choice(
+        self,
+        prompt: str,
+        choice: str,
+        options: Optional[List[str]] = None,
+    ) -> None:
+        """Record a user decision point (e.g., continuing despite warnings)."""
+        with self._lock:
+            entry: Dict[str, Any] = {
+                "timestamp": datetime.now().isoformat(),
+                "prompt": prompt,
+                "choice": choice,
+            }
+            if options:
+                entry["options"] = options
+            self._data["user_choices"].append(entry)
+            self._entries_since_flush += 1
+            self._maybe_flush()
+
     def start_stage(self, stage: str) -> None:
         """Start a new stage (trace, pack, upload)."""
         with self._lock:
@@ -176,6 +256,7 @@ class DiagnosticReport:
                     unreadable = sum(1 for e in entries if e.get("status") == "unreadable")
                     packed = sum(1 for e in entries if e.get("status") == "packed")
                     absolute_path = sum(1 for e in entries if e.get("status") == "absolute_path")
+                    total_size = sum(e.get("file_size", 0) for e in entries)
                     self._data["stages"]["trace"]["summary"] = {
                         "total": len(entries),
                         "ok": ok,
@@ -183,6 +264,7 @@ class DiagnosticReport:
                         "unreadable": unreadable,
                         "packed": packed,
                         "absolute_path": absolute_path,
+                        "total_size_bytes": total_size,
                     }
 
                     # Populate issues section
@@ -201,9 +283,38 @@ class DiagnosticReport:
                 elif stage == "pack":
                     entries = self._data["stages"]["pack"]["entries"]
                     total_size = sum(e.get("file_size", 0) for e in entries)
-                    self._data["stages"]["pack"]["summary"] = {
-                        "files_packed": len(entries),
-                        "total_size": total_size,
+                    self._data["stages"]["pack"]["summary"]["files_packed"] = len(entries)
+                    self._data["stages"]["pack"]["summary"]["total_size"] = total_size
+
+                # Compute upload summary across all steps
+                elif stage == "upload":
+                    steps = self._data["stages"]["upload"]["steps"]
+                    total_bytes = 0
+                    total_checks = 0
+                    total_transfers = 0
+                    total_errors = 0
+                    total_elapsed = 0.0
+                    has_warnings = False
+
+                    for step in steps:
+                        total_bytes += step.get("bytes_transferred", 0)
+                        if step.get("warning"):
+                            has_warnings = True
+                        total_elapsed += step.get("elapsed_seconds", 0)
+                        stats = step.get("rclone_stats")
+                        if stats:
+                            total_checks += stats.get("checks", 0) or 0
+                            total_transfers += stats.get("transfers", 0) or 0
+                            total_errors += stats.get("errors", 0) or 0
+
+                    self._data["stages"]["upload"]["summary"] = {
+                        "total_bytes_transferred": total_bytes,
+                        "total_checks": total_checks,
+                        "total_transfers": total_transfers,
+                        "total_errors": total_errors,
+                        "total_elapsed_seconds": round(total_elapsed, 3),
+                        "step_count": len(steps),
+                        "has_warnings": has_warnings,
                     }
 
             self._current_stage = None
@@ -272,6 +383,13 @@ class DiagnosticReport:
             self._entries_since_flush += 1
             self._maybe_flush()
 
+    def set_pack_dependency_size(self, size_bytes: int) -> None:
+        """Record the total dependency size (excluding main blend) in the pack summary."""
+        with self._lock:
+            self._data["stages"]["pack"]["summary"]["dependency_total_size"] = size_bytes
+            self._entries_since_flush += 1
+            self._maybe_flush()
+
     def start_upload_step(
         self,
         step_num: int,
@@ -279,6 +397,9 @@ class DiagnosticReport:
         title: str,
         manifest_entries: Optional[int] = None,
         expected_bytes: Optional[int] = None,
+        source: Optional[str] = None,
+        destination: Optional[str] = None,
+        verb: Optional[str] = None,
     ) -> None:
         """
         Start an upload step.
@@ -289,6 +410,9 @@ class DiagnosticReport:
             title: Step title/description
             manifest_entries: Number of files in the manifest (for dependency uploads)
             expected_bytes: Expected total bytes to transfer
+            source: Local source path or file
+            destination: Remote destination (S3 key / bucket path)
+            verb: rclone verb (copy, move, copyto, moveto)
         """
         with self._lock:
             self._current_upload_step = {
@@ -297,12 +421,19 @@ class DiagnosticReport:
                 "title": title,
                 "started_at": datetime.now().isoformat(),
                 "completed_at": None,
+                "elapsed_seconds": 0,
                 "bytes_transferred": 0,
             }
             if manifest_entries is not None:
                 self._current_upload_step["manifest_entries"] = manifest_entries
             if expected_bytes is not None:
                 self._current_upload_step["expected_bytes"] = expected_bytes
+            if source is not None:
+                self._current_upload_step["source"] = source
+            if destination is not None:
+                self._current_upload_step["destination"] = destination
+            if verb is not None:
+                self._current_upload_step["verb"] = verb
             self._data["stages"]["upload"]["steps"].append(self._current_upload_step)
             self._entries_since_flush += 1
             self._maybe_flush()
@@ -321,10 +452,30 @@ class DiagnosticReport:
         """
         with self._lock:
             if self._current_upload_step is not None:
-                self._current_upload_step["completed_at"] = datetime.now().isoformat()
+                now = datetime.now()
+                self._current_upload_step["completed_at"] = now.isoformat()
                 self._current_upload_step["bytes_transferred"] = bytes_transferred
+
+                # Compute elapsed seconds
+                try:
+                    started = datetime.fromisoformat(
+                        self._current_upload_step["started_at"]
+                    )
+                    self._current_upload_step["elapsed_seconds"] = round(
+                        (now - started).total_seconds(), 3
+                    )
+                except Exception:
+                    pass
+
                 if rclone_stats is not None:
-                    self._current_upload_step["rclone_stats"] = rclone_stats
+                    # Truncate tail_lines before persisting to keep report lean
+                    stats_to_store = dict(rclone_stats)
+                    tail = stats_to_store.get("tail_lines")
+                    if isinstance(tail, (list, tuple)) and len(tail) > _MAX_TAIL_LINES:
+                        stats_to_store["tail_lines"] = list(tail[-_MAX_TAIL_LINES:])
+                        stats_to_store["tail_lines_truncated"] = True
+
+                    self._current_upload_step["rclone_stats"] = stats_to_store
 
                     # --- Generate anomaly warnings (most specific wins) ---
                     checks = rclone_stats.get("checks", 0) or 0
@@ -382,6 +533,42 @@ class DiagnosticReport:
                         self._current_upload_step["warning"] = warning
                 self._current_upload_step = None
             self.flush()
+
+    def add_upload_split_group(
+        self,
+        group_name: str,
+        file_count: int,
+        source: str,
+        destination: str,
+        rclone_stats: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Record details of a single split-upload group within the current upload step.
+
+        Call this during the split-upload loop, before complete_upload_step().
+        The groups are stored as a list inside the current upload step.
+        """
+        with self._lock:
+            if self._current_upload_step is None:
+                return
+            groups = self._current_upload_step.setdefault("split_groups", [])
+            entry: Dict[str, Any] = {
+                "group_name": group_name,
+                "file_count": file_count,
+                "source": source,
+                "destination": destination,
+            }
+            if rclone_stats is not None:
+                entry["bytes_transferred"] = rclone_stats.get("bytes_transferred", 0)
+                entry["checks"] = rclone_stats.get("checks", 0) or 0
+                entry["transfers"] = rclone_stats.get("transfers", 0) or 0
+                entry["errors"] = rclone_stats.get("errors", 0) or 0
+                entry["stats_received"] = rclone_stats.get("stats_received", True)
+                if not entry["stats_received"] or entry["transfers"] == 0:
+                    entry["warning"] = "group transferred 0 files"
+            groups.append(entry)
+            self._entries_since_flush += 1
+            self._maybe_flush()
 
     def add_cross_drive_files(self, files: List[str]) -> None:
         """Add cross-drive files to the issues section."""
