@@ -11,7 +11,7 @@ ADDON_NAME = "SuperluminalRender"
 
 EXCLUDE = {
     # directories
-    "__pycache__", ".git", ".github", ".claude", "tests", "reports", "releases", "rclone",
+    "__pycache__", ".pytest_cache", ".git", ".github", ".claude", "tests", "reports", "releases", "rclone",
     # files
     ".gitignore", ".gitkeep", ".gitattributes",
     "README.md", "CLAUDE.md",
