@@ -26,6 +26,7 @@ import importlib
 import json
 import os
 import re
+import subprocess
 import sys
 import shutil
 import tempfile
@@ -142,6 +143,21 @@ def _is_filesystem_root(path: str) -> bool:
     if re.match(r"^/media/[^/]+/[^/]+$", p):
         return True
     return False
+
+
+_RISKY_CHARS = set("()'\"` &|;$!#")
+
+
+def _check_risky_path_chars(path_str: str) -> Optional[str]:
+    """Return a warning string if *path_str* contains shell-risky characters, else None."""
+    found = set(c for c in path_str if c in _RISKY_CHARS)
+    if found:
+        chars = " ".join(repr(c) for c in sorted(found))
+        return (
+            f"Path contains special characters ({chars}) that may cause "
+            f"issues on the render farm: {path_str}"
+        )
+    return None
 
 
 def _split_manifest_by_first_dir(rel_manifest):
@@ -486,9 +502,22 @@ def main() -> None:
         },
     )
 
+    # Check for path characters that may cause farm-side issues
+    _path_warn = _check_risky_path_chars(blend_path)
+    if _path_warn:
+        preflight_issues.append(_path_warn)
+
     # Record preflight results and environment into the diagnostic report
     report.record_preflight(preflight_ok, preflight_issues, _preflight_user_override)
     report.set_environment("rclone_bin", str(rclone_bin))
+    try:
+        _ver_out = subprocess.check_output(
+            [str(rclone_bin), "--version"], timeout=5, text=True
+        )
+        _rclone_ver = _ver_out.strip().splitlines()[0] if _ver_out.strip() else ""
+        report.set_environment("rclone_version", _rclone_ver)
+    except Exception:
+        pass
 
     # ═══════════════════════════════════════════════════════════════════════════
     # Stage 1: Tracing — discover dependencies
@@ -984,9 +1013,11 @@ def main() -> None:
         abs_blend_norm = _norm_abs_for_detection(blend_path)
 
         _zip_started = False
+        _zip_dep_size = 0
 
         def _on_zip_entry(idx, total, arcname, size, method):
-            nonlocal _zip_started
+            nonlocal _zip_started, _zip_dep_size
+            _zip_dep_size += size
             if not _zip_started:
                 logger.zip_start(total, 0)
                 _zip_started = True
@@ -1020,6 +1051,7 @@ def main() -> None:
         rel_manifest = []
         common_path = ""
         main_blend_s3 = ""
+        report.set_pack_dependency_size(_zip_dep_size)
         report.complete_stage("pack")
 
     # NO_SUBMIT MODE

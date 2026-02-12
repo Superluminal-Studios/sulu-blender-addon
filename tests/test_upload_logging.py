@@ -1231,5 +1231,80 @@ class TestReportVersionAndMetadata(unittest.TestCase):
             self.assertIn("absolute_path_files", data["issues"])
 
 
+# ═════════════════════════════════════════════════════════════════════════
+#  17. _check_risky_path_chars
+# ═════════════════════════════════════════════════════════════════════════
+
+
+class TestCheckRiskyPathChars(unittest.TestCase):
+    """Test preflight warning for shell-risky path characters."""
+
+    def setUp(self):
+        self._check = _submit_worker._check_risky_path_chars
+
+    def test_parens_detected(self):
+        """Parentheses in path should produce a warning."""
+        result = self._check("G:/Dropbox (Compte personnel)/project/file.blend")
+        self.assertIsNotNone(result)
+        self.assertIn("'('", result)
+        self.assertIn("')'", result)
+        self.assertIn("special characters", result)
+
+    def test_apostrophe_detected(self):
+        """Apostrophe in path should produce a warning."""
+        result = self._check("/home/user/Grog's-Hideout/scene.blend")
+        self.assertIsNotNone(result)
+        self.assertIn("\"'\"", result)
+
+    def test_space_detected(self):
+        """Spaces in path should produce a warning."""
+        result = self._check("C:/Users/My User/project/file.blend")
+        self.assertIsNotNone(result)
+        self.assertIn("' '", result)
+
+    def test_clean_path_no_warning(self):
+        """Path without risky characters should return None."""
+        result = self._check("/home/user/projects/my_project/scene.blend")
+        self.assertIsNone(result)
+
+    def test_multiple_risky_chars(self):
+        """Path with multiple risky characters should list all of them."""
+        result = self._check("C:/Dropbox (Personal)/Grog's $project/file.blend")
+        self.assertIsNotNone(result)
+        self.assertIn("'('", result)
+        self.assertIn("')'", result)
+        self.assertIn("\"'\"", result)
+        self.assertIn("'$'", result)
+
+    def test_empty_path(self):
+        """Empty path should return None."""
+        result = self._check("")
+        self.assertIsNone(result)
+
+    def test_windows_backslash_path(self):
+        """Backslashes are normal on Windows and should NOT be flagged."""
+        result = self._check("C:\\Users\\artist\\project\\file.blend")
+        self.assertIsNone(result)
+
+    def test_all_risky_chars(self):
+        """Each risky character individually should be detected."""
+        for char in "()'\"` &|;$!#":
+            result = self._check(f"/path/with{char}char/file.blend")
+            self.assertIsNotNone(result, f"Character {char!r} should be detected")
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  18. _RISKY_CHARS constant
+# ═════════════════════════════════════════════════════════════════════════
+
+
+class TestRiskyCharsConstant(unittest.TestCase):
+    """Verify _RISKY_CHARS contains the expected characters."""
+
+    def test_expected_chars(self):
+        expected = set("()'\"` &|;$!#")
+        self.assertEqual(_submit_worker._RISKY_CHARS, expected)
+
+
 if __name__ == "__main__":
     unittest.main()

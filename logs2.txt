@@ -1,0 +1,3355 @@
+{
+  "report_version": "3.0",
+  "metadata": {
+    "job_id": "7d8087f1-76a8-400a-a709-83f18eb70dbb",
+    "job_name": "Grog-Fortress",
+    "source_blend": "G:/Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/Grog-Fortress.blend",
+    "upload_type": "ZIP",
+    "project_root": "G:/",
+    "project_root_method": "automatic",
+    "blender_version": "blender44",
+    "addon_version": [
+      1,
+      0,
+      0
+    ],
+    "started_at": "2026-02-12T01:44:26.616862",
+    "completed_at": "2026-02-12T01:46:24.281452",
+    "status": "completed",
+    "device_type": "1x-RTX4090-8CPU-32RAM",
+    "start_frame": 10,
+    "end_frame": 150
+  },
+  "environment": {
+    "os": "Windows",
+    "os_version": "10.0.26100",
+    "python_version": "3.11.11",
+    "architecture": "AMD64",
+    "rclone_version": "",
+    "rclone_bin": "C:\\Users\\Admin\\AppData\\Roaming\\Blender Foundation\\Blender\\4.4\\scripts\\addons\\SuperluminalRender\\transfers\\rclone\\windows-amd64\\rclone.exe"
+  },
+  "preflight": {
+    "passed": true,
+    "issues": [],
+    "user_override": null
+  },
+  "stages": {
+    "trace": {
+      "started_at": "2026-02-12T01:44:26.621418",
+      "completed_at": "2026-02-12T01:44:36.366682",
+      "entries": [
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Ground.001.modifiers[1]",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Ground.002.modifiers[1]",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Sphere.001.modifiers[1]",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Sphere.002.modifiers[1]",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Sphere.003.modifiers[1]",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Sphere.004.modifiers[1]",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Sphere.005.modifiers[1]",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Sphere.009.modifiers[1]",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Sphere.013.modifiers[1]",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Sphere.015.modifiers[1]",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Sphere.017.modifiers[1]",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Sphere.018.modifiers[1]",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Volume",
+          "block_name": "cirrostratus_21",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\volumes\\cirrostratus_21.vdb",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 2054111
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "35mm Course.mp4",
+          "resolved_path": "G:\\Dropbox (Personal)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Christo_Hunt\\rendering_files\\VAST_SHARE\\GRAIN SOURCES\\35mm Course.mp4",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 180618198
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "35MM_FINE_CLEAN_H264_FREE.mov",
+          "resolved_path": "G:\\Dropbox (Personal)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Christo_Hunt\\rendering_files\\VAST_SHARE\\GRAIN SOURCES\\35MM_FINE_CLEAN_H264_FREE.mov",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 35512323
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "37-Kling_03_square.mp4.001",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Production-Videos\\37-Kling_03_square.mp4",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 6038380
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "44-kling_v2.mov",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Production-Videos\\45_kling_v3.mov",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 2830447
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Clipboard",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Clipboard.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1331017
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Grog's-Hideout.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Grog's-Hideout.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 77877
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "MASK",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\MASK.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 215314
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Noise_dusty_01.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Noise_dusty_01.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 33707286
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Noise_growth_01.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Noise_growth_01.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 7276283
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Noise_growth_02.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Noise_growth_02.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 16721942
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Noise_leaking_01.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Noise_leaking_01.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 11139457
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Noise_leaking_02.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Noise_leaking_02.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 18929518
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Noise_peeling_01.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Noise_peeling_01.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 33715325
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Noise_peeling_04.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Noise_peeling_04.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 16067301
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Noise_scratches_01.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Noise_scratches_01.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 15769214
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Noise_scratches_02.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Noise_scratches_02.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 17830974
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Noise_stylized_01.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Noise_stylized_01.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 8037533
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "Noise_stylized_02.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\Noise_stylized_02.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 8093846
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "rock_moss_set_01_diff_2k.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\rock_moss_set_01_diff_2k.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 649415
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "rock_moss_set_01_nor_gl_2k.exr",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\rock_moss_set_01_nor_gl_2k.exr",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 6882427
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "rock_moss_set_01_rough_2k.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\rock_moss_set_01_rough_2k.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 293827
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "scnmokp_2K_Albedo.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\scnmokp_2K_Albedo.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1624980
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "scnmokp_2K_Normal.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\scnmokp_2K_Normal.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 4855466
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "scnmokp_2K_Roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\scnmokp_2K_Roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1466371
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "T_GroundGravel_D.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\T_GroundGravel_D.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 2781402
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "T_GroundGravel_N.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\T_GroundGravel_N.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 17218967
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "T_GroundGravel_ORM.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\T_GroundGravel_ORM.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 2788596
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "T_GroundGravel_R.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\T_GroundGravel_R.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1137295
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "ucdmcawdy_2K_Displacement.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Displacement.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 749362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "ucdmcawdy_2K_Normal.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Normal.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 6757211
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "ucdmcawdy_2K_Roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_2K_Roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1322146
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "ucdmcawdy_4K_Albedo_2.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\ucdmcawdy_4K_Albedo_2.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 637565
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Image",
+          "block_name": "wckqdbvs_2K_Albedo.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\textures\\wckqdbvs_2K_Albedo.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 3452742
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Library",
+          "block_name": "character_crowd_boys.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 67637787
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Library",
+          "block_name": "character_crowd_carol.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 32391371
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Library",
+          "block_name": "character_crowd_child.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 47210649
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Library",
+          "block_name": "character_crowd_Grog.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 45487924
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Library",
+          "block_name": "character_crowd_man.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_man.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 165768340
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Library",
+          "block_name": "character_crowd_soldier.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 20582387
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Library",
+          "block_name": "character_crowd_tammy.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 58370881
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Library",
+          "block_name": "character_crowd_woman.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 20107203
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Library",
+          "block_name": "crowd_materials.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 651285
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Enviro\\Grog-Fortress.blend",
+          "block_type": "Library",
+          "block_name": "crowd_props.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_props.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 23400604
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "dirt_face_01",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\dirt_face_01.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 173846
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "stache",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\stache.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 152151
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Skin_Head_Diffuse_boys.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1558487
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Library",
+          "block_name": "crowd_materials.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 651285
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Belt_ao.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Belt_ao.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 702058
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Belt_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Belt_Diffuse.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 2463400
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Belt_metallic.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Belt_metallic.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 344092
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Belt_Normal",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Belt_Normal.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 4389707
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Belt_roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Belt_roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 7781830
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Cornea_L_ao.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Cornea_L_ao.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 27619
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Eye_L_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Eye_L_Diffuse.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 283012
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Eye_R_Opacity",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Eye_R_Opacity.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 5362
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Eye_R_roughness.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Eye_R_roughness.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 54988
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Eyelash_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Eyelash_Diffuse.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 885
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Eyelash_Opacity.001",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Eyelash_Opacity.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 308406
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Lower_Teeth_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Lower_Teeth_Diffuse.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 356378
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Nails_Diffuse.001",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Nails_Diffuse.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 163474
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Tongue_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Tongue_Diffuse.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 254680
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Tongue_roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Tongue_roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 94583
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Upper_Teeth_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Upper_Teeth_Diffuse.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 334817
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "book_pattern_col1_2k.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\book_pattern_col1_2k.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 9194174
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "book_pattern_nor_gl_2k.exr",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\book_pattern_nor_gl_2k.exr",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 6949275
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "book_pattern_rough_2k.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\book_pattern_rough_2k.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 2134733
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Eye_R_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Eye_R_Diffuse.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 73812
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "scnmokp_2K_Albedo.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\scnmokp_2K_Albedo.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1624980
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "scnmokp_2K_Normal.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\scnmokp_2K_Normal.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 4855466
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "scnmokp_2K_Roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\scnmokp_2K_Roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1466371
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Library",
+          "block_name": "crowd_materials.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 651285
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Axe_Right_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Axe_Right_Diffuse.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 626224
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Axe_Right_metallic.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Axe_Right_metallic.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 515933
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Axe_Right_roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Axe_Right_roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 639345
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Bracer_L_ao.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Bracer_L_ao.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 343857
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Bracer_L_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Bracer_L_Diffuse.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 4531816
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Bracer_L_Normal",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Bracer_L_Normal.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 3145459
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Bracer_L_roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Bracer_L_roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1387602
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Painted_metal_02_2K_Roughness.png.001",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Painted_metal_02_2K_Roughness.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 3119813
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "fabric_pattern_07_nor_gl_2k.exr",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\fabric_pattern_07_nor_gl_2k.exr",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 6636872
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "fabric_pattern_07_rough_2k.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\fabric_pattern_07_rough_2k.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1657764
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "leather_red_02_coll1_2k.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\leather_red_02_coll1_2k.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 8759781
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "leather_red_02_nor_gl_2k.exr",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\leather_red_02_nor_gl_2k.exr",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 8821761
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "leather_red_02_rough_2k.exr",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\leather_red_02_rough_2k.exr",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 5095649
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "dirt_face_01",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\dirt_face_01.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 173846
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Library",
+          "block_name": "crowd_materials.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 651285
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Boots_ao.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Boots_ao.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 789024
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Boots_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Boots_Diffuse.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 6034064
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Boots_metallic.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Boots_metallic.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 217749
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Boots_Normal",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Boots_Normal.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 3160382
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Boots_roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Boots_roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 6562523
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Bracer_L_ao.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Bracer_L_ao.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 343857
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Bracer_L_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Bracer_L_Diffuse.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 4531816
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Bracer_L_metallic.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Bracer_L_metallic.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 210806
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Bracer_L_Normal",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Bracer_L_Normal.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 3145459
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Bracer_L_roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Bracer_L_roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1387602
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Bracer_R_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Bracer_R_Diffuse.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1881696
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Bracer_R_Normal",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Bracer_R_Normal.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 3135859
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Bracer_R_roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Bracer_R_roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1387825
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Library",
+          "block_name": "crowd_materials.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 651285
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Arm_Wraps_L_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Arm_Wraps_L_Diffuse.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1821983
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Arm_Wraps_L_Normal",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Arm_Wraps_L_Normal.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 4596496
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_man.blend",
+          "block_type": "Image",
+          "block_name": "Beard_Transparency_Transparency_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\Gary\\textures\\Beard_Transparency_Transparency_Diffuse.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 3576527
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_man.blend",
+          "block_type": "Image",
+          "block_name": "Beard_Transparency_Transparency_Opacity_",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\Gary\\textures\\Beard_Transparency_Transparency_Opacity.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1063939
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_man.blend",
+          "block_type": "Image",
+          "block_name": "gary_cloth_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\Gary\\textures\\gary_cloth_Diffuse_v2.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 18175694
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_man.blend",
+          "block_type": "Image",
+          "block_name": "gary_cloth_roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\Gary\\textures\\gary_cloth_roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 2681971
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_man.blend",
+          "block_type": "Image",
+          "block_name": "Grog_wounds.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Grog_wounds.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 389511
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_man.blend",
+          "block_type": "Image",
+          "block_name": "Old_Sparse_Transparency_Transparency_Transparency_Trans_5befd88",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\Gary\\textures\\Old_Sparse_Transparency_Transparency_Transparency_Transparency_Opacity.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 340102
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_man.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Diffuse.004",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\Gary\\textures\\Std_Skin_Head_Diffuse.004.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 376730
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_man.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Diffuse_dead_body_1.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Skin_Head_Diffuse_dead_body_1.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 324497
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_man.blend",
+          "block_type": "Library",
+          "block_name": "crowd_materials.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 651285
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_man.blend",
+          "block_type": "Library",
+          "block_name": "crowd_props.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_props.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 23400604
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_props.blend",
+          "block_type": "Image",
+          "block_name": "TexturesCom_WoodPlanksOld0258_2_seamless_S.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\TexturesCom_WoodPlanksOld0258_2_seamless_S.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 491382
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_props.blend",
+          "block_type": "Image",
+          "block_name": "Wood_planks_dark_color_2K.jpg.011",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Wood_planks_dark_color_2K_2.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 222046
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_props.blend",
+          "block_type": "Image",
+          "block_name": "Wood_planks_normal_2K.jpg.011",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Wood_planks_normal_2K_2.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 156752
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_props.blend",
+          "block_type": "Image",
+          "block_name": "Wood_planks_rough_2K.jpg.011",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Wood_planks_rough_2K_2.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 158509
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_props.blend",
+          "block_type": "Library",
+          "block_name": "crowd_materials.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 651285
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Grog_wounds.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Grog_wounds.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 389511
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Skin_Head_Diffuse_soldier.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 287914
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Library",
+          "block_name": "crowd_materials.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 651285
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Library",
+          "block_name": "crowd_props.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_props.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 23400604
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Slave_Shoes_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Slave_Shoes_Diffuse.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 4243084
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Slave_Shoes_roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Slave_Shoes_roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 2657000
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Library",
+          "block_name": "crowd_materials.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 651285
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Std_Eyelash_Opacity",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Std_Eyelash_Opacity.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 69664
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "block_type": "Image",
+          "block_name": "dirt_face_01.png",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\dirt_face_01.png",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 173846
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "block_type": "Library",
+          "block_name": "crowd_materials.blend",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 651285
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Vest_Armor_Diffuse",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Vest_Armor_Diffuse.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 2854262
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Vest_Armor_metallic.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Vest_Armor_metallic.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 1142353
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Vest_Armor_Normal",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Vest_Armor_Normal.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 2066107
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\crowd_materials.blend",
+          "block_type": "Image",
+          "block_name": "Vest_Armor_roughness.jpg",
+          "resolved_path": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\textures\\Vest_Armor_roughness.jpg",
+          "status": "ok",
+          "error_message": null,
+          "file_size": 4532885
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_Vest_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_Vest_metallic.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_Vest_Normal",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_Vest_roughness.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_0_ao.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_0_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_0_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_ao.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Shoulder_Right_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Shoulder_Right_metallic.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Shoulder_Right_Normal",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Shoulder_Right_roughness.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_NBMap.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Normal",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_roughness.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_SSSMap.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_carol.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_TransMap.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "alpha grog chainmail",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Beard_Transparency_0_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Beard_Transparency_0_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Beard_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Beard_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "blood grog stomach",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail004_1K-JPG_Color.jpg.001",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail004_1K-JPG_Metalness.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail004_1K-JPG_NormalGL.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail004_1K-JPG_Opacity.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail004_1K-JPG_Roughness.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_001_ambientOcclusion.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_001_basecolor.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_001_height.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_001_metallic.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_001_normal.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_001_opacity.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_001_roughness.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "eye grog bleed",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Grog_PO_01.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Grog_wounds",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Male_Sword_Base_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Male_Sword_Base_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Male_Sword_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Male_Sword_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Shoulder_Armor_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Shoulder_Armor_Normal",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_NBMap.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_roughness.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_SSSMap.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_TransMap.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_Grog.blend",
+          "block_type": "Image",
+          "block_name": "TexturesCom_WoodPlanksOld0258_2_seamless_S.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_ao.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Diffuse.001",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Opacity.001",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_Opacity.001",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "scnmokp_2K_Albedo.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "scnmokp_2K_Normal.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "scnmokp_2K_Roughness.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Diffuse.001",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Normal",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_roughness.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_child.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_roughness.png.001",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "block_type": "Image",
+          "block_name": "BabyHair_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_0_ao.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_0_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_0_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_2_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_ao.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_woman.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_roughness.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "BabyHair_Transparency_ao.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_Vest_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_Vest_metallic.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_Vest_Normal",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Chainmail_Vest_roughness.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_1_ao.jpg.002",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_1_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_1_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_2_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_2_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_ao.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_0_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_0_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_Diffuse.001",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_Opacity.001",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Skirt_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Skirt_Normal",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Skirt_roughness.jpg.001",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Normal",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_tammy.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_roughness.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_man.blend",
+          "block_type": "Image",
+          "block_name": "HairStripDepth.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Arm_Wraps_Diffuse.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Arm_Wraps_L_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Arm_Wraps_L_Normal",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Arm_Wraps_L_roughness.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Arm_Wraps_Opacity.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Specular",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "HairStripDepth.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Diffuse.001",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Normal",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_Normal.001",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_roughness.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_roughness.png.001",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_SSSMap.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_boys.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_TransMap.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Beard_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Beard_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_metallic.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Hair_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "HairStripDepth.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Male_Sword_Base_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Male_Sword_Base_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Male_Sword_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Male_Sword_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_Diffuse",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Scalp_Transparency_Opacity",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_NBMap.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_roughness.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_SSSMap.jpg",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        },
+        {
+          "source_blend": "G:\\Dropbox (Compte personnel)\\FREELANCE\\WORK\\OnePixelBrush\\A-Project-OPB-ANIMATION\\_CCA_Grog-Conspiracy\\Characters\\_Crowd\\character_crowd_soldier.blend",
+          "block_type": "Image",
+          "block_name": "Std_Skin_Head_TransMap.png",
+          "resolved_path": "(packed)",
+          "status": "packed",
+          "error_message": null,
+          "file_size": 0
+        }
+      ],
+      "summary": {
+        "total": 283,
+        "ok": 144,
+        "missing": 0,
+        "unreadable": 0,
+        "packed": 139,
+        "absolute_path": 0,
+        "total_size_bytes": 1188633401
+      }
+    },
+    "pack": {
+      "started_at": "2026-02-12T01:44:36.378168",
+      "completed_at": "2026-02-12T01:44:39.624416",
+      "entries": [
+        {
+          "src_path": "pack-info.txt",
+          "dest_key": "pack-info.txt",
+          "file_size": 215,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/Grog-Fortress.blend",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/Grog-Fortress.blend",
+          "file_size": 76808195,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/ucdmcawdy_2K_Displacement.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/ucdmcawdy_2K_Displacement.jpg",
+          "file_size": 749362,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/volumes/cirrostratus_21.vdb",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/volumes/cirrostratus_21.vdb",
+          "file_size": 2054111,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Personal)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Christo_Hunt/rendering_files/VAST_SHARE/GRAIN SOURCES/35mm Course.mp4",
+          "dest_key": "Dropbox (Personal)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Christo_Hunt/rendering_files/VAST_SHARE/GRAIN SOURCES/35mm Course.mp4",
+          "file_size": 180618198,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Personal)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Christo_Hunt/rendering_files/VAST_SHARE/GRAIN SOURCES/35MM_FINE_CLEAN_H264_FREE.mov",
+          "dest_key": "Dropbox (Personal)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Christo_Hunt/rendering_files/VAST_SHARE/GRAIN SOURCES/35MM_FINE_CLEAN_H264_FREE.mov",
+          "file_size": 35512323,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Production-Videos/37-Kling_03_square.mp4",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Production-Videos/37-Kling_03_square.mp4",
+          "file_size": 6038380,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Production-Videos/45_kling_v3.mov",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Production-Videos/45_kling_v3.mov",
+          "file_size": 2830447,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Clipboard.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Clipboard.png",
+          "file_size": 1331017,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Grog's-Hideout.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Grog's-Hideout.jpg",
+          "file_size": 77877,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/MASK.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/MASK.png",
+          "file_size": 215314,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_dusty_01.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_dusty_01.png",
+          "file_size": 33707286,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_growth_01.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_growth_01.png",
+          "file_size": 7276283,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_growth_02.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_growth_02.png",
+          "file_size": 16721942,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_leaking_01.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_leaking_01.png",
+          "file_size": 11139457,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_leaking_02.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_leaking_02.png",
+          "file_size": 18929518,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_peeling_01.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_peeling_01.png",
+          "file_size": 33715325,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_peeling_04.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_peeling_04.png",
+          "file_size": 16067301,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_scratches_01.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_scratches_01.png",
+          "file_size": 15769214,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_scratches_02.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_scratches_02.png",
+          "file_size": 17830974,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_stylized_01.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_stylized_01.png",
+          "file_size": 8037533,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_stylized_02.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/Noise_stylized_02.png",
+          "file_size": 8093846,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/rock_moss_set_01_diff_2k.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/rock_moss_set_01_diff_2k.jpg",
+          "file_size": 649415,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/rock_moss_set_01_nor_gl_2k.exr",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/rock_moss_set_01_nor_gl_2k.exr",
+          "file_size": 6882427,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/rock_moss_set_01_rough_2k.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/rock_moss_set_01_rough_2k.jpg",
+          "file_size": 293827,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/scnmokp_2K_Albedo.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/scnmokp_2K_Albedo.jpg",
+          "file_size": 1624980,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/scnmokp_2K_Normal.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/scnmokp_2K_Normal.jpg",
+          "file_size": 4855466,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/scnmokp_2K_Roughness.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/scnmokp_2K_Roughness.jpg",
+          "file_size": 1466371,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/T_GroundGravel_D.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/T_GroundGravel_D.png",
+          "file_size": 2781402,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/T_GroundGravel_N.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/T_GroundGravel_N.png",
+          "file_size": 17218967,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/T_GroundGravel_ORM.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/T_GroundGravel_ORM.png",
+          "file_size": 2788596,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/T_GroundGravel_R.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/T_GroundGravel_R.png",
+          "file_size": 1137295,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/ucdmcawdy_2K_Normal.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/ucdmcawdy_2K_Normal.jpg",
+          "file_size": 6757211,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/ucdmcawdy_2K_Roughness.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/ucdmcawdy_2K_Roughness.jpg",
+          "file_size": 1322146,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/ucdmcawdy_4K_Albedo_2.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/ucdmcawdy_4K_Albedo_2.jpg",
+          "file_size": 637565,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/wckqdbvs_2K_Albedo.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Enviro/textures/wckqdbvs_2K_Albedo.jpg",
+          "file_size": 3452742,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_boys.blend",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_boys.blend",
+          "file_size": 67637787,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_carol.blend",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_carol.blend",
+          "file_size": 32391371,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_child.blend",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_child.blend",
+          "file_size": 47210649,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_Grog.blend",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_Grog.blend",
+          "file_size": 45487924,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_man.blend",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_man.blend",
+          "file_size": 165768340,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_soldier.blend",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_soldier.blend",
+          "file_size": 20582387,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_tammy.blend",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_tammy.blend",
+          "file_size": 58370881,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_woman.blend",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/character_crowd_woman.blend",
+          "file_size": 20107203,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/crowd_materials.blend",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/crowd_materials.blend",
+          "file_size": 651285,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/crowd_props.blend",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/crowd_props.blend",
+          "file_size": 23400604,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/dirt_face_01.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/dirt_face_01.png",
+          "file_size": 173846,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/stache.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/stache.png",
+          "file_size": 152151,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Skin_Head_Diffuse_boys.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Skin_Head_Diffuse_boys.png",
+          "file_size": 1558487,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Belt_ao.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Belt_ao.jpg",
+          "file_size": 702058,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Belt_Diffuse.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Belt_Diffuse.jpg",
+          "file_size": 2463400,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Belt_metallic.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Belt_metallic.jpg",
+          "file_size": 344092,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Belt_Normal.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Belt_Normal.jpg",
+          "file_size": 4389707,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Belt_roughness.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Belt_roughness.jpg",
+          "file_size": 7781830,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Cornea_L_ao.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Cornea_L_ao.jpg",
+          "file_size": 27619,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eye_L_Diffuse.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eye_L_Diffuse.jpg",
+          "file_size": 283012,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eye_R_Opacity.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eye_R_Opacity.png",
+          "file_size": 5362,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eye_R_roughness.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eye_R_roughness.png",
+          "file_size": 54988,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eyelash_Diffuse.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eyelash_Diffuse.jpg",
+          "file_size": 885,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eyelash_Opacity.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eyelash_Opacity.png",
+          "file_size": 308406,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Lower_Teeth_Diffuse.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Lower_Teeth_Diffuse.png",
+          "file_size": 356378,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Nails_Diffuse.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Nails_Diffuse.png",
+          "file_size": 163474,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Tongue_Diffuse.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Tongue_Diffuse.png",
+          "file_size": 254680,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Tongue_roughness.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Tongue_roughness.jpg",
+          "file_size": 94583,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Upper_Teeth_Diffuse.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Upper_Teeth_Diffuse.png",
+          "file_size": 334817,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/book_pattern_col1_2k.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/book_pattern_col1_2k.png",
+          "file_size": 9194174,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/book_pattern_nor_gl_2k.exr",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/book_pattern_nor_gl_2k.exr",
+          "file_size": 6949275,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/book_pattern_rough_2k.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/book_pattern_rough_2k.jpg",
+          "file_size": 2134733,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eye_R_Diffuse.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eye_R_Diffuse.png",
+          "file_size": 73812,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/scnmokp_2K_Albedo.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/scnmokp_2K_Albedo.jpg",
+          "file_size": 1624980,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/scnmokp_2K_Normal.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/scnmokp_2K_Normal.jpg",
+          "file_size": 4855466,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/scnmokp_2K_Roughness.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/scnmokp_2K_Roughness.jpg",
+          "file_size": 1466371,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Axe_Right_Diffuse.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Axe_Right_Diffuse.jpg",
+          "file_size": 626224,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Axe_Right_metallic.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Axe_Right_metallic.jpg",
+          "file_size": 515933,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Axe_Right_roughness.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Axe_Right_roughness.jpg",
+          "file_size": 639345,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_L_ao.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_L_ao.jpg",
+          "file_size": 343857,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_L_Diffuse.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_L_Diffuse.jpg",
+          "file_size": 4531816,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_L_Normal.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_L_Normal.jpg",
+          "file_size": 3145459,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_L_roughness.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_L_roughness.jpg",
+          "file_size": 1387602,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Painted_metal_02_2K_Roughness.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Painted_metal_02_2K_Roughness.png",
+          "file_size": 3119813,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/fabric_pattern_07_nor_gl_2k.exr",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/fabric_pattern_07_nor_gl_2k.exr",
+          "file_size": 6636872,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/fabric_pattern_07_rough_2k.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/fabric_pattern_07_rough_2k.jpg",
+          "file_size": 1657764,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/leather_red_02_coll1_2k.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/leather_red_02_coll1_2k.png",
+          "file_size": 8759781,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/leather_red_02_nor_gl_2k.exr",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/leather_red_02_nor_gl_2k.exr",
+          "file_size": 8821761,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/leather_red_02_rough_2k.exr",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/leather_red_02_rough_2k.exr",
+          "file_size": 5095649,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Boots_ao.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Boots_ao.jpg",
+          "file_size": 789024,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Boots_Diffuse.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Boots_Diffuse.jpg",
+          "file_size": 6034064,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Boots_metallic.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Boots_metallic.jpg",
+          "file_size": 217749,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Boots_Normal.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Boots_Normal.jpg",
+          "file_size": 3160382,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Boots_roughness.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Boots_roughness.jpg",
+          "file_size": 6562523,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_L_metallic.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_L_metallic.jpg",
+          "file_size": 210806,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_R_Diffuse.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_R_Diffuse.jpg",
+          "file_size": 1881696,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_R_Normal.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_R_Normal.jpg",
+          "file_size": 3135859,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_R_roughness.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Bracer_R_roughness.jpg",
+          "file_size": 1387825,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Arm_Wraps_L_Diffuse.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Arm_Wraps_L_Diffuse.jpg",
+          "file_size": 1821983,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Arm_Wraps_L_Normal.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Arm_Wraps_L_Normal.jpg",
+          "file_size": 4596496,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/Gary/textures/Beard_Transparency_Transparency_Diffuse.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/Gary/textures/Beard_Transparency_Transparency_Diffuse.png",
+          "file_size": 3576527,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/Gary/textures/Beard_Transparency_Transparency_Opacity.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/Gary/textures/Beard_Transparency_Transparency_Opacity.jpg",
+          "file_size": 1063939,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/Gary/textures/gary_cloth_Diffuse_v2.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/Gary/textures/gary_cloth_Diffuse_v2.png",
+          "file_size": 18175694,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/Gary/textures/gary_cloth_roughness.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/Gary/textures/gary_cloth_roughness.jpg",
+          "file_size": 2681971,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Grog_wounds.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Grog_wounds.png",
+          "file_size": 389511,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/Gary/textures/Old_Sparse_Transparency_Transparency_Transparency_Transparency_Opacity.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/Gary/textures/Old_Sparse_Transparency_Transparency_Transparency_Transparency_Opacity.jpg",
+          "file_size": 340102,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/Gary/textures/Std_Skin_Head_Diffuse.004.png",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/Gary/textures/Std_Skin_Head_Diffuse.004.png",
+          "file_size": 376730,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Skin_Head_Diffuse_dead_body_1.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Skin_Head_Diffuse_dead_body_1.jpg",
+          "file_size": 324497,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/TexturesCom_WoodPlanksOld0258_2_seamless_S.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/TexturesCom_WoodPlanksOld0258_2_seamless_S.jpg",
+          "file_size": 491382,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Wood_planks_dark_color_2K_2.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Wood_planks_dark_color_2K_2.jpg",
+          "file_size": 222046,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Wood_planks_normal_2K_2.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Wood_planks_normal_2K_2.jpg",
+          "file_size": 156752,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Wood_planks_rough_2K_2.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Wood_planks_rough_2K_2.jpg",
+          "file_size": 158509,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Skin_Head_Diffuse_soldier.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Skin_Head_Diffuse_soldier.jpg",
+          "file_size": 287914,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Slave_Shoes_Diffuse.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Slave_Shoes_Diffuse.jpg",
+          "file_size": 4243084,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Slave_Shoes_roughness.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Slave_Shoes_roughness.jpg",
+          "file_size": 2657000,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eyelash_Opacity.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Std_Eyelash_Opacity.jpg",
+          "file_size": 69664,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Vest_Armor_Diffuse.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Vest_Armor_Diffuse.jpg",
+          "file_size": 2854262,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Vest_Armor_metallic.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Vest_Armor_metallic.jpg",
+          "file_size": 1142353,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Vest_Armor_Normal.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Vest_Armor_Normal.jpg",
+          "file_size": 2066107,
+          "status": "ok"
+        },
+        {
+          "src_path": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Vest_Armor_roughness.jpg",
+          "dest_key": "Dropbox (Compte personnel)/FREELANCE/WORK/OnePixelBrush/A-Project-OPB-ANIMATION/_CCA_Grog-Conspiracy/Characters/_Crowd/textures/Vest_Armor_roughness.jpg",
+          "file_size": 4532885,
+          "status": "ok"
+        }
+      ],
+      "summary": {
+        "files_packed": 116,
+        "total_size": 1193640757,
+        "dependency_total_size": 0
+      }
+    },
+    "upload": {
+      "started_at": "2026-02-12T01:44:39.635704",
+      "completed_at": "2026-02-12T01:46:23.349761",
+      "steps": [
+        {
+          "step": 1,
+          "total": 1,
+          "title": "Uploading archive",
+          "started_at": "2026-02-12T01:44:39.886666",
+          "completed_at": "2026-02-12T01:46:23.329256",
+          "elapsed_seconds": 103.443,
+          "bytes_transferred": 1020351352,
+          "expected_bytes": 1008653176,
+          "source": "C:\\Users\\Admin\\AppData\\Local\\Temp\\7d8087f1-76a8-400a-a709-83f18eb70dbb.zip",
+          "destination": ":s3:render-vmgi/",
+          "verb": "move",
+          "rclone_stats": {
+            "bytes_transferred": 1020351352,
+            "total_bytes": 1020351352,
+            "checks": 1,
+            "transfers": 1,
+            "errors": 0,
+            "elapsed_time": 102.9587304,
+            "stats_received": true,
+            "tail_lines": [
+              "notice: Config file \"C:\\\\Users\\\\Admin\\\\AppData\\\\Roaming\\\\rclone\\\\rclone.conf\" not found - using defaults"
+            ],
+            "command": "C:\\Users\\Admin\\AppData\\Roaming\\Blender Foundation\\Blender\\4.4\\scripts\\addons\\SuperluminalRender\\transfers\\rclone\\windows-amd64\\rclone.exe move C:/Users/Admin/AppData/Local/Temp/7d8087f1-76a8-400a-a709-83f18eb70dbb.zip :s3:render-vmgi/ --local-unicode-normalization --transfers 4 --checkers 4 --s3-chunk-size 64M --s3-upload-concurrency 4 --buffer-size 64M --retries 20 --low-level-retries 20 --retries-sleep 5s --timeout 5m --stats 0.1s --stats=0.1s --use-json-log --stats-log-level NOTICE --s3-endpoint https://f09fa628d989ddd93cbe3bf7f7935591.r2.cloudflarestorage.com --s3-access-key-id *** --s3-secret-access-key *** --s3-session-token *** --s3-provider Cloudflare --s3-env-auth --s3-region auto --s3-no-check-bucket"
+          }
+        }
+      ],
+      "summary": {
+        "total_bytes_transferred": 1020351352,
+        "total_checks": 1,
+        "total_transfers": 1,
+        "total_errors": 0,
+        "total_elapsed_seconds": 103.443,
+        "step_count": 1,
+        "has_warnings": false
+      }
+    }
+  },
+  "user_choices": [],
+  "issues": {
+    "missing_files": [],
+    "unreadable_files": {},
+    "cross_drive_files": [],
+    "absolute_path_files": []
+  }
+}
