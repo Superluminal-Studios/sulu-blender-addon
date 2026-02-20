@@ -11,7 +11,6 @@ from pathlib import Path
 from bpy.props import EnumProperty, IntProperty, BoolProperty
 import os
 
-# from ...utils.check_file_outputs import gather_render_outputs
 from ...utils.worker_utils import launch_in_terminal
 from .addon_packer import bundle_addons
 from ...constants import POCKETBASE_URL, FARM_IP
