@@ -112,6 +112,10 @@ def refresh_jobs_collection(prefs):
         it.blender_version  = job.get("blender_version", "")
         it.type             = "Zip" if job.get("zip", True) else "Project"
 
+        it.submission_time_raw = job.get("submit_time") or 0.0
+        it.started_time_raw    = job.get("start_time") or 0.0
+        it.finished_time_raw   = job.get("end_time") or 0.0
+
 
 class SuperluminalJobItem(bpy.types.PropertyGroup):
     id:               bpy.props.StringProperty()
@@ -126,6 +130,10 @@ class SuperluminalJobItem(bpy.types.PropertyGroup):
     finished_frames:  bpy.props.IntProperty()
     blender_version:  bpy.props.StringProperty()
     type:             bpy.props.StringProperty()
+
+    submission_time_raw: bpy.props.FloatProperty()
+    started_time_raw:    bpy.props.FloatProperty()
+    finished_time_raw:   bpy.props.FloatProperty()
 
 
 class SUPERLUMINAL_MT_job_columns(bpy.types.Menu):
@@ -166,9 +174,12 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
         ascending = prefs.sort_ascending
 
         # Create list of (index, sort_value) pairs
+        _TIME_COLS = {"submission_time", "started_time", "finished_time"}
+
         def get_sort_key(item):
+            if sort_col in _TIME_COLS:
+                return getattr(item, sort_col + "_raw", 0.0)
             val = getattr(item, sort_col, "")
-            # Handle different types for proper sorting
             if isinstance(val, str):
                 return val.casefold()
             return val
