@@ -421,6 +421,48 @@ def compute_project_root(
     return blend_dir, same_drive_paths, cross_drive_paths
 
 
+def classify_out_of_root_ok_files(
+    dependency_paths: List[Path],
+    project_root: Path,
+    *,
+    missing_files: Optional[Set[Path]] = None,
+    unreadable_files: Optional[Dict[Path, str]] = None,
+    optional_files: Optional[Set[Path]] = None,
+) -> List[Path]:
+    """
+    Return readable, required dependencies that are outside *project_root*.
+
+    This is used by Project uploads to explain why some valid files were
+    intentionally excluded from the manifest/upload set.
+    """
+    missing_norm = {_norm_path(str(p)) for p in (missing_files or set())}
+    unreadable_norm = {_norm_path(str(p)) for p in (unreadable_files or {}).keys()}
+    optional_norm = {_norm_path(str(p)) for p in (optional_files or set())}
+    excluded_norm = missing_norm | unreadable_norm | optional_norm
+
+    root_norm = _norm_path(str(project_root))
+    outside: List[Path] = []
+    seen_norm: Set[str] = set()
+
+    for dep in dependency_paths:
+        dep_norm = _norm_path(str(dep))
+        if dep_norm in excluded_norm:
+            continue
+
+        # Keep files whose normalized path is not inside the selected root.
+        try:
+            rel = os.path.relpath(dep_norm, start=root_norm).replace("\\", "/")
+        except Exception:
+            rel = dep_norm
+        is_inside = rel == "." or not rel.startswith("../")
+
+        if not is_inside and dep_norm not in seen_norm:
+            outside.append(dep)
+            seen_norm.add(dep_norm)
+
+    return outside
+
+
 def create_packer(
     bpath: Path,
     ppath: Path,

@@ -542,6 +542,7 @@ class SubmitLogger:
         unreadable_files: Optional[List[Tuple[str, str]]] = None,
         cross_drive_files: Optional[List[str]] = None,
         absolute_path_files: Optional[List[str]] = None,
+        out_of_root_files: Optional[List[str]] = None,
         shorten_fn: Optional[Callable[[str], str]] = None,
         automatic_project_path: bool = True,
     ) -> None:
@@ -556,6 +557,7 @@ class SubmitLogger:
             unreadable_files: List of (path, error_msg) tuples.
             cross_drive_files: List of cross-drive file paths.
             absolute_path_files: List of files with absolute paths in blend (won't work on farm).
+            out_of_root_files: List of dependencies outside selected project root (excluded in Project mode).
             shorten_fn: Optional function to shorten paths for display.
             automatic_project_path: True if path was auto-detected, False if custom.
         """
@@ -567,9 +569,14 @@ class SubmitLogger:
         unreadable_files = unreadable_files or []
         cross_drive_files = cross_drive_files or []
         absolute_path_files = absolute_path_files or []
+        out_of_root_files = out_of_root_files or []
 
         has_issues = bool(
-            missing > 0 or unreadable > 0 or (cross_drive_excluded and cross_drive > 0) or absolute_path_files
+            missing > 0
+            or unreadable > 0
+            or (cross_drive_excluded and cross_drive > 0)
+            or absolute_path_files
+            or out_of_root_files
         )
 
         if self.console and Text is not None and Table is not None:
@@ -734,6 +741,45 @@ class SubmitLogger:
                     )
                     body.add_row(abs_panel)
 
+                # Dependencies outside selected project root (excluded in Project mode)
+                if out_of_root_files:
+                    if (
+                        missing_files
+                        or unreadable_files
+                        or (cross_drive_excluded and cross_drive_files)
+                        or absolute_path_files
+                    ):
+                        body.add_row(Text(""))  # spacer
+
+                    outside_title = Text()
+                    outside_title.append(f"{GLYPH_INFO} ", style="sulu.accent")
+                    outside_title.append(
+                        f"{_count(len(out_of_root_files), 'dependency')} outside selected project root (not included)",
+                        style="sulu.muted",
+                    )
+
+                    outside_body = Text()
+                    for i, p in enumerate(out_of_root_files[:10]):
+                        if i > 0:
+                            outside_body.append("\n")
+                        outside_body.append(f"{GLYPH_BULLET} ", style="sulu.dim")
+                        outside_body.append(_sh(str(p)), style="sulu.fg")
+                    if len(out_of_root_files) > 10:
+                        outside_body.append("\n")
+                        outside_body.append(
+                            f"   {ELLIPSIS} and {len(out_of_root_files) - 10} more",
+                            style="sulu.dim",
+                        )
+
+                    outside_panel = self._panel(
+                        outside_body,
+                        title=outside_title,
+                        border_style="sulu.stroke",
+                        style="sulu.well",
+                        padding=(0, 1),
+                    )
+                    body.add_row(outside_panel)
+
             # Warning/help text
             if warning_text:
                 body.add_row(Text(""))  # spacer
@@ -790,6 +836,14 @@ class SubmitLogger:
                     self._log_fn(f"  - {_sh(str(p))}")
                 if len(absolute_path_files) > 10:
                     self._log_fn(f"  ... and {len(absolute_path_files) - 10} more")
+            if out_of_root_files:
+                self._log_fn(
+                    f"Dependencies outside selected project root ({len(out_of_root_files)}) - excluded:"
+                )
+                for p in out_of_root_files[:10]:
+                    self._log_fn(f"  - {_sh(str(p))}")
+                if len(out_of_root_files) > 10:
+                    self._log_fn(f"  ... and {len(out_of_root_files) - 10} more")
             if warning_text:
                 self._log_fn(warning_text)
 

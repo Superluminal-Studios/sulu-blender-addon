@@ -1279,6 +1279,33 @@ class TestReportVersionAndMetadata(unittest.TestCase):
             self.assertIn("unreadable_files", data["issues"])
             self.assertIn("cross_drive_files", data["issues"])
             self.assertIn("absolute_path_files", data["issues"])
+            self.assertIn("out_of_root_files", data["issues"])
+
+    def test_out_of_root_files_recording(self):
+        """out_of_root_files should be recorded and persisted."""
+        with tempfile.TemporaryDirectory() as d:
+            report = _diagnostic_report.DiagnosticReport(
+                reports_dir=Path(d), job_id="oor-test", blend_name="test",
+            )
+            report.add_out_of_root_files(
+                [
+                    "/Users/me/Library/CloudStorage/Dropbox/Textures/a.jpg",
+                    "/Users/me/Library/Application Support/Blender Studio Tools/maps/b.exr",
+                ]
+            )
+            report.finalize()
+
+            with open(report.get_path(), "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            self.assertEqual(
+                len(data["issues"]["out_of_root_files"]),
+                2,
+            )
+            self.assertIn(
+                "/Users/me/Library/CloudStorage/Dropbox/Textures/a.jpg",
+                data["issues"]["out_of_root_files"],
+            )
 
 
 # ═════════════════════════════════════════════════════════════════════════

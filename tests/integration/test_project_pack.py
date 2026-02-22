@@ -40,6 +40,7 @@ from tests.fixtures import (
     create_cross_drive_project,
     create_nightmare_scenario,
 )
+from utils.bat_utils import classify_out_of_root_ok_files
 
 # Try to import BAT - some tests require it
 try:
@@ -171,6 +172,21 @@ class TestPathComputationWithFixtures(unittest.TestCase):
                     is_s3_safe(cleaned_dep),
                     f"Nightmare dep not safe: {dep} → {cleaned_dep}"
                 )
+
+    def test_out_of_root_dependencies_are_classified(self):
+        """Project mode should identify readable deps outside selected root."""
+        with create_simple_project() as fixture:
+            with tempfile.TemporaryDirectory() as outside_dir:
+                outside_dep = Path(outside_dir) / "outside_texture.jpg"
+                outside_dep.write_bytes(b"fake")
+
+                deps = list(fixture.dependencies) + [outside_dep]
+                outside = classify_out_of_root_ok_files(deps, fixture.root)
+                outside_str = {str(p) for p in outside}
+
+                self.assertIn(str(outside_dep), outside_str)
+                for inside_dep in fixture.dependencies:
+                    self.assertNotIn(str(inside_dep), outside_str)
 
 
 @unittest.skipUnless(HAS_BAT, "BAT not available")

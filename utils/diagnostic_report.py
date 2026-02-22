@@ -132,6 +132,7 @@ class DiagnosticReport:
                 "unreadable_files": {},
                 "cross_drive_files": [],
                 "absolute_path_files": [],
+                "out_of_root_files": [],
             },
         }
 
@@ -590,6 +591,13 @@ class DiagnosticReport:
         """Add absolute path files to the issues section."""
         with self._lock:
             self._data["issues"]["absolute_path_files"] = files
+            self._entries_since_flush += 1
+            self._maybe_flush()
+
+    def add_out_of_root_files(self, files: List[str]) -> None:
+        """Add files that are outside the selected project root."""
+        with self._lock:
+            self._data["issues"]["out_of_root_files"] = files
             self._entries_since_flush += 1
             self._maybe_flush()
 

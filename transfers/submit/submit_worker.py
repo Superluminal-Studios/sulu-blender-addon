@@ -280,6 +280,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     pack_blend = bat_utils.pack_blend
     trace_dependencies = bat_utils.trace_dependencies
     compute_project_root = bat_utils.compute_project_root
+    classify_out_of_root_ok_files = bat_utils.classify_out_of_root_ok_files
 
     cloud_files = importlib.import_module(f"{pkg_name}.utils.cloud_files")
 
@@ -308,6 +309,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "pack_blend": pack_blend,
         "trace_dependencies": trace_dependencies,
         "compute_project_root": compute_project_root,
+        "classify_out_of_root_ok_files": classify_out_of_root_ok_files,
         "cloud_files": cloud_files,
         "create_logger": create_logger,
         "run_rclone": run_rclone,
@@ -334,6 +336,7 @@ def main() -> None:
     pack_blend = mods["pack_blend"]
     trace_dependencies = mods["trace_dependencies"]
     compute_project_root = mods["compute_project_root"]
+    classify_out_of_root_ok_files = mods["classify_out_of_root_ok_files"]
     cloud_files = mods["cloud_files"]
     create_logger = mods["create_logger"]
     run_rclone = mods["run_rclone"]
@@ -610,6 +613,9 @@ def main() -> None:
             unreadable_files=unreadable_dict,
             optional_files=optional_set,
         )
+        out_of_root_ok_files = classify_out_of_root_ok_files(
+            same_drive_deps, project_root
+        )
         common_path = str(project_root).replace("\\", "/")
         report.set_metadata("project_root", common_path)
 
@@ -630,6 +636,8 @@ def main() -> None:
             report.add_cross_drive_files([str(p) for p in cross_drive_deps])
         if absolute_path_deps:
             report.add_absolute_path_files([str(p) for p in absolute_path_deps])
+        if out_of_root_ok_files:
+            report.add_out_of_root_files([str(p) for p in out_of_root_ok_files])
 
         # Build warning text for issues
         missing_files_list = [str(p) for p in sorted(missing_set)]
@@ -638,11 +646,13 @@ def main() -> None:
             for p, err in sorted(unreadable_dict.items(), key=lambda x: str(x[0]))
         ]
         absolute_path_files_list = [str(p) for p in sorted(absolute_path_deps)]
+        out_of_root_files_list = [str(p) for p in sorted(out_of_root_ok_files)]
         has_issues = bool(
             cross_drive_deps
             or missing_files_list
             or unreadable_files_list
             or absolute_path_deps
+            or out_of_root_files_list
         )
 
         warning_text = None
@@ -661,6 +671,10 @@ def main() -> None:
             if unreadable_files_list:
                 parts.append(
                     f"{_count(len(unreadable_files_list), 'dependency')} not readable"
+                )
+            if out_of_root_files_list:
+                parts.append(
+                    f"{_count(len(out_of_root_files_list), 'dependency')} outside selected project root (not included)"
                 )
 
             mac_extra = ""
@@ -690,6 +704,12 @@ def main() -> None:
                     "Use Zip upload, or move files to the project drive."
                 )
 
+            if out_of_root_files_list:
+                warning_parts.append(
+                    "Some dependencies are outside the selected project root and are excluded from Project upload. "
+                    "Use Zip upload, or broaden Custom Project Path."
+                )
+
             if (
                 (missing_files_list or unreadable_files_list)
                 and not absolute_path_deps
@@ -713,6 +733,7 @@ def main() -> None:
             unreadable_files=unreadable_files_list,
             cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
             absolute_path_files=absolute_path_files_list,
+            out_of_root_files=out_of_root_files_list,
             shorten_fn=shorten_path,
             automatic_project_path=automatic_project_path,
         )
