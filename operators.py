@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import bpy
-from operator import setitem
 import webbrowser
 import time
 import platform
@@ -11,16 +10,17 @@ from .constants import POCKETBASE_URL
 from .pocketbase_auth import (
     AuthorizationError,
     NotAuthenticated,
-    ResourceNotFound,
     UpstreamServiceError,
     TransportError,
 )
 from .storage import Storage
 from .utils.request_utils import (
-    fetch_projects,
     get_render_queue_key,
-    fetch_jobs,
-    stop_live_job_updates,
+    queue_login_bootstrap,
+    request_jobs_refresh,
+    request_projects_refresh,
+    set_refresh_context,
+    stop_refresh_service,
 )
 from .utils.logging import report_exception
 
@@ -52,52 +52,56 @@ def _redraw_properties_ui() -> None:
                 area.tag_redraw()
 
 
-def _browser_login_thread_v2(txn):
+def _resolve_project_context(project_id: str) -> tuple[str, str]:
+    project = next(
+        (p for p in Storage.data.get("projects", []) if p.get("id") == project_id),
+        None,
+    )
+    if not project:
+        raise RuntimeError("Selected project not found.")
+
+    org_id = str(project.get("organization_id", "") or "")
+    if not org_id:
+        raise RuntimeError("Project organization missing.")
+
+    current_org = str(Storage.data.get("org_id", "") or "")
+    user_key = str(Storage.data.get("user_key", "") or "")
+    if not user_key or current_org != org_id:
+        user_key = get_render_queue_key(org_id)
+
+    Storage.data["org_id"] = org_id
+    Storage.data["user_key"] = user_key
+    return org_id, user_key
+
+
+def _browser_login_thread_v2(txn, addon_package: str):
     token_url = f"{POCKETBASE_URL}/api/cli/token"
-    token = None
-    while token is None:
-        response = Storage.session.post(token_url, json={"txn": txn}, timeout=Storage.timeout)
+    try:
+        token = None
+        while token is None:
+            response = Storage.session.post(token_url, json={"txn": txn}, timeout=Storage.timeout)
 
-        if response.status_code == 428:
-            time.sleep(0.2)
-            continue
+            if response.status_code == 428:
+                time.sleep(0.2)
+                continue
 
-        response.raise_for_status()
-        payload = response.json()
+            response.raise_for_status()
+            payload = response.json()
 
-        if "token" in payload:
-            token = payload.get("token")
-            first_login(token)
-
-    return token
+            if "token" in payload:
+                token = payload.get("token")
+                if token and not queue_login_bootstrap(token, addon_package=addon_package):
+                    raise RuntimeError("Could not start sign-in synchronization.")
+    except Exception as exc:
+        Storage.panel_data["login_error"] = str(exc)
+        print("Browser sign-in failed:", exc)
 
 
 def first_login(token):
-    Storage.data["user_token"] = token
-    Storage.data["user_token_time"] = int(time.time())
-
-    projects = fetch_projects()
-    Storage.data["projects"] = projects
-    prefs = bpy.context.preferences.addons[__package__].preferences
-
-    if projects:
-        prefs.project_id = projects[0].get("id", "")
-        print("First login project:", prefs.project_id)
-
-        project = projects[0]
-        org_id = project["organization_id"]
-        user_key = get_render_queue_key(org_id)
-        Storage.data["org_id"] = org_id
-        Storage.data["user_key"] = user_key
-        jobs = fetch_jobs(org_id, user_key, prefs.project_id) or {}
-        Storage.data["jobs"] = jobs
-    else:
-        prefs.project_id = ""
-        Storage.data["org_id"] = ""
-        Storage.data["user_key"] = ""
-        Storage.data["jobs"] = {}
-
-    Storage.save()
+    if not token:
+        raise RuntimeError("Sign-in token is missing.")
+    if not queue_login_bootstrap(token, addon_package=__package__):
+        raise RuntimeError("Could not start sign-in synchronization.")
     
 
 class SUPERLUMINAL_OT_Login(bpy.types.Operator):
@@ -106,7 +110,6 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
     bl_label = "Sign In"
 
     def execute(self, context):
-        prefs = context.preferences.addons[__package__].preferences
         wm = context.window_manager
         creds = getattr(wm, "sulu_wm", None)
 
@@ -142,7 +145,7 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
         _flush_wm_credentials(wm)
         _redraw_properties_ui()
 
-        self.report({"INFO"}, "Signed in.")
+        self.report({"INFO"}, "Signed in. Syncing projects...")
         return {"FINISHED"}
 
 
@@ -152,7 +155,7 @@ class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
     bl_label = "Sign Out"
 
     def execute(self, context):
-        stop_live_job_updates()
+        stop_refresh_service()
         Storage.clear()
         _flush_wm_credentials(context.window_manager)
         self.report({"INFO"}, "Signed out.")
@@ -189,7 +192,11 @@ class SUPERLUMINAL_OT_LoginBrowser(bpy.types.Operator):
             if verification_url:
                 self.report({"INFO"}, f"Open this URL to approve: {verification_url}")
 
-        t = threading.Thread(target=_browser_login_thread_v2, args=(txn,), daemon=True)
+        t = threading.Thread(
+            target=_browser_login_thread_v2,
+            args=(txn, __package__),
+            daemon=True,
+        )
         t.start()
 
 
@@ -203,38 +210,17 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
     bl_label = "Refresh Projects"
 
     def execute(self, context):
-        try:
-            projects = fetch_projects()
-        except NotAuthenticated as exc:
-            return report_exception(
-                self, exc, str(exc),
-                cleanup=lambda: setitem(Storage.data, "projects", [])
-            )
-        except AuthorizationError as exc:
-            return report_exception(
-                self, exc, f"Access denied: {exc}",
-                cleanup=lambda: setitem(Storage.data, "projects", [])
-            )
-        except TransportError as exc:
-            return report_exception(
-                self, exc, f"Network error: {exc}",
-                cleanup=lambda: setitem(Storage.data, "projects", [])
-            )
-        except UpstreamServiceError as exc:
-            return report_exception(
-                self, exc, f"Service unavailable: {exc}",
-                cleanup=lambda: setitem(Storage.data, "projects", [])
-            )
-        except Exception as exc:
-            return report_exception(
-                self, exc, "Error fetching projects",
-                cleanup=lambda: setitem(Storage.data, "projects", [])
-            )
+        if not Storage.data.get("user_token"):
+            self.report({"ERROR"}, "Sign in first.")
+            return {"CANCELLED"}
 
-        Storage.data["projects"] = projects
-        Storage.save()
+        ok = request_projects_refresh(reason="manual")
+        if not ok:
+            Storage.data["projects"] = []
+            self.report({"ERROR"}, "Could not start project refresh.")
+            return {"CANCELLED"}
 
-        self.report({"INFO"}, "Projects updated.")
+        self.report({"INFO"}, "Refreshing projects...")
         return {"FINISHED"}
     
 
@@ -265,39 +251,25 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
             self.report({"ERROR"}, "No project selected.")
             return {"CANCELLED"}
 
-        org_id   = Storage.data.get("org_id")
-        user_key = Storage.data.get("user_key")
-        if not org_id or not user_key:
-            self.report({"ERROR"}, "Project info missing. Sign in again.")
-            return {"CANCELLED"}
-
         try:
-            jobs = fetch_jobs(org_id, user_key, project_id) or {}
+            org_id, user_key = _resolve_project_context(project_id)
         except NotAuthenticated as exc:
             return report_exception(self, exc, str(exc))
         except AuthorizationError as exc:
             return report_exception(self, exc, f"Access denied: {exc}")
-        except ResourceNotFound as exc:
-            return report_exception(self, exc, f"Project or jobs not found: {exc}")
         except TransportError as exc:
             return report_exception(self, exc, f"Network error: {exc}")
         except UpstreamServiceError as exc:
             return report_exception(self, exc, f"Service unavailable: {exc}")
         except Exception as exc:
-            return report_exception(self, exc, "Error fetching jobs")
+            return report_exception(self, exc, "Error preparing job refresh")
 
-        Storage.data["jobs"] = jobs
-        Storage.save()
+        set_refresh_context(org_id, user_key, project_id)
+        if not request_jobs_refresh(reason="manual"):
+            self.report({"ERROR"}, "Could not start job refresh.")
+            return {"CANCELLED"}
 
-        # Best-effort set active job id if present
-        try:
-            if jobs and hasattr(context.scene, "superluminal_settings"):
-                if hasattr(context.scene.superluminal_settings, "job_id"):
-                    context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
-        except Exception as exc:
-            print("Could not set default job after login.", exc)
-
-        _redraw_properties_ui()
+        self.report({"INFO"}, "Refreshing jobs...")
         return {"FINISHED"}
 
 

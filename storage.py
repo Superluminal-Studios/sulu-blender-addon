@@ -38,6 +38,9 @@ class Storage:
         "last_jobs_refresh_at": 0.0,
         "jobs_refresh_error": "",
         "jobs_refresh_project_id": "",
+        "projects_refresh_at": 0.0,
+        "projects_refresh_error": "",
+        "login_error": "",
     }
 
     icons = {}
@@ -96,4 +99,3 @@ class Storage:
                 jobs={},
             )
             cls._atomic_write(cls._file, cls.data)
-

@@ -4,6 +4,12 @@ import bpy
 import time
 from .storage            import Storage
 from .utils.date_utils   import format_submitted
+from .utils.request_utils import (
+    get_render_queue_key,
+    request_jobs_refresh,
+    set_auto_refresh,
+    set_refresh_context,
+)
 from .icons              import get_status_icon_id, get_fallback_icon
 
 COLUMN_ORDER = [
@@ -38,18 +44,41 @@ def on_project_changed(self, context):
     project_id = getattr(self, "project_id", "")
     if not project_id:
         Storage.data["jobs"] = {}
+        Storage.data["org_id"] = ""
+        Storage.data["user_key"] = ""
         Storage.panel_data["last_jobs_refresh_at"] = time.time()
         Storage.panel_data["jobs_refresh_error"] = ""
         Storage.panel_data["jobs_refresh_project_id"] = ""
+        set_refresh_context("", "", "")
+        set_auto_refresh(False)
         return
 
-    org_id = Storage.data.get("org_id")
-    user_key = Storage.data.get("user_key")
-    if not org_id or not user_key:
+    project = next(
+        (p for p in Storage.data.get("projects", []) if p.get("id") == project_id),
+        None,
+    )
+    if not project:
+        Storage.panel_data["last_jobs_refresh_at"] = time.time()
+        Storage.panel_data["jobs_refresh_error"] = "Selected project not found."
+        Storage.panel_data["jobs_refresh_project_id"] = project_id
         return
+
+    org_id = str(project.get("organization_id", "") or "")
+    if not org_id:
+        Storage.panel_data["last_jobs_refresh_at"] = time.time()
+        Storage.panel_data["jobs_refresh_error"] = "Project organization is missing."
+        Storage.panel_data["jobs_refresh_project_id"] = project_id
+        return
+
+    current_org = str(Storage.data.get("org_id", "") or "")
+    user_key = str(Storage.data.get("user_key", "") or "")
 
     try:
-        from .utils.request_utils import fetch_jobs
+        if not user_key or current_org != org_id:
+            user_key = get_render_queue_key(org_id)
+        Storage.data["org_id"] = org_id
+        Storage.data["user_key"] = user_key
+        Storage.save()
 
         live_updates = bool(
             getattr(
@@ -58,7 +87,10 @@ def on_project_changed(self, context):
                 False,
             )
         )
-        fetch_jobs(org_id, user_key, project_id, live_update=live_updates)
+        set_refresh_context(org_id, user_key, project_id)
+        set_auto_refresh(live_updates)
+        if not request_jobs_refresh(reason="project-change"):
+            raise RuntimeError("Could not start jobs refresh.")
     except Exception as exc:
         Storage.panel_data["last_jobs_refresh_at"] = time.time()
         Storage.panel_data["jobs_refresh_error"] = str(exc)

@@ -8,7 +8,11 @@ from .utils.version_utils import (
     blender_version_items,
     enum_from_bpy_version,
 )
-from .utils.request_utils import fetch_jobs, stop_live_job_updates
+from .utils.request_utils import (
+    request_jobs_refresh,
+    set_auto_refresh,
+    set_refresh_context,
+)
 from .storage import Storage
 
 
@@ -52,16 +56,13 @@ def live_job_update(self, context):
         if not org_id or not user_key or not getattr(prefs, "project_id", ""):
             return
         try:
-            fetch_jobs(
-                org_id,
-                user_key,
-                prefs.project_id,
-                True,
-            )
+            set_refresh_context(org_id, user_key, prefs.project_id)
+            set_auto_refresh(True)
+            request_jobs_refresh(reason="auto-toggle")
         except Exception as exc:
             Storage.panel_data["jobs_refresh_error"] = str(exc)
     else:
-        stop_live_job_updates()
+        set_auto_refresh(False)
 
 
 # ────────────────────────────────────────────────────────────────

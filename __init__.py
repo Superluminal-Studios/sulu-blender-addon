@@ -23,7 +23,7 @@ from .transfers.submit import submit_operator
 from .transfers.download import download_operator
 from . import panels
 from . import operators
-from .utils.request_utils import stop_live_job_updates
+from .utils.request_utils import start_refresh_service, stop_refresh_service
 
 
 def get_prefs():
@@ -40,10 +40,11 @@ def register():
     download_operator.register()
     panels.register()
     operators.register()
+    start_refresh_service()
     
 
 def unregister():
-    stop_live_job_updates()
+    stop_refresh_service()
     operators.unregister()
     panels.unregister()
     download_operator.unregister()

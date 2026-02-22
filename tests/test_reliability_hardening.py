@@ -203,6 +203,11 @@ class TestRequestUtilsThreadSafety(unittest.TestCase):
         sys.modules[f"{pkg_name}.utils.worker_utils"] = worker_utils_mod
 
         auth_mod = types.ModuleType(f"{pkg_name}.pocketbase_auth")
+        auth_mod.NotAuthenticated = RuntimeError
+        auth_mod.AuthorizationError = RuntimeError
+        auth_mod.ResourceNotFound = RuntimeError
+        auth_mod.UpstreamServiceError = RuntimeError
+        auth_mod.TransportError = RuntimeError
 
         def _authorized_request(method, url, **kwargs):
             return _DummyResponse(
