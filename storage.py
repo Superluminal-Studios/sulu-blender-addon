@@ -41,6 +41,7 @@ class Storage:
         "projects_refresh_at": 0.0,
         "projects_refresh_error": "",
         "login_error": "",
+        "refresh_service_state": "stopped",
     }
 
     icons = {}

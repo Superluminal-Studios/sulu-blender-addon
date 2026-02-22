@@ -24,6 +24,12 @@ from .utils.request_utils import (
 )
 from .utils.logging import report_exception
 
+BROWSER_LOGIN_POLL_TIMEOUT_SECONDS = 120.0
+BROWSER_LOGIN_PENDING_INTERVAL = 0.2
+BROWSER_LOGIN_NO_TOKEN_INTERVAL = 0.5
+BROWSER_LOGIN_BACKOFF_INITIAL = 0.5
+BROWSER_LOGIN_BACKOFF_MAX = 4.0
+
 
 def _flush_wm_credentials(wm: bpy.types.WindowManager) -> None:
     try:
@@ -76,24 +82,50 @@ def _resolve_project_context(project_id: str) -> tuple[str, str]:
 
 def _browser_login_thread_v2(txn, addon_package: str):
     token_url = f"{POCKETBASE_URL}/api/cli/token"
+    start = time.monotonic()
+    consecutive_failures = 0
+
     try:
-        token = None
-        while token is None:
-            response = Storage.session.post(token_url, json={"txn": txn}, timeout=Storage.timeout)
+        while True:
+            if (time.monotonic() - start) >= BROWSER_LOGIN_POLL_TIMEOUT_SECONDS:
+                raise TimeoutError("Sign-in timed out. Approve in browser and retry.")
 
-            if response.status_code == 428:
-                time.sleep(0.2)
-                continue
+            try:
+                response = Storage.session.post(
+                    token_url,
+                    json={"txn": txn},
+                    timeout=Storage.timeout,
+                )
 
-            response.raise_for_status()
-            payload = response.json()
+                if response.status_code == 428:
+                    consecutive_failures = 0
+                    time.sleep(BROWSER_LOGIN_PENDING_INTERVAL)
+                    continue
 
-            if "token" in payload:
+                response.raise_for_status()
+                payload = response.json()
                 token = payload.get("token")
-                if token and not queue_login_bootstrap(token, addon_package=addon_package):
-                    raise RuntimeError("Could not start sign-in synchronization.")
+                if token:
+                    Storage.panel_data["login_error"] = ""
+                    if not queue_login_bootstrap(token, addon_package=addon_package):
+                        raise RuntimeError("Could not start sign-in synchronization.")
+                    return
+
+                consecutive_failures = 0
+                # Some backends return 200 while user approval is still pending.
+                time.sleep(BROWSER_LOGIN_NO_TOKEN_INTERVAL)
+            except Exception:
+                consecutive_failures += 1
+                delay = min(
+                    BROWSER_LOGIN_BACKOFF_MAX,
+                    BROWSER_LOGIN_BACKOFF_INITIAL * (2 ** (consecutive_failures - 1)),
+                )
+                if (time.monotonic() - start) >= BROWSER_LOGIN_POLL_TIMEOUT_SECONDS:
+                    raise
+                time.sleep(delay)
+
     except Exception as exc:
-        Storage.panel_data["login_error"] = str(exc)
+        Storage.panel_data["login_error"] = str(exc) or "Sign-in failed."
         print("Browser sign-in failed:", exc)
 
 
@@ -112,6 +144,7 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
     def execute(self, context):
         wm = context.window_manager
         creds = getattr(wm, "sulu_wm", None)
+        Storage.panel_data["login_error"] = ""
 
         if creds is None:
             self.report({"ERROR"}, "Authentication not available. Restart Blender.")
@@ -168,6 +201,7 @@ class SUPERLUMINAL_OT_LoginBrowser(bpy.types.Operator):
     bl_label = "Sign In with Browser"
 
     def execute(self, context):
+        Storage.panel_data["login_error"] = ""
         url = f"{POCKETBASE_URL}/api/cli/start"
         payload = {"device_hint": f"Blender {bpy.app.version_string} / {platform.system()}", "scope": "default"}
 

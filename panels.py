@@ -189,6 +189,26 @@ def _value_row(layout: UILayout, *, align: bool = False) -> UILayout:
     return sub
 
 
+def _projects_refresh_status() -> tuple[str, str]:
+    err = str(Storage.panel_data.get("projects_refresh_error", "") or "").strip()
+    if err:
+        return "ERROR", f"Refresh projects error: {err}"
+
+    refreshed_at = float(Storage.panel_data.get("projects_refresh_at", 0.0) or 0.0)
+    if refreshed_at > 0:
+        stamp = time.strftime("%H:%M:%S", time.localtime(refreshed_at))
+        return "INFO", f"Projects refreshed: {stamp}"
+    return "", ""
+
+
+def _refresh_service_status() -> tuple[str, str]:
+    state = str(Storage.panel_data.get("refresh_service_state", "") or "").strip().lower()
+    if not state:
+        return "", ""
+    icon = "ERROR" if state == "error" else "INFO"
+    return icon, f"Refresh: {state}"
+
+
 # Operators
 class ToggleAddonSelectionOperator(bpy.types.Operator):
     """Select or deselect an add-on for inclusion in the upload"""
@@ -261,6 +281,13 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             row = layout.row(align=True)
             row.operator("superluminal.open_projects_web_page", text="Create Project")
             row.operator("superluminal.fetch_projects", text="", icon="FILE_REFRESH")
+
+        status_icon, status_text = _projects_refresh_status()
+        if status_text:
+            status_row = layout.row()
+            if status_icon == "ERROR":
+                status_row.alert = True
+            status_row.label(text=status_text, icon=status_icon)
 
         logged_in = bool(Storage.data.get("user_token"))
         projects_ok = len(Storage.data.get("projects", [])) > 0
@@ -548,6 +575,13 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
             stamp = time.strftime("%H:%M:%S", time.localtime(last_refresh))
             info = layout.row()
             info.label(text=f"Last refreshed: {stamp}", icon="INFO")
+
+        refresh_icon, refresh_text = _refresh_service_status()
+        if refresh_text and logged_in:
+            info = layout.row()
+            if refresh_icon == "ERROR":
+                info.alert = True
+            info.label(text=refresh_text, icon=refresh_icon)
 
         col = layout.column()
         col.enabled = logged_in and jobs_ok

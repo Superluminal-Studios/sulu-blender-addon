@@ -318,6 +318,12 @@ def draw_login(layout):
         layout.operator("superluminal.logout", text="Log out")
         return
 
+    login_error = str(Storage.panel_data.get("login_error", "") or "").strip()
+    if login_error:
+        warn = layout.box()
+        warn.alert = True
+        warn.label(text=f"Sign-in error: {login_error}", icon="ERROR")
+
     # 1) Sign in with browser (primary action)
     layout.operator(
         "superluminal.login_browser",
