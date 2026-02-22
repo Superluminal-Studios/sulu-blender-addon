@@ -23,6 +23,7 @@ from .transfers.submit import submit_operator
 from .transfers.download import download_operator
 from . import panels
 from . import operators
+from .utils.request_utils import stop_live_job_updates
 
 
 def get_prefs():
@@ -42,6 +43,7 @@ def register():
     
 
 def unregister():
+    stop_live_job_updates()
     operators.unregister()
     panels.unregister()
     download_operator.unregister()

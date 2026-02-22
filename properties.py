@@ -8,7 +8,7 @@ from .utils.version_utils import (
     blender_version_items,
     enum_from_bpy_version,
 )
-from .utils.request_utils import fetch_jobs
+from .utils.request_utils import fetch_jobs, stop_live_job_updates
 from .storage import Storage
 
 
@@ -47,14 +47,21 @@ render_type_items = [
 def live_job_update(self, context):
     prefs = get_prefs()
     if self.live_job_updates:
-        fetch_jobs(
-            Storage.data["org_id"],
-            Storage.data["user_key"],
-            prefs.project_id,
-            True
-        )
+        org_id = Storage.data.get("org_id")
+        user_key = Storage.data.get("user_key")
+        if not org_id or not user_key or not getattr(prefs, "project_id", ""):
+            return
+        try:
+            fetch_jobs(
+                org_id,
+                user_key,
+                prefs.project_id,
+                True,
+            )
+        except Exception as exc:
+            Storage.panel_data["jobs_refresh_error"] = str(exc)
     else:
-        Storage.enable_job_thread = False
+        stop_live_job_updates()
 
 
 # ────────────────────────────────────────────────────────────────

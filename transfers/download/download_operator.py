@@ -45,7 +45,13 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
         prefs = get_prefs()
 
         # Find the currently selected project
-        selected_project = [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0]
+        selected_project = next(
+            (p for p in Storage.data.get("projects", []) if p.get("id") == prefs.project_id),
+            None,
+        )
+        if not selected_project:
+            self.report({"ERROR"}, "Selected project is unavailable. Refresh projects and try again.")
+            return {"CANCELLED"}
 
         handoff = {
             "addon_dir": str(get_addon_dir()),

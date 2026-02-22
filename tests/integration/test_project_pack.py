@@ -14,8 +14,10 @@ and generated fixtures for path-only testing.
 from __future__ import annotations
 
 import os
+import importlib
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -24,6 +26,13 @@ _tests_dir = Path(__file__).parent.parent
 _addon_dir = _tests_dir.parent
 if str(_addon_dir) not in sys.path:
     sys.path.insert(0, str(_addon_dir))
+
+_pkg_name = _addon_dir.name.replace("-", "_")
+_pkg = types.ModuleType(_pkg_name)
+_pkg.__path__ = [str(_addon_dir)]
+sys.modules[_pkg_name] = _pkg
+_bat_utils = importlib.import_module(f"{_pkg_name}.utils.bat_utils")
+classify_out_of_root_ok_files = _bat_utils.classify_out_of_root_ok_files
 
 from tests.utils import (
     get_drive,
@@ -40,7 +49,6 @@ from tests.fixtures import (
     create_cross_drive_project,
     create_nightmare_scenario,
 )
-from utils.bat_utils import classify_out_of_root_ok_files
 
 # Try to import BAT - some tests require it
 try:

@@ -8,9 +8,20 @@ import platform
 import threading
 
 from .constants import POCKETBASE_URL
-from .pocketbase_auth import NotAuthenticated
+from .pocketbase_auth import (
+    AuthorizationError,
+    NotAuthenticated,
+    ResourceNotFound,
+    UpstreamServiceError,
+    TransportError,
+)
 from .storage import Storage
-from .utils.request_utils import fetch_projects, get_render_queue_key, fetch_jobs
+from .utils.request_utils import (
+    fetch_projects,
+    get_render_queue_key,
+    fetch_jobs,
+    stop_live_job_updates,
+)
 from .utils.logging import report_exception
 
 
@@ -67,17 +78,25 @@ def first_login(token):
 
     projects = fetch_projects()
     Storage.data["projects"] = projects
-    bpy.context.preferences.addons[__package__].preferences.project_id = projects[0].get("id", "")
-    print("First login project:", bpy.context.preferences.addons[__package__].preferences.project_id)
+    prefs = bpy.context.preferences.addons[__package__].preferences
 
     if projects:
+        prefs.project_id = projects[0].get("id", "")
+        print("First login project:", prefs.project_id)
+
         project = projects[0]
         org_id = project["organization_id"]
         user_key = get_render_queue_key(org_id)
         Storage.data["org_id"] = org_id
         Storage.data["user_key"] = user_key
-        jobs = fetch_jobs(org_id, user_key, bpy.context.preferences.addons[__package__].preferences.project_id)
+        jobs = fetch_jobs(org_id, user_key, prefs.project_id) or {}
         Storage.data["jobs"] = jobs
+    else:
+        prefs.project_id = ""
+        Storage.data["org_id"] = ""
+        Storage.data["user_key"] = ""
+        Storage.data["jobs"] = {}
+
     Storage.save()
     
 
@@ -133,6 +152,7 @@ class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
     bl_label = "Sign Out"
 
     def execute(self, context):
+        stop_live_job_updates()
         Storage.clear()
         _flush_wm_credentials(context.window_manager)
         self.report({"INFO"}, "Signed out.")
@@ -190,6 +210,21 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
                 self, exc, str(exc),
                 cleanup=lambda: setitem(Storage.data, "projects", [])
             )
+        except AuthorizationError as exc:
+            return report_exception(
+                self, exc, f"Access denied: {exc}",
+                cleanup=lambda: setitem(Storage.data, "projects", [])
+            )
+        except TransportError as exc:
+            return report_exception(
+                self, exc, f"Network error: {exc}",
+                cleanup=lambda: setitem(Storage.data, "projects", [])
+            )
+        except UpstreamServiceError as exc:
+            return report_exception(
+                self, exc, f"Service unavailable: {exc}",
+                cleanup=lambda: setitem(Storage.data, "projects", [])
+            )
         except Exception as exc:
             return report_exception(
                 self, exc, "Error fetching projects",
@@ -240,6 +275,14 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
             jobs = fetch_jobs(org_id, user_key, project_id) or {}
         except NotAuthenticated as exc:
             return report_exception(self, exc, str(exc))
+        except AuthorizationError as exc:
+            return report_exception(self, exc, f"Access denied: {exc}")
+        except ResourceNotFound as exc:
+            return report_exception(self, exc, f"Project or jobs not found: {exc}")
+        except TransportError as exc:
+            return report_exception(self, exc, f"Network error: {exc}")
+        except UpstreamServiceError as exc:
+            return report_exception(self, exc, f"Service unavailable: {exc}")
         except Exception as exc:
             return report_exception(self, exc, "Error fetching jobs")
 

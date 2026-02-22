@@ -133,6 +133,8 @@ class DiagnosticReport:
                 "cross_drive_files": [],
                 "absolute_path_files": [],
                 "out_of_root_files": [],
+                "codes": [],
+                "actions": {},
             },
         }
 
@@ -186,6 +188,15 @@ class DiagnosticReport:
         """Flush if we've accumulated enough entries."""
         if self._entries_since_flush >= self.FLUSH_THRESHOLD:
             self.flush()
+
+    def _append_issue_code(self, code: str, action: Optional[str] = None) -> None:
+        """Record a normalized issue code and optional recommended action."""
+        codes = self._data["issues"].setdefault("codes", [])
+        if code not in codes:
+            codes.append(code)
+        if action:
+            actions = self._data["issues"].setdefault("actions", {})
+            actions[code] = action
 
     def set_metadata(self, key: str, value: Any) -> None:
         """Set a metadata field (e.g., project_root)."""
@@ -279,6 +290,21 @@ class DiagnosticReport:
                     self._data["issues"]["absolute_path_files"] = [
                         e.get("resolved_path", "") for e in entries if e.get("status") == "absolute_path"
                     ]
+                    if self._data["issues"]["missing_files"]:
+                        self._append_issue_code(
+                            "MISSING_DEPENDENCY",
+                            "Restore missing files or switch to Zip upload.",
+                        )
+                    if self._data["issues"]["unreadable_files"]:
+                        self._append_issue_code(
+                            "UNREADABLE_DEPENDENCY",
+                            "Fix file permissions/cloud-sync state and submit again.",
+                        )
+                    if self._data["issues"]["absolute_path_files"]:
+                        self._append_issue_code(
+                            "ABSOLUTE_PATH_EXCLUDED",
+                            "Make all paths relative or use Zip upload.",
+                        )
 
                 # Update summary for pack stage
                 elif stage == "pack":
@@ -493,11 +519,19 @@ class DiagnosticReport:
                             "source path may be invalid or transfer "
                             "completed instantly"
                         )
+                        self._append_issue_code(
+                            "RCLONE_NO_STATS",
+                            "Retry upload and check diagnostic tail logs.",
+                        )
                     # 2. checks/transfers counters
                     elif checks == 0 and transfers == 0:
                         warning = (
                             "rclone checked 0 files — manifest may be "
                             "empty or source path doesn't match"
+                        )
+                        self._append_issue_code(
+                            "RCLONE_EMPTY_TRANSFER",
+                            "Validate manifest/source root and retry upload.",
                         )
                     elif checks > 0 and transfers == 0:
                         warning = (
@@ -505,6 +539,10 @@ class DiagnosticReport:
                             "transferred 0 — destination may already "
                             "have matching files, or PUT permissions "
                             "missing"
+                        )
+                        self._append_issue_code(
+                            "RCLONE_ZERO_TRANSFERS",
+                            "Verify destination permissions and remote object state.",
                         )
 
                     # 3. bytes_transferred vs expected_bytes mismatch
@@ -538,6 +576,10 @@ class DiagnosticReport:
                             "exit code 0 — some files may not have uploaded"
                         )
                         warning = (warning + "; " + error_warning) if warning else error_warning
+                        self._append_issue_code(
+                            "RCLONE_ERRORS_REPORTED",
+                            "Inspect rclone errors in report tail logs and retry failed files.",
+                        )
 
                     if warning:
                         self._current_upload_step["warning"] = warning
@@ -584,6 +626,11 @@ class DiagnosticReport:
         """Add cross-drive files to the issues section."""
         with self._lock:
             self._data["issues"]["cross_drive_files"] = files
+            if files:
+                self._append_issue_code(
+                    "CROSS_DRIVE_EXCLUDED",
+                    "Use Zip upload or move assets to the project drive.",
+                )
             self._entries_since_flush += 1
             self._maybe_flush()
 
@@ -591,6 +638,11 @@ class DiagnosticReport:
         """Add absolute path files to the issues section."""
         with self._lock:
             self._data["issues"]["absolute_path_files"] = files
+            if files:
+                self._append_issue_code(
+                    "ABSOLUTE_PATH_EXCLUDED",
+                    "Make all paths relative or use Zip upload.",
+                )
             self._entries_since_flush += 1
             self._maybe_flush()
 
@@ -598,6 +650,11 @@ class DiagnosticReport:
         """Add files that are outside the selected project root."""
         with self._lock:
             self._data["issues"]["out_of_root_files"] = files
+            if files:
+                self._append_issue_code(
+                    "OUT_OF_ROOT_EXCLUDED",
+                    "Broaden custom project path or use Zip upload.",
+                )
             self._entries_since_flush += 1
             self._maybe_flush()
 

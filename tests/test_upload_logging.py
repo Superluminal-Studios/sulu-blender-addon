@@ -1280,6 +1280,8 @@ class TestReportVersionAndMetadata(unittest.TestCase):
             self.assertIn("cross_drive_files", data["issues"])
             self.assertIn("absolute_path_files", data["issues"])
             self.assertIn("out_of_root_files", data["issues"])
+            self.assertIn("codes", data["issues"])
+            self.assertIn("actions", data["issues"])
 
     def test_out_of_root_files_recording(self):
         """out_of_root_files should be recorded and persisted."""
@@ -1306,6 +1308,7 @@ class TestReportVersionAndMetadata(unittest.TestCase):
                 "/Users/me/Library/CloudStorage/Dropbox/Textures/a.jpg",
                 data["issues"]["out_of_root_files"],
             )
+            self.assertIn("OUT_OF_ROOT_EXCLUDED", data["issues"]["codes"])
 
 
 # ═════════════════════════════════════════════════════════════════════════

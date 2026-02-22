@@ -9,56 +9,56 @@ Modes:
 
 from __future__ import annotations
 
-# ─── stdlib ──────────────────────────────────────────────────────
 import importlib
 import json
 import os
 import re
 import sys
 import time
+import traceback
 import types
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
-import traceback
+from typing import Dict, List, Optional, Tuple
+
 import requests
 
-try:
-    t_start = time.perf_counter()
-    handoff_path = Path(sys.argv[1]).resolve(strict=True)
-    data: Dict[str, object] = json.loads(handoff_path.read_text("utf-8"))
 
-    # Import add-on internals
+def _load_handoff_from_argv(argv: List[str]) -> Dict[str, object]:
+    if len(argv) < 2:
+        raise RuntimeError(
+            "download_worker.py launched without a handoff JSON path.\n"
+            "This script should be run as a subprocess by the add-on."
+        )
+    handoff_path = Path(argv[1]).resolve(strict=True)
+    return json.loads(handoff_path.read_text("utf-8"))
+
+
+def _bootstrap_addon_modules(data: Dict[str, object]):
     addon_dir = Path(data["addon_dir"]).resolve()
     pkg_name = addon_dir.name.replace("-", "_")
-    sys.path.insert(0, str(addon_dir.parent))
+
+    if str(addon_dir.parent) not in sys.path:
+        sys.path.insert(0, str(addon_dir.parent))
+
     pkg = types.ModuleType(pkg_name)
     pkg.__path__ = [str(addon_dir)]
     sys.modules[pkg_name] = pkg
 
-    # Import helpers
     rclone = importlib.import_module(f"{pkg_name}.transfers.rclone_utils")
-    run_rclone = rclone.run_rclone
-    ensure_rclone = rclone.ensure_rclone
     worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
-    clear_console = worker_utils.clear_console
-    open_folder = worker_utils.open_folder
-
-    # Import download logger
     download_logger_mod = importlib.import_module(f"{pkg_name}.utils.download_logger")
-    DownloadLogger = download_logger_mod.DownloadLogger
 
-    clear_console()
-
-    # Internal utils
-    _build_base = worker_utils._build_base
-    requests_retry_session = worker_utils.requests_retry_session
-    CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
-
-except Exception as exc:
-    print(f"Couldn't start downloader: {exc}")
-    traceback.print_exc()
-    input("\nPress Enter to close.")
-    sys.exit(1)
+    return {
+        "run_rclone": rclone.run_rclone,
+        "ensure_rclone": rclone.ensure_rclone,
+        "clear_console": worker_utils.clear_console,
+        "open_folder": worker_utils.open_folder,
+        "_build_base": worker_utils._build_base,
+        "requests_retry_session": worker_utils.requests_retry_session,
+        "run_preflight_checks": worker_utils.run_preflight_checks,
+        "CLOUDFLARE_R2_DOMAIN": worker_utils.CLOUDFLARE_R2_DOMAIN,
+        "DownloadLogger": download_logger_mod.DownloadLogger,
+    }
 
 
 # ───────────────────  globals set in main()  ─────────────────────
@@ -73,10 +73,20 @@ base_cmd: List[str]
 download_type: str
 sarfis_url: Optional[str]
 sarfis_token: Optional[str]
-logger: DownloadLogger
+logger: object
+t_start: float
+
+run_rclone = None
+ensure_rclone = None
+clear_console = None
+open_folder = None
+_build_base = None
+requests_retry_session = None
+run_preflight_checks = None
+CLOUDFLARE_R2_DOMAIN = ""
+DownloadLogger = None
 
 
-# Helpers
 def _safe_dir_name(name: str, fallback: str) -> str:
     """Make a filesystem-safe folder name (cross-platform)."""
     n = re.sub(r"[\\/:*?\"<>|]+", "_", str(name)).strip()
@@ -191,7 +201,6 @@ def _rclone_copy_output(dest_dir: str) -> bool:
 def single_downloader(dest_dir: str) -> None:
     _ensure_dir(dest_dir)
 
-    # Check for existing files (resuming previous download)
     existing = _count_existing_files(dest_dir)
     if existing > 0:
         logger.resume_info(existing)
@@ -208,14 +217,13 @@ def auto_downloader(dest_dir: str, poll_seconds: int = 5) -> None:
     """Poll for new frames and download as they become available."""
     _ensure_dir(dest_dir)
 
-    # Check for existing files (resuming previous download)
     existing = _count_existing_files(dest_dir)
     if existing > 0:
         logger.resume_info(existing)
 
     last_downloaded = 0
     last_refresh = 0.0
-    refresh_interval = 60  # Check storage every 60s even if API shows no change
+    refresh_interval = 60
     shown_waiting = False
 
     logger.auto_mode_info()
@@ -223,7 +231,6 @@ def auto_downloader(dest_dir: str, poll_seconds: int = 5) -> None:
     while True:
         job_status, finished, total = _fetch_job_details()
 
-        # Download if: new frames available, or periodic refresh, or first run
         new_count = finished - last_downloaded
         time_to_refresh = (time.monotonic() - last_refresh) >= refresh_interval
         should_download = new_count > 0 or time_to_refresh or last_downloaded == 0
@@ -243,9 +250,7 @@ def auto_downloader(dest_dir: str, poll_seconds: int = 5) -> None:
             logger.info("Waiting for first frame")
             shown_waiting = True
 
-        # Job complete?
         if job_status in {"finished", "paused", "error"}:
-            # One final sync
             _rclone_copy_output(dest_dir)
 
             if job_status == "finished":
@@ -263,9 +268,26 @@ def main() -> None:
     global session, job_id, job_name, download_path
     global rclone_bin, s3info, bucket, base_cmd
     global download_type, sarfis_url, sarfis_token
-    global logger
+    global logger, t_start
+    global run_rclone, ensure_rclone, clear_console, open_folder
+    global _build_base, requests_retry_session, run_preflight_checks
+    global CLOUDFLARE_R2_DOMAIN, DownloadLogger
 
-    # Create logger
+    t_start = time.perf_counter()
+    data = _load_handoff_from_argv(sys.argv)
+    mods = _bootstrap_addon_modules(data)
+
+    run_rclone = mods["run_rclone"]
+    ensure_rclone = mods["ensure_rclone"]
+    clear_console = mods["clear_console"]
+    open_folder = mods["open_folder"]
+    _build_base = mods["_build_base"]
+    requests_retry_session = mods["requests_retry_session"]
+    run_preflight_checks = mods["run_preflight_checks"]
+    CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
+    DownloadLogger = mods["DownloadLogger"]
+
+    clear_console()
     logger = DownloadLogger()
 
     session = requests_retry_session()
@@ -278,20 +300,9 @@ def main() -> None:
     safe_job_dir = _safe_dir_name(job_name, f"job_{job_id}")
     dest_dir = os.path.abspath(os.path.join(download_path, safe_job_dir))
 
-    # Show startup logo
     logger.logo_start(job_name=job_name, dest_dir=dest_dir)
 
-    # ─── Preflight checks (run early so user knows quickly if something's wrong) ───
-    # Import preflight utilities
-    addon_dir = Path(data["addon_dir"]).resolve()
-    pkg_name = addon_dir.name.replace("-", "_")
-    preflight_mod = importlib.import_module(f"{pkg_name}.utils.worker_utils")
-    run_preflight_checks = preflight_mod.run_preflight_checks
-
-    # Estimate download size - use 1 GB as reasonable default for render output
-    # The actual size varies, but we want to ensure there's reasonable space
-    estimated_download_size = 1024 * 1024 * 1024  # 1 GB minimum
-
+    estimated_download_size = 1024 * 1024 * 1024
     storage_checks = [
         (download_path, estimated_download_size, "Download folder"),
     ]
@@ -304,9 +315,7 @@ def main() -> None:
     if not preflight_ok and preflight_issues:
         for issue in preflight_issues:
             logger.warning(issue)
-        # Don't block for downloads - just warn
 
-    # Determine mode
     sarfis_url = data.get("sarfis_url")
     sarfis_token = data.get("sarfis_token")
     requested_mode = str(data.get("download_type", "") or "").lower()
@@ -315,13 +324,11 @@ def main() -> None:
     else:
         download_type = "auto" if sarfis_url and sarfis_token else "single"
 
-    # Prepare rclone
     try:
         rclone_bin = ensure_rclone(logger=logger)
     except Exception as exc:
         logger.fatal(f"Couldn't set up transfer tool: {exc}")
 
-    # Obtain R2 credentials
     try:
         s3_resp = session.get(
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
@@ -342,13 +349,9 @@ def main() -> None:
     except (IndexError, requests.RequestException, KeyError) as exc:
         logger.fatal(f"Couldn't connect to storage: {exc}")
 
-    # Build rclone base once
     base_cmd = _build_rclone_base()
-
-    # Make sure the target directory exists
     _ensure_dir(download_path)
 
-    # Run selected mode
     try:
         job_data = _fetch_job_details()
         if download_type == "single" or job_data[0] in ["finished", "paused", "error"]:
@@ -363,8 +366,6 @@ def main() -> None:
                 auto_downloader(dest_dir, poll_seconds=5)
 
         elapsed = time.perf_counter() - t_start
-
-        # Show success screen
         choice = logger.logo_end(elapsed=elapsed, dest_dir=dest_dir)
         if choice == "o":
             open_folder(dest_dir)
@@ -387,4 +388,8 @@ if __name__ == "__main__":
     except Exception as exc:
         traceback.print_exc()
         print(f"\nCouldn't start download: {exc}")
-        input("\nPress Enter to close.")
+        try:
+            input("\nPress Enter to close.")
+        except Exception:
+            pass
+        sys.exit(1)

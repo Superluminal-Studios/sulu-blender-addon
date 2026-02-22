@@ -35,6 +35,9 @@ class Storage:
     panel_data = {
         "last_token": "",
         "last_token_time": 0,
+        "last_jobs_refresh_at": 0.0,
+        "jobs_refresh_error": "",
+        "jobs_refresh_project_id": "",
     }
 
     icons = {}
@@ -93,5 +96,4 @@ class Storage:
                 jobs={},
             )
             cls._atomic_write(cls._file, cls.data)
-
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import bpy
 import addon_utils
+import time
 from bpy.types import UILayout
 
 from .utils.version_utils import get_blender_version_string
@@ -9,7 +10,6 @@ from .constants import DEFAULT_ADDONS
 from .storage import Storage
 from .preferences import refresh_jobs_collection, draw_header_row
 from .preferences import draw_login
-from .utils.request_utils import fetch_jobs
 from .icons import get_icon_id, get_fallback_icon
 
 from .utils.project_scan import quick_cross_drive_hint, human_shorten
@@ -242,16 +242,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
 
         if Storage.data.get("user_token") != Storage.panel_data.get("last_token"):
             Storage.panel_data["last_token"] = Storage.data.get("user_token")
-            if prefs.project_id:
-                print("Fetching jobs for project:", prefs.project_id)
-                jobs = Storage.data["jobs"] = fetch_jobs(
-                    Storage.data["org_id"], Storage.data["user_key"], prefs.project_id
-                )
-                if jobs and hasattr(context.scene, "superluminal_settings"):
-                    if hasattr(context.scene.superluminal_settings, "job_id"):
-                        context.scene.superluminal_settings.job_id = list(jobs.keys())[
-                            0
-                        ]
 
         refresh_jobs_collection(prefs)
 
@@ -547,6 +537,17 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
         tools.operator("superluminal.fetch_project_jobs", text="", icon="FILE_REFRESH")
         tools.separator()
         tools.menu("SUPERLUMINAL_MT_job_columns", text="", icon="DOWNARROW_HLT")
+
+        last_refresh = float(Storage.panel_data.get("last_jobs_refresh_at", 0.0) or 0.0)
+        refresh_err = str(Storage.panel_data.get("jobs_refresh_error", "") or "").strip()
+        if refresh_err:
+            warn = layout.row()
+            warn.alert = True
+            warn.label(text=f"Refresh error: {refresh_err}", icon="ERROR")
+        elif last_refresh > 0:
+            stamp = time.strftime("%H:%M:%S", time.localtime(last_refresh))
+            info = layout.row()
+            info.label(text=f"Last refreshed: {stamp}", icon="INFO")
 
         col = layout.column()
         col.enabled = logged_in and jobs_ok

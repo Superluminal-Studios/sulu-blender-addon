@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import bpy
+import time
 from .storage            import Storage
 from .utils.date_utils   import format_submitted
 from .icons              import get_status_icon_id, get_fallback_icon
@@ -26,6 +27,42 @@ def get_project_items(self, context):
 
 def get_job_items(self, context):
     return [(jid, j["name"], j["name"]) for jid, j in Storage.data["jobs"].items()]
+
+
+def on_project_changed(self, context):
+    """
+    Refresh jobs when selected project changes.
+
+    Network work is triggered from this update callback (main thread), not from Panel.draw().
+    """
+    project_id = getattr(self, "project_id", "")
+    if not project_id:
+        Storage.data["jobs"] = {}
+        Storage.panel_data["last_jobs_refresh_at"] = time.time()
+        Storage.panel_data["jobs_refresh_error"] = ""
+        Storage.panel_data["jobs_refresh_project_id"] = ""
+        return
+
+    org_id = Storage.data.get("org_id")
+    user_key = Storage.data.get("user_key")
+    if not org_id or not user_key:
+        return
+
+    try:
+        from .utils.request_utils import fetch_jobs
+
+        live_updates = bool(
+            getattr(
+                getattr(getattr(context, "scene", None), "sulu_wm_settings", None),
+                "live_job_updates",
+                False,
+            )
+        )
+        fetch_jobs(org_id, user_key, project_id, live_update=live_updates)
+    except Exception as exc:
+        Storage.panel_data["last_jobs_refresh_at"] = time.time()
+        Storage.panel_data["jobs_refresh_error"] = str(exc)
+        Storage.panel_data["jobs_refresh_project_id"] = project_id
 
 
 def _get_column_label(key: str) -> str:
@@ -92,7 +129,12 @@ def refresh_jobs_collection(prefs):
     if not Storage.data["projects"]:
         return
 
-    selected_project =  [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0]
+    selected_project = next(
+        (p for p in Storage.data["projects"] if p.get("id") == prefs.project_id),
+        None,
+    )
+    if not selected_project:
+        return
 
     for jid, job in Storage.data["jobs"].items():
         if job.get("project_id") != selected_project.get("id"):
@@ -282,7 +324,11 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
 
-    project_id: bpy.props.EnumProperty(name="Project", items=get_project_items)
+    project_id: bpy.props.EnumProperty(
+        name="Project",
+        items=get_project_items,
+        update=on_project_changed,
+    )
 
 
     jobs:             bpy.props.CollectionProperty(type=SuperluminalJobItem)
