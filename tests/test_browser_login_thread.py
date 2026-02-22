@@ -33,8 +33,24 @@ class _DummyResponse:
         return self._payload
 
 
+class _SessionSequence:
+    def __init__(self, steps):
+        self._steps = list(steps)
+        self.calls = 0
+
+    def post(self, url, json=None, timeout=None):
+        if self.calls >= len(self._steps):
+            step = self._steps[-1]
+        else:
+            step = self._steps[self.calls]
+        self.calls += 1
+        if isinstance(step, Exception):
+            raise step
+        return step
+
+
 class TestBrowserLoginThread(unittest.TestCase):
-    def _load_operators_module(self):
+    def _load_operators_module(self, *, session_steps=None, queue_returns=True):
         pkg_name = "sulu_ops_thread_pkg"
 
         pkg = types.ModuleType(pkg_name)
@@ -62,7 +78,7 @@ class TestBrowserLoginThread(unittest.TestCase):
 
         def _queue_login_bootstrap(token, *, addon_package=""):
             queue_calls.append((token, addon_package))
-            return True
+            return queue_returns
 
         req_utils_mod.get_render_queue_key = lambda org_id: "key-1"
         req_utils_mod.queue_login_bootstrap = _queue_login_bootstrap
@@ -77,20 +93,13 @@ class TestBrowserLoginThread(unittest.TestCase):
         log_mod.report_exception = lambda op, exc, message, cleanup=None: {"CANCELLED"}
         sys.modules[f"{pkg_name}.utils.logging"] = log_mod
 
-        class _Session:
-            def __init__(self):
-                self.calls = 0
-
-            def post(self, url, json=None, timeout=None):
-                self.calls += 1
-                if self.calls == 1:
-                    return _DummyResponse(428, {})
-                return _DummyResponse(200, {"token": "tok-123"})
+        if session_steps is None:
+            session_steps = [_DummyResponse(428, {}), _DummyResponse(200, {"token": "tok-123"})]
 
         class _Storage:
-            session = _Session()
+            session = _SessionSequence(session_steps)
             timeout = 5
-            panel_data = {}
+            panel_data = {"login_error": ""}
             data = {}
 
             @classmethod
@@ -119,16 +128,80 @@ class TestBrowserLoginThread(unittest.TestCase):
             f"{pkg_name}.operators",
             _addon_dir / "operators.py",
         )
-        return mod, queue_calls
+        return mod, queue_calls, _Storage
 
     def test_browser_login_thread_queues_bootstrap_only(self):
-        mod, queue_calls = self._load_operators_module()
+        mod, queue_calls, storage = self._load_operators_module()
         mod.first_login = lambda token: (_ for _ in ()).throw(
             AssertionError("first_login must not run in browser thread")
         )
 
         mod._browser_login_thread_v2("txn-1", "sulu_ops_thread_pkg")
         self.assertEqual([("tok-123", "sulu_ops_thread_pkg")], queue_calls)
+        self.assertEqual("", storage.panel_data.get("login_error", ""))
+
+    def test_browser_login_200_without_token_waits_before_retry(self):
+        mod, queue_calls, storage = self._load_operators_module(
+            session_steps=[
+                _DummyResponse(200, {}),
+                _DummyResponse(200, {"token": "tok-456"}),
+            ]
+        )
+        sleep_calls = []
+        orig_sleep = mod.time.sleep
+        try:
+            mod.time.sleep = lambda seconds: sleep_calls.append(seconds)
+            mod._browser_login_thread_v2("txn-2", "sulu_ops_thread_pkg")
+        finally:
+            mod.time.sleep = orig_sleep
+
+        self.assertEqual([("tok-456", "sulu_ops_thread_pkg")], queue_calls)
+        self.assertIn(mod.BROWSER_LOGIN_NO_TOKEN_INTERVAL, sleep_calls)
+        self.assertEqual("", storage.panel_data.get("login_error", ""))
+
+    def test_browser_login_transient_error_uses_backoff_then_recovers(self):
+        mod, queue_calls, storage = self._load_operators_module(
+            session_steps=[
+                RuntimeError("temporary failure"),
+                _DummyResponse(200, {"token": "tok-789"}),
+            ]
+        )
+        sleep_calls = []
+        orig_sleep = mod.time.sleep
+        try:
+            mod.time.sleep = lambda seconds: sleep_calls.append(seconds)
+            mod._browser_login_thread_v2("txn-3", "sulu_ops_thread_pkg")
+        finally:
+            mod.time.sleep = orig_sleep
+
+        self.assertEqual([("tok-789", "sulu_ops_thread_pkg")], queue_calls)
+        self.assertIn(mod.BROWSER_LOGIN_BACKOFF_INITIAL, sleep_calls)
+        self.assertEqual("", storage.panel_data.get("login_error", ""))
+
+    def test_browser_login_timeout_sets_user_facing_error(self):
+        mod, queue_calls, storage = self._load_operators_module(
+            session_steps=[_DummyResponse(428, {})]
+        )
+        orig_sleep = mod.time.sleep
+        orig_monotonic = mod.time.monotonic
+        monotonic_values = iter([0.0, 0.0, mod.BROWSER_LOGIN_POLL_TIMEOUT_SECONDS + 1.0])
+
+        def _fake_monotonic():
+            try:
+                return next(monotonic_values)
+            except StopIteration:
+                return mod.BROWSER_LOGIN_POLL_TIMEOUT_SECONDS + 2.0
+
+        try:
+            mod.time.sleep = lambda _seconds: None
+            mod.time.monotonic = _fake_monotonic
+            mod._browser_login_thread_v2("txn-4", "sulu_ops_thread_pkg")
+        finally:
+            mod.time.sleep = orig_sleep
+            mod.time.monotonic = orig_monotonic
+
+        self.assertEqual([], queue_calls)
+        self.assertIn("timed out", storage.panel_data.get("login_error", "").lower())
 
 
 if __name__ == "__main__":

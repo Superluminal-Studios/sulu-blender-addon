@@ -181,7 +181,15 @@ class TestRequestUtilsThreadSafety(unittest.TestCase):
                 "last_jobs_refresh_at": 0.0,
                 "jobs_refresh_error": "",
                 "jobs_refresh_project_id": "",
+                "projects_refresh_at": 0.0,
+                "projects_refresh_error": "",
+                "login_error": "",
+                "refresh_service_state": "stopped",
             }
+
+            @classmethod
+            def save(cls):
+                pass
 
         storage_mod = types.ModuleType(f"{pkg_name}.storage")
         storage_mod.Storage = _DummyStorage
@@ -251,6 +259,30 @@ class TestRequestUtilsThreadSafety(unittest.TestCase):
         self.assertEqual({"job-a": {"id": "job-a"}}, storage.data["jobs"])
         self.assertEqual("", storage.panel_data["jobs_refresh_error"])
         self.assertEqual("project", storage.panel_data["jobs_refresh_project_id"])
+        self.assertEqual("running", storage.panel_data["refresh_service_state"])
+
+    def test_fetch_jobs_error_sets_refresh_state_error(self):
+        mod, storage, calls = self._load_request_utils()
+        mod.authorized_request = lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("network down")
+        )
+
+        with self.assertRaises(RuntimeError):
+            mod.fetch_jobs("org", "key", "project", live_update=False)
+        self.assertEqual("error", storage.panel_data["refresh_service_state"])
+
+    def test_projects_callbacks_update_refresh_state(self):
+        mod, storage, calls = self._load_request_utils()
+        storage.panel_data["refresh_service_state"] = "stopped"
+        storage.panel_data["projects_refresh_error"] = "old error"
+
+        mod._on_projects_success([], "manual")
+        self.assertEqual("running", storage.panel_data["refresh_service_state"])
+        self.assertEqual("", storage.panel_data["projects_refresh_error"])
+
+        mod._on_projects_error("boom", "manual")
+        self.assertEqual("error", storage.panel_data["refresh_service_state"])
+        self.assertEqual("boom", storage.panel_data["projects_refresh_error"])
 
 
 class TestDownloadWorkerImportSafety(unittest.TestCase):

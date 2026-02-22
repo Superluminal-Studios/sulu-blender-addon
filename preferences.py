@@ -318,7 +318,7 @@ def draw_login(layout):
         layout.operator("superluminal.logout", text="Log out")
         return
 
-    login_error = str(Storage.panel_data.get("login_error", "") or "").strip()
+    login_error = _login_error_text()
     if login_error:
         warn = layout.box()
         warn.alert = True
@@ -355,6 +355,10 @@ def draw_login(layout):
     box.prop(creds, "username", text="Email")
     box.prop(creds, "password", text="Password")
     box.operator("superluminal.login", text="Sign In")
+
+
+def _login_error_text() -> str:
+    return str(Storage.panel_data.get("login_error", "") or "").strip()
 
 
 

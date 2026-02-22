@@ -64,17 +64,20 @@ def _record_refresh_success(project_id: str, jobs: dict) -> None:
     Storage.panel_data["last_jobs_refresh_at"] = time.time()
     Storage.panel_data["jobs_refresh_error"] = ""
     Storage.panel_data["jobs_refresh_project_id"] = project_id
+    Storage.panel_data["refresh_service_state"] = "running"
 
 
 def _record_refresh_error(project_id: str, error: str) -> None:
     Storage.panel_data["last_jobs_refresh_at"] = time.time()
     Storage.panel_data["jobs_refresh_error"] = str(error)
     Storage.panel_data["jobs_refresh_project_id"] = project_id
+    Storage.panel_data["refresh_service_state"] = "error"
 
 
 def _record_projects_refresh_error(error: str) -> None:
     Storage.panel_data["projects_refresh_at"] = time.time()
     Storage.panel_data["projects_refresh_error"] = str(error)
+    Storage.panel_data["refresh_service_state"] = "error"
 
 
 def _raise_mapped_response_error(response: requests.Response) -> None:
@@ -236,6 +239,7 @@ def _on_projects_success(projects: list[dict], _source: str) -> None:
     Storage.data["projects"] = normalized
     Storage.panel_data["projects_refresh_error"] = ""
     Storage.panel_data["projects_refresh_at"] = time.time()
+    Storage.panel_data["refresh_service_state"] = "running"
 
     ids = {str(p.get("id", "") or "") for p in normalized}
     prefs = _get_addon_prefs()
@@ -326,6 +330,7 @@ def _on_login_success(payload: dict, _source: str) -> None:
     Storage.panel_data["projects_refresh_error"] = ""
     Storage.panel_data["projects_refresh_at"] = time.time()
     Storage.panel_data["login_error"] = ""
+    Storage.panel_data["refresh_service_state"] = "running"
     Storage.save()
 
     prefs = _get_addon_prefs(addon_package)
@@ -379,6 +384,7 @@ def start_refresh_service() -> None:
     service.start()
     service.set_auto_refresh(_scene_live_updates_enabled())
     Storage.enable_job_thread = service.auto_refresh_enabled()
+    Storage.panel_data["refresh_service_state"] = "running"
 
 
 def stop_refresh_service() -> None:
@@ -390,6 +396,7 @@ def stop_refresh_service() -> None:
     if service is not None:
         service.stop()
     Storage.enable_job_thread = False
+    Storage.panel_data["refresh_service_state"] = "stopped"
 
 
 def set_refresh_context(org_id: str, user_key: str, project_id: str) -> None:
