@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 _tests_dir = Path(__file__).parent
 _addon_dir = _tests_dir.parent
@@ -89,6 +90,20 @@ class TestDownloadWorkflowContext(unittest.TestCase):
         self.assertEqual(os.path.abspath("/work/project/downloads"), context.download_path)
         self.assertEqual(
             os.path.abspath("/work/project/downloads/My Job"),
+            context.dest_dir,
+        )
+
+    def test_build_context_legacy_relative_without_base_dir_uses_cwd(self):
+        data = {
+            "job_id": "legacy-job",
+            "job_name": "Legacy",
+            "download_path": "downloads",
+        }
+        with patch.object(workflow_context.os, "getcwd", return_value="/legacy/cwd"):
+            context = workflow_context.build_download_context(data)
+        self.assertEqual(os.path.abspath("/legacy/cwd/downloads"), context.download_path)
+        self.assertEqual(
+            os.path.abspath("/legacy/cwd/downloads/Legacy"),
             context.dest_dir,
         )
 

@@ -9,7 +9,7 @@ from .utils.version_utils import get_blender_version_string
 from .constants import DEFAULT_ADDONS
 from .storage import Storage
 from .preferences import refresh_jobs_collection, draw_header_row
-from .preferences import draw_login
+from .preferences import draw_login, format_job_status
 from .icons import get_icon_id, get_fallback_icon
 
 from .utils.project_scan import quick_cross_drive_hint, human_shorten
@@ -205,8 +205,15 @@ def _refresh_service_status() -> tuple[str, str]:
     state = str(Storage.panel_data.get("refresh_service_state", "") or "").strip().lower()
     if not state:
         return "", ""
-    icon = "ERROR" if state == "error" else "INFO"
-    return icon, f"Refresh: {state}"
+    if state == "error":
+        return "ERROR", "Auto refresh encountered an error."
+    # "running" and other non-error states are intentionally silent in UI.
+    return "", ""
+
+
+def _should_show_refresh_state(*, jobs_refresh_error: str) -> bool:
+    """Only show generic refresh state when no explicit jobs error is present."""
+    return not str(jobs_refresh_error or "").strip()
 
 
 # Operators
@@ -577,7 +584,11 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
             info.label(text=f"Last refreshed: {stamp}", icon="INFO")
 
         refresh_icon, refresh_text = _refresh_service_status()
-        if refresh_text and logged_in:
+        if (
+            refresh_text
+            and logged_in
+            and _should_show_refresh_state(jobs_refresh_error=refresh_err)
+        ):
             info = layout.row()
             if refresh_icon == "ERROR":
                 info.alert = True
@@ -636,22 +647,25 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
         box = layout.box()
         box.enabled = has_selection
 
-        # Job name header with status icon and browser button
-        header = box.row(align=True)
         if has_selection:
+            header = box.row(align=True)
             status_icon_id = get_icon_id(job_status.upper())
+            status_text = format_job_status(job_status)
+            title_text = f"{job_name} | {status_text}"
             if status_icon_id:
-                header.label(text=job_name, icon_value=status_icon_id)
+                header.label(text=title_text, icon_value=status_icon_id)
             else:
-                header.label(text=job_name, icon=get_fallback_icon(job_status))
+                header.label(text=title_text, icon=get_fallback_icon(job_status))
+            op = header.operator(
+                "superluminal.open_browser",
+                text="",
+                icon="URL",
+            )
+            op.job_id = job_id
+            op.project_id = prefs.project_id
         else:
+            header = box.row(align=True)
             header.label(text="No job selected", icon="BLANK1")
-
-        op = header.operator(
-            "superluminal.open_browser", text="", icon="URL"
-        )
-        op.job_id = job_id
-        op.project_id = prefs.project_id
 
         # Download section inside the box
         box.prop(props, "download_path", text="Download path")

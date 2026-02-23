@@ -13,8 +13,8 @@ from .utils.request_utils import (
 from .icons              import get_status_icon_id, get_fallback_icon
 
 COLUMN_ORDER = [
-    "name",
     "status",
+    "name",
     "submission_time",
     "started_time",
     "finished_time",
@@ -107,6 +107,20 @@ def _get_sort_icon(prefs, key: str) -> str:
     if prefs.sort_column != key:
         return "NONE"
     return "TRIA_UP" if prefs.sort_ascending else "TRIA_DOWN"
+
+
+def format_job_status(status: str) -> str:
+    """Normalize backend status values into human-readable words."""
+    raw = str(status or "").strip()
+    if not raw:
+        return "Unknown"
+
+    normalized = raw.replace("_", " ").replace("-", " ")
+    words = [word for word in normalized.split() if word]
+    if not words:
+        return "Unknown"
+
+    return " ".join(words).title()
 
 
 class SUPERLUMINAL_OT_sort_jobs(bpy.types.Operator):
@@ -213,8 +227,8 @@ class SuperluminalJobItem(bpy.types.PropertyGroup):
 class SUPERLUMINAL_MT_job_columns(bpy.types.Menu):
     bl_label = "Columns"
     cols = (  # order MUST match COLUMN_ORDER
-        ("show_col_name",            "Name"),
         ("show_col_status",          "Status"),
+        ("show_col_name",            "Name"),
         ("show_col_submission_time", "Submitted"),
         ("show_col_started_time",    "Started"),
         ("show_col_finished_time",   "Finished"),
@@ -284,14 +298,15 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
             if not getattr(prefs, f"show_col_{key}"):
                 continue
 
-            if key == "name":
+            if key == "status":
+                status_word = format_job_status(item.status)
                 icon_id = get_status_icon_id(item.status)
                 if icon_id:
-                    cols.label(text=item.name, icon_value=icon_id)
+                    cols.label(text=status_word, icon_value=icon_id)
                 else:
-                    cols.label(text=item.name, icon=get_fallback_icon(item.status))
-            elif key == "status":
-                cols.label(text=item.status)
+                    cols.label(text=status_word, icon=get_fallback_icon(item.status))
+            elif key == "name":
+                cols.label(text=item.name)
             elif key == "submission_time":
                 cols.label(text=item.submission_time)
             elif key == "started_time":
@@ -378,7 +393,7 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
 
 
     show_col_name:            bpy.props.BoolProperty(default=True)
-    show_col_status:          bpy.props.BoolProperty(default=False)
+    show_col_status:          bpy.props.BoolProperty(default=True)
     show_col_submission_time: bpy.props.BoolProperty(default=True)
     show_col_started_time:    bpy.props.BoolProperty(default=False)
     show_col_finished_time:   bpy.props.BoolProperty(default=False)

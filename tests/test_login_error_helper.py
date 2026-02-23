@@ -90,6 +90,23 @@ class TestLoginErrorHelper(unittest.TestCase):
         storage.panel_data["login_error"] = ""
         self.assertEqual("", mod._login_error_text())
 
+    def test_format_job_status_normalizes_common_values(self):
+        mod, _storage = self._load_preferences_module()
+        self.assertEqual("Running", mod.format_job_status("running"))
+        self.assertEqual("Finished", mod.format_job_status("FINISHED"))
+        self.assertEqual("In Progress", mod.format_job_status("in_progress"))
+
+    def test_format_job_status_empty_becomes_unknown(self):
+        mod, _storage = self._load_preferences_module()
+        self.assertEqual("Unknown", mod.format_job_status(""))
+        self.assertEqual("Unknown", mod.format_job_status("   "))
+
+    def test_jobs_table_column_order_starts_with_status_then_name(self):
+        mod, _storage = self._load_preferences_module()
+        self.assertGreaterEqual(len(mod.COLUMN_ORDER), 2)
+        self.assertEqual("status", mod.COLUMN_ORDER[0])
+        self.assertEqual("name", mod.COLUMN_ORDER[1])
+
 
 if __name__ == "__main__":
     unittest.main()

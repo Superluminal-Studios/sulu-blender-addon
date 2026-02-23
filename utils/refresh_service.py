@@ -13,7 +13,7 @@ except Exception:  # pragma: no cover - bpy unavailable in unit tests
     bpy = None
 
 
-JobsFetcher = Callable[[str, str, str, Optional[requests.Session]], dict]
+JobsFetcher = Callable[..., dict]
 ProjectsFetcher = Callable[[Optional[requests.Session]], list[dict]]
 LoginBootstrapFetcher = Callable[[str, Optional[requests.Session]], dict]
 
@@ -382,7 +382,13 @@ class RefreshService:
         session: requests.Session,
     ) -> None:
         try:
-            jobs = self._jobs_fetcher(org_id, user_key, project_id, session)
+            # Pass session by keyword to support fetchers that declare it keyword-only.
+            jobs = self._jobs_fetcher(
+                org_id,
+                user_key,
+                project_id,
+                session=session,
+            )
             self._results.put(
                 {
                     "kind": "jobs_success",

@@ -167,6 +167,41 @@ class TestDownloadOperatorHandoff(unittest.TestCase):
         self.assertTrue(warning_messages)
         self.assertTrue(any("unsaved" in msg.lower() for msg in warning_messages))
 
+    def test_unsaved_blend_absolute_path_does_not_warn(self):
+        mod, _bpy = self._load_download_operator_module(blend_filepath="")
+
+        reports = []
+        captured = {}
+
+        def _launch(cmd):
+            captured["cmd"] = list(cmd)
+
+        mod.launch_in_terminal = _launch
+
+        op = mod.SUPERLUMINAL_OT_DownloadJob()
+        op.job_id = "job-3"
+        op.job_name = "Job 3"
+        op.report = lambda level, msg: reports.append((set(level), str(msg)))
+
+        with tempfile.TemporaryDirectory() as out_dir:
+            context = types.SimpleNamespace(
+                scene=types.SimpleNamespace(
+                    superluminal_settings=types.SimpleNamespace(download_path=out_dir)
+                )
+            )
+            with tempfile.TemporaryDirectory() as td:
+                with patch.object(mod.tempfile, "gettempdir", return_value=td):
+                    result = op.execute(context)
+
+                handoff_path = Path(captured["cmd"][-1])
+                handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+                handoff_path.unlink(missing_ok=True)
+
+            self.assertEqual({"FINISHED"}, result)
+            self.assertEqual(out_dir, handoff["download_path"])
+            warning_messages = [msg for levels, msg in reports if "WARNING" in levels]
+            self.assertFalse(warning_messages)
+
 
 if __name__ == "__main__":
     unittest.main()

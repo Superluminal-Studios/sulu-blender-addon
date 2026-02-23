@@ -71,6 +71,7 @@ class TestPanelStatusHelpers(unittest.TestCase):
         prefs_mod.refresh_jobs_collection = lambda prefs: None
         prefs_mod.draw_header_row = lambda layout, prefs: None
         prefs_mod.draw_login = lambda layout: None
+        prefs_mod.format_job_status = lambda status: str(status or "").strip().title() or "Unknown"
         sys.modules[f"{pkg_name}.preferences"] = prefs_mod
 
         icons_mod = types.ModuleType(f"{pkg_name}.icons")
@@ -90,6 +91,7 @@ class TestPanelStatusHelpers(unittest.TestCase):
         class _Storage:
             data = {}
             panel_data = {
+                "jobs_refresh_error": "",
                 "projects_refresh_error": "",
                 "projects_refresh_at": 0.0,
                 "refresh_service_state": "running",
@@ -129,7 +131,24 @@ class TestPanelStatusHelpers(unittest.TestCase):
 
         icon, text = mod._refresh_service_status()
         self.assertEqual("ERROR", icon)
-        self.assertEqual("Refresh: error", text)
+        self.assertEqual("Auto refresh encountered an error.", text)
+
+    def test_refresh_service_status_hides_running_state(self):
+        mod, storage = self._load_panels_module()
+        storage.panel_data["refresh_service_state"] = "running"
+
+        icon, text = mod._refresh_service_status()
+        self.assertEqual("", icon)
+        self.assertEqual("", text)
+
+    def test_refresh_state_is_suppressed_when_explicit_jobs_error_present(self):
+        mod, storage = self._load_panels_module()
+        self.assertFalse(
+            mod._should_show_refresh_state(jobs_refresh_error="request failed")
+        )
+        self.assertTrue(
+            mod._should_show_refresh_state(jobs_refresh_error="")
+        )
 
 
 if __name__ == "__main__":

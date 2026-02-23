@@ -94,6 +94,40 @@ class TestRefreshService(unittest.TestCase):
         self.assertIn("project-b", calls)
         self.assertEqual("project-b", calls[-1])
 
+    def test_jobs_fetcher_keyword_only_session_is_supported(self):
+        applied: list[tuple[str, dict]] = []
+
+        def jobs_fetcher(org_id, user_key, project_id, *, session=None):
+            self.assertIsNotNone(session)
+            return {"ok": True, "project_id": project_id}
+
+        service = RefreshService(
+            jobs_fetcher=jobs_fetcher,
+            projects_fetcher=lambda session: [],
+            session_factory=lambda: object(),
+            on_jobs_success=lambda project_id, jobs, source: applied.append((project_id, jobs)),
+            auto_refresh_interval=0.05,
+        )
+
+        try:
+            service.set_credentials("org-1", "key-1")
+            service.set_active_project("project-a")
+            self.assertTrue(service.request_jobs_refresh(source="manual"))
+
+            ok = _wait_until(
+                lambda: (
+                    service.apply_pending_results() or len(applied) >= 1
+                )
+                and len(applied) >= 1
+            )
+            self.assertTrue(ok, "Timed out waiting for keyword-only session refresh result")
+        finally:
+            service.stop()
+
+        self.assertEqual(1, len(applied))
+        self.assertEqual("project-a", applied[0][0])
+        self.assertEqual({"ok": True, "project_id": "project-a"}, applied[0][1])
+
 
 if __name__ == "__main__":
     unittest.main()
