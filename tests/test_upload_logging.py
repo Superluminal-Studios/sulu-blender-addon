@@ -1308,7 +1308,28 @@ class TestReportVersionAndMetadata(unittest.TestCase):
                 "/Users/me/Library/CloudStorage/Dropbox/Textures/a.jpg",
                 data["issues"]["out_of_root_files"],
             )
-            self.assertIn("OUT_OF_ROOT_EXCLUDED", data["issues"]["codes"])
+            self.assertIn("PROJECT_OUT_OF_ROOT_EXCLUDED", data["issues"]["codes"])
+
+    def test_add_issue_code_persisted(self):
+        """Public add_issue_code() should persist custom reliability codes."""
+        with tempfile.TemporaryDirectory() as d:
+            report = _diagnostic_report.DiagnosticReport(
+                reports_dir=Path(d), job_id="issue-test", blend_name="test",
+            )
+            report.add_issue_code(
+                "UPLOAD_TOUCHED_LT_MANIFEST",
+                "Retry upload and inspect manifest/source root alignment.",
+            )
+            report.finalize()
+
+            with open(report.get_path(), "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            self.assertIn("UPLOAD_TOUCHED_LT_MANIFEST", data["issues"]["codes"])
+            self.assertEqual(
+                "Retry upload and inspect manifest/source root alignment.",
+                data["issues"]["actions"]["UPLOAD_TOUCHED_LT_MANIFEST"],
+            )
 
 
 # ═════════════════════════════════════════════════════════════════════════

@@ -32,8 +32,9 @@ import shutil
 import tempfile
 import time
 import types
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import webbrowser
 
 import requests
@@ -191,6 +192,250 @@ def _split_manifest_by_first_dir(rel_manifest):
     return groups
 
 
+@dataclass
+class ManifestBuildResult:
+    rel_manifest: List[str]
+    manifest_source_map: Dict[str, str]
+    dependency_total_size: int
+    ok_count: int
+
+
+def _standard_continue_options() -> list[tuple[str, str, str]]:
+    return [
+        ("y", "Continue", "Proceed with submission"),
+        ("n", "Cancel", "Cancel and close"),
+        (
+            "r",
+            "Open diagnostic reports",
+            "Open the diagnostic reports folder",
+        ),
+    ]
+
+
+def _prompt_continue_with_reports(
+    *,
+    logger,
+    report,
+    prompt: str,
+    choice_label: str,
+    open_folder_fn,
+    default: str = "y",
+    followup_prompt: str = "Continue with submission?",
+    followup_default: str = "y",
+    followup_choice_label: str = "Continue after viewing reports?",
+) -> bool:
+    answer = logger.ask_choice(
+        prompt,
+        _standard_continue_options(),
+        default=default,
+    )
+    report.record_user_choice(
+        choice_label,
+        answer,
+        options=["Continue", "Cancel", "Open reports"],
+    )
+
+    if answer == "r":
+        logger.report_info(str(report.get_path()))
+        open_folder_fn(str(report.get_reports_dir()), logger_instance=logger)
+        answer = logger.ask_choice(
+            followup_prompt,
+            [
+                ("y", "Continue", "Proceed with submission"),
+                ("n", "Cancel", "Cancel and close"),
+            ],
+            default=followup_default,
+        )
+        report.record_user_choice(
+            followup_choice_label,
+            answer,
+            options=["Continue", "Cancel"],
+        )
+
+    if answer != "y":
+        report.set_status("cancelled")
+        return False
+    return True
+
+
+def _record_manifest_touch_mismatch(
+    *,
+    logger,
+    report,
+    total_touched: int,
+    manifest_count: int,
+) -> None:
+    if total_touched <= 0 or total_touched >= manifest_count:
+        return
+
+    mismatch_msg = (
+        f"rclone touched {total_touched} of {manifest_count} "
+        "manifest files; some dependencies may have been skipped."
+    )
+    logger.warning(mismatch_msg)
+    if _debug_enabled():
+        _LOG(f"WARNING: {mismatch_msg}")
+    report.add_issue_code(
+        "UPLOAD_TOUCHED_LT_MANIFEST",
+        "Retry upload and inspect manifest/source root alignment.",
+    )
+
+
+def _build_project_manifest_from_map(
+    *,
+    fmap: Dict[Any, Any],
+    abs_blend: str,
+    common_path: str,
+    ok_files_cache: set[str],
+    logger,
+    report,
+) -> ManifestBuildResult:
+    rel_manifest: List[str] = []
+    manifest_source_map: Dict[str, str] = {}
+    dependency_total_size = 0
+    ok_count = 0
+    pack_idx = 0
+
+    for src_path, _dst_path in fmap.items():
+        src_str = str(src_path).replace("\\", "/")
+
+        # Skip the main blend file (uploaded separately)
+        if _samepath(src_str, abs_blend):
+            continue
+
+        # Use cached readability from Stage 1
+        if src_str not in ok_files_cache:
+            continue
+
+        pack_idx += 1
+        ok_count += 1
+
+        size = 0
+        try:
+            size = os.path.getsize(src_str)
+            dependency_total_size += size
+        except Exception:
+            pass
+
+        logger.pack_entry(pack_idx, src_str, size=size, status="ok")
+
+        rel = _relpath_safe(src_str, common_path)
+        rel = _s3key_clean(rel)
+        if rel:
+            rel_manifest.append(rel)
+            if rel not in manifest_source_map:
+                manifest_source_map[rel] = src_str
+            report.add_pack_entry(src_str, rel, file_size=size, status="ok")
+
+    return ManifestBuildResult(
+        rel_manifest=rel_manifest,
+        manifest_source_map=manifest_source_map,
+        dependency_total_size=dependency_total_size,
+        ok_count=ok_count,
+    )
+
+
+def _apply_manifest_validation(
+    *,
+    rel_manifest: List[str],
+    common_path: str,
+    manifest_source_map: Dict[str, str],
+    validate_manifest_entries,
+    logger,
+    report,
+    open_folder_fn,
+) -> tuple[List[str], bool]:
+    manifest_validation = validate_manifest_entries(
+        rel_manifest,
+        source_root=common_path,
+        source_map=manifest_source_map,
+        clean_key=_s3key_clean,
+    )
+    normalized_manifest = manifest_validation.normalized_entries
+    report.set_metadata("manifest_entry_count", len(normalized_manifest))
+    report.set_metadata(
+        "manifest_source_match_count",
+        int(manifest_validation.stats.get("source_match_count", 0)),
+    )
+    report.set_metadata("manifest_validation_stats", manifest_validation.stats)
+    for code in manifest_validation.issue_codes:
+        report.add_issue_code(code, manifest_validation.actions.get(code))
+    for warning in manifest_validation.warnings:
+        logger.warning(warning)
+
+    if not manifest_validation.has_blocking_risk:
+        return normalized_manifest, True
+
+    keep_going = _prompt_continue_with_reports(
+        logger=logger,
+        report=report,
+        prompt="Manifest/source mapping risk detected. Continue anyway?",
+        choice_label="Manifest validation risk found",
+        open_folder_fn=open_folder_fn,
+        default="n",
+        followup_default="n",
+        followup_choice_label="Continue after manifest risk report?",
+    )
+    return normalized_manifest, keep_going
+
+
+def _build_job_payload(
+    *,
+    data: Dict[str, Any],
+    org_id: str,
+    project_name: str,
+    blend_path: str,
+    project_root_str: str,
+    main_blend_s3: str,
+    required_storage: int,
+    use_project: bool,
+) -> Dict[str, object]:
+    use_scene_image_format = bool(data.get("use_scene_image_format")) or (
+        str(data.get("image_format", "")).upper() == "SCENE"
+    )
+    frame_step_val = int(data.get("frame_stepping_size", 1))
+
+    return {
+        "job_data": {
+            "id": data["job_id"],
+            "project_id": data["project"]["id"],
+            "packed_addons": data["packed_addons"],
+            "organization_id": org_id,
+            "main_file": (
+                _nfc(
+                    str(Path(blend_path).relative_to(project_root_str)).replace(
+                        "\\", "/"
+                    )
+                )
+                if not use_project
+                else _nfc(_s3key_clean(main_blend_s3))
+            ),
+            "project_path": project_name,
+            "name": data["job_name"],
+            "status": "queued",
+            "start": data["start_frame"],
+            "end": data["end_frame"],
+            "frame_step": frame_step_val,
+            "batch_size": 1,
+            "image_format": data["image_format"],
+            "use_scene_image_format": use_scene_image_format,
+            "render_engine": data["render_engine"],
+            "version": "20241125",
+            "blender_version": data["blender_version"],
+            "required_storage": required_storage,
+            "zip": not use_project,
+            "ignore_errors": data["ignore_errors"],
+            "use_bserver": data["use_bserver"],
+            "use_async_upload": data["use_async_upload"],
+            "defer_status": data["use_async_upload"],
+            "farm_url": data["farm_url"],
+            "tasks": list(
+                range(data["start_frame"], data["end_frame"] + 1, frame_step_val)
+            ),
+        }
+    }
+
+
 # ─── Utilities imported after bootstrap ───────────────────────────
 # These will be set by _bootstrap_addon_modules() at runtime.
 # Declared here to satisfy static analysis and allow early use in type hints.
@@ -282,6 +527,12 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     compute_project_root = bat_utils.compute_project_root
     classify_out_of_root_ok_files = bat_utils.classify_out_of_root_ok_files
 
+    project_upload_validator = importlib.import_module(
+        f"{pkg_name}.utils.project_upload_validator"
+    )
+    validate_project_upload = project_upload_validator.validate_project_upload
+    validate_manifest_entries = project_upload_validator.validate_manifest_entries
+
     cloud_files = importlib.import_module(f"{pkg_name}.utils.cloud_files")
 
     submit_logger = importlib.import_module(f"{pkg_name}.utils.submit_logger")
@@ -310,6 +561,8 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "trace_dependencies": trace_dependencies,
         "compute_project_root": compute_project_root,
         "classify_out_of_root_ok_files": classify_out_of_root_ok_files,
+        "validate_project_upload": validate_project_upload,
+        "validate_manifest_entries": validate_manifest_entries,
         "cloud_files": cloud_files,
         "create_logger": create_logger,
         "run_rclone": run_rclone,
@@ -337,6 +590,8 @@ def main() -> None:
     trace_dependencies = mods["trace_dependencies"]
     compute_project_root = mods["compute_project_root"]
     classify_out_of_root_ok_files = mods["classify_out_of_root_ok_files"]
+    validate_project_upload = mods["validate_project_upload"]
+    validate_manifest_entries = mods["validate_manifest_entries"]
     cloud_files = mods["cloud_files"]
     create_logger = mods["create_logger"]
     run_rclone = mods["run_rclone"]
@@ -617,6 +872,7 @@ def main() -> None:
             same_drive_deps, project_root
         )
         common_path = str(project_root).replace("\\", "/")
+        project_root_str = common_path
         report.set_metadata("project_root", common_path)
 
         # Determine project_root_method for the report
@@ -639,6 +895,23 @@ def main() -> None:
         if out_of_root_ok_files:
             report.add_out_of_root_files([str(p) for p in out_of_root_ok_files])
 
+        project_validation = validate_project_upload(
+            blend_path=Path(blend_path),
+            project_root=project_root,
+            dep_paths=dep_paths,
+            raw_usages=raw_usages,
+            missing_set=missing_set,
+            unreadable_dict=unreadable_dict,
+            optional_set=optional_set,
+            cross_drive_files=list(cross_drive_deps),
+            absolute_path_files=list(absolute_path_deps),
+            out_of_root_files=list(out_of_root_ok_files),
+        )
+        report.set_metadata("project_validation_version", "1.0")
+        report.set_metadata("project_validation_stats", project_validation.stats)
+        for code in project_validation.issue_codes:
+            report.add_issue_code(code, project_validation.actions.get(code))
+
         # Build warning text for issues
         missing_files_list = [str(p) for p in sorted(missing_set)]
         unreadable_files_list = [
@@ -653,6 +926,7 @@ def main() -> None:
             or unreadable_files_list
             or absolute_path_deps
             or out_of_root_files_list
+            or project_validation.has_blocking_risk
         )
 
         warning_text = None
@@ -716,6 +990,9 @@ def main() -> None:
                 and not cross_drive_deps
             ):
                 warning_parts.append("Missing or unreadable files excluded.")
+
+            if project_validation.warnings:
+                warning_parts.extend(project_validation.warnings)
 
             warning_text = (
                 "\n".join(warning_parts) + mac_extra if warning_parts else None
@@ -790,40 +1067,26 @@ def main() -> None:
 
         # Prompt if there are issues
         if has_issues:
-            answer = logger.ask_choice(
-                "Some dependencies have problems. Continue anyway?",
-                [
-                    ("y", "Continue", "Proceed with submission"),
-                    ("n", "Cancel", "Cancel and close"),
-                    (
-                        "r",
-                        "Open diagnostic reports",
-                        "Open the diagnostic reports folder",
-                    ),
-                ],
-                default="y",
-            )
-            report.record_user_choice(
-                "Dependency issues found", answer,
-                options=["Continue", "Cancel", "Open reports"],
-            )
-            if answer == "r":
-                logger.report_info(str(report.get_path()))
-                open_folder(str(report.get_reports_dir()), logger_instance=logger)
-                answer = logger.ask_choice(
-                    "Continue with submission?",
-                    [
-                        ("y", "Continue", "Proceed with submission"),
-                        ("n", "Cancel", "Cancel and close"),
-                    ],
-                    default="y",
+            issue_prompt = "Some dependencies have problems. Continue anyway?"
+            issue_default = "y"
+            issue_choice_label = "Dependency issues found"
+            if project_validation.has_blocking_risk:
+                issue_prompt = (
+                    "Project upload risk detected (path mapping may fail on farm). Continue anyway?"
                 )
-                report.record_user_choice(
-                    "Continue after viewing reports?", answer,
-                    options=["Continue", "Cancel"],
-                )
-            if answer != "y":
-                report.set_status("cancelled")
+                issue_default = "n"
+                issue_choice_label = "Project upload blocking risks found"
+
+            keep_going = _prompt_continue_with_reports(
+                logger=logger,
+                report=report,
+                prompt=issue_prompt,
+                choice_label=issue_choice_label,
+                open_folder_fn=open_folder,
+                default=issue_default,
+                followup_default="y",
+            )
+            if not keep_going:
                 sys.exit(1)
 
         # ═══════════════════════════════════════════════════════════════════════
@@ -848,41 +1111,18 @@ def main() -> None:
         )
 
         abs_blend = _norm_abs_for_detection(blend_path)
-        rel_manifest: List[str] = []
-        dependency_total_size = 0  # Track dependency size separately for progress bar
-
-        total_files = len(fmap)
         logger.pack_start()
-
-        ok_count = 0
-        pack_idx = 0
-        for idx, (src_path, dst_path) in enumerate(fmap.items()):
-            src_str = str(src_path).replace("\\", "/")
-
-            # Skip the main blend file (uploaded separately)
-            if _samepath(src_str, abs_blend):
-                continue
-
-            # Use cached readability from Stage 1
-            if src_str not in ok_files_cache:
-                continue
-
-            pack_idx += 1
-            ok_count += 1
-            size = 0
-            try:
-                size = os.path.getsize(src_str)
-                dependency_total_size += size
-            except Exception:
-                pass
-
-            logger.pack_entry(pack_idx, src_str, size=size, status="ok")
-
-            rel = _relpath_safe(src_str, common_path)
-            rel = _s3key_clean(rel)
-            if rel:
-                rel_manifest.append(rel)
-                report.add_pack_entry(src_str, rel, file_size=size, status="ok")
+        manifest_build = _build_project_manifest_from_map(
+            fmap=fmap,
+            abs_blend=abs_blend,
+            common_path=common_path,
+            ok_files_cache=ok_files_cache,
+            logger=logger,
+            report=report,
+        )
+        rel_manifest = manifest_build.rel_manifest
+        manifest_source_map = manifest_build.manifest_source_map
+        dependency_total_size = manifest_build.dependency_total_size
 
         # Calculate total required storage (dependencies + main blend)
         required_storage = dependency_total_size
@@ -890,6 +1130,18 @@ def main() -> None:
             required_storage += os.path.getsize(blend_path)
         except Exception:
             pass
+
+        rel_manifest, keep_going = _apply_manifest_validation(
+            rel_manifest=rel_manifest,
+            common_path=common_path,
+            manifest_source_map=manifest_source_map,
+            validate_manifest_entries=validate_manifest_entries,
+            logger=logger,
+            report=report,
+            open_folder_fn=open_folder,
+        )
+        if not keep_going:
+            sys.exit(1)
 
         with filelist.open("w", encoding="utf-8") as fp:
             for rel in rel_manifest:
@@ -919,7 +1171,7 @@ def main() -> None:
         main_blend_s3 = _nfc(_s3key_clean(blend_rel) or os.path.basename(abs_blend))
 
         logger.pack_end(
-            ok_count=ok_count,
+            ok_count=manifest_build.ok_count,
             total_size=required_storage,
             title="Manifest complete",
         )
@@ -972,40 +1224,16 @@ def main() -> None:
         report.complete_stage("trace")
 
         if has_zip_issues:
-            answer = logger.ask_choice(
-                "Some dependencies have problems. Continue anyway?",
-                [
-                    ("y", "Continue", "Proceed with submission"),
-                    ("n", "Cancel", "Cancel and close"),
-                    (
-                        "r",
-                        "Open diagnostic reports",
-                        "Open the diagnostic reports folder",
-                    ),
-                ],
+            keep_going = _prompt_continue_with_reports(
+                logger=logger,
+                report=report,
+                prompt="Some dependencies have problems. Continue anyway?",
+                choice_label="Dependency issues found",
+                open_folder_fn=open_folder,
                 default="y",
+                followup_default="y",
             )
-            report.record_user_choice(
-                "Dependency issues found", answer,
-                options=["Continue", "Cancel", "Open reports"],
-            )
-            if answer == "r":
-                logger.report_info(str(report.get_path()))
-                open_folder(str(report.get_reports_dir()), logger_instance=logger)
-                answer = logger.ask_choice(
-                    "Continue with submission?",
-                    [
-                        ("y", "Continue", "Proceed with submission"),
-                        ("n", "Cancel", "Cancel and close"),
-                    ],
-                    default="y",
-                )
-                report.record_user_choice(
-                    "Continue after viewing reports?", answer,
-                    options=["Continue", "Cancel"],
-                )
-            if answer != "y":
-                report.set_status("cancelled")
+            if not keep_going:
                 sys.exit(1)
 
         # TEST MODE
@@ -1424,12 +1652,12 @@ def main() -> None:
                         )
                     # Post-upload transfer count validation
                     total_touched = agg_transfers + agg_checks
-                    if total_touched > 0 and total_touched < len(rel_manifest) and _debug_enabled():
-                        _LOG(
-                            f"WARNING: rclone touched {total_touched} of "
-                            f"{len(rel_manifest)} manifest files — "
-                            f"{len(rel_manifest) - total_touched} file(s) may have been skipped"
-                        )
+                    _record_manifest_touch_mismatch(
+                        logger=logger,
+                        report=report,
+                        total_touched=total_touched,
+                        manifest_count=len(rel_manifest),
+                    )
                 else:
                     # --- NORMAL PATH: non-root source (existing behavior) ---
                     report.start_upload_step(
@@ -1471,14 +1699,14 @@ def main() -> None:
                             for line in tail[-10:]:
                                 _LOG(f"  {line}")
                     # Post-upload transfer count validation
-                    if stats and _debug_enabled():
+                    if stats:
                         total_touched = (stats.get("transfers", 0) or 0) + (stats.get("checks", 0) or 0)
-                        if total_touched > 0 and total_touched < len(rel_manifest):
-                            _LOG(
-                                f"WARNING: rclone touched {total_touched} of "
-                                f"{len(rel_manifest)} manifest files — "
-                                f"{len(rel_manifest) - total_touched} file(s) may have been skipped"
-                            )
+                        _record_manifest_touch_mismatch(
+                            logger=logger,
+                            report=report,
+                            total_touched=total_touched,
+                            manifest_count=len(rel_manifest),
+                        )
                 step += 1
 
             with filelist.open("a", encoding="utf-8") as fp:
@@ -1547,50 +1775,16 @@ def main() -> None:
         except Exception:
             pass
 
-    use_scene_image_format = bool(data.get("use_scene_image_format")) or (
-        str(data.get("image_format", "")).upper() == "SCENE"
+    payload = _build_job_payload(
+        data=data,
+        org_id=org_id,
+        project_name=project_name,
+        blend_path=blend_path,
+        project_root_str=project_root_str,
+        main_blend_s3=main_blend_s3,
+        required_storage=required_storage,
+        use_project=use_project,
     )
-    frame_step_val = int(data.get("frame_stepping_size", 1))
-
-    payload: Dict[str, object] = {
-        "job_data": {
-            "id": data["job_id"],
-            "project_id": data["project"]["id"],
-            "packed_addons": data["packed_addons"],
-            "organization_id": org_id,
-            "main_file": (
-                _nfc(
-                    str(Path(blend_path).relative_to(project_root_str)).replace(
-                        "\\", "/"
-                    )
-                )
-                if not use_project
-                else _nfc(_s3key_clean(main_blend_s3))
-            ),
-            "project_path": project_name,
-            "name": data["job_name"],
-            "status": "queued",
-            "start": data["start_frame"],
-            "end": data["end_frame"],
-            "frame_step": frame_step_val,
-            "batch_size": 1,
-            "image_format": data["image_format"],
-            "use_scene_image_format": use_scene_image_format,
-            "render_engine": data["render_engine"],
-            "version": "20241125",
-            "blender_version": data["blender_version"],
-            "required_storage": required_storage,
-            "zip": not use_project,
-            "ignore_errors": data["ignore_errors"],
-            "use_bserver": data["use_bserver"],
-            "use_async_upload": data["use_async_upload"],
-            "defer_status": data["use_async_upload"],
-            "farm_url": data["farm_url"],
-            "tasks": list(
-                range(data["start_frame"], data["end_frame"] + 1, frame_step_val)
-            ),
-        }
-    }
 
     try:
         post_resp = session.post(

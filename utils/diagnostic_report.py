@@ -72,6 +72,10 @@ class DiagnosticReport:
                 "upload_type": "",
                 "project_root": "",
                 "project_root_method": "",  # "automatic", "custom", "filesystem_root"
+                "project_validation_version": "",
+                "project_validation_stats": {},
+                "manifest_entry_count": 0,
+                "manifest_source_match_count": 0,
                 "blender_version": "",
                 "addon_version": [],
                 "started_at": datetime.now().isoformat(),
@@ -198,6 +202,13 @@ class DiagnosticReport:
             actions = self._data["issues"].setdefault("actions", {})
             actions[code] = action
 
+    def add_issue_code(self, code: str, action: Optional[str] = None) -> None:
+        """Public issue-code API for worker-side risk classification."""
+        with self._lock:
+            self._append_issue_code(code, action)
+            self._entries_since_flush += 1
+            self._maybe_flush()
+
     def set_metadata(self, key: str, value: Any) -> None:
         """Set a metadata field (e.g., project_root)."""
         with self._lock:
@@ -302,7 +313,7 @@ class DiagnosticReport:
                         )
                     if self._data["issues"]["absolute_path_files"]:
                         self._append_issue_code(
-                            "ABSOLUTE_PATH_EXCLUDED",
+                            "PROJECT_ABSOLUTE_PATH_REFERENCE",
                             "Make all paths relative or use Zip upload.",
                         )
 
@@ -640,7 +651,7 @@ class DiagnosticReport:
             self._data["issues"]["absolute_path_files"] = files
             if files:
                 self._append_issue_code(
-                    "ABSOLUTE_PATH_EXCLUDED",
+                    "PROJECT_ABSOLUTE_PATH_REFERENCE",
                     "Make all paths relative or use Zip upload.",
                 )
             self._entries_since_flush += 1
@@ -652,7 +663,7 @@ class DiagnosticReport:
             self._data["issues"]["out_of_root_files"] = files
             if files:
                 self._append_issue_code(
-                    "OUT_OF_ROOT_EXCLUDED",
+                    "PROJECT_OUT_OF_ROOT_EXCLUDED",
                     "Broaden custom project path or use Zip upload.",
                 )
             self._entries_since_flush += 1
