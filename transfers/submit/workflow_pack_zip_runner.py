@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .workflow_types import (
+    PackZipDeps,
     PackZipResult,
     StageArtifacts,
     SubmitRunContext,
@@ -16,9 +17,11 @@ def run_pack_zip_stage(
     trace_result: TraceZipResult,
     logger,
     report,
-    pack_blend,
-    norm_abs_for_detection_fn,
+    deps: PackZipDeps,
 ) -> PackZipResult:
+    pack_blend = deps.pack_blend
+    norm_abs_for_detection_fn = deps.norm_abs_for_detection_fn
+
     blend_path = context.blend_path
     zip_file = context.zip_file
     project_root_str = trace_result.project_root_str

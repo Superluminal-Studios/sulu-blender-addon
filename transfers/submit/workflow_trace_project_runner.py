@@ -6,7 +6,12 @@ import os
 from pathlib import Path
 from typing import Dict, List
 
-from .workflow_types import FlowControl, SubmitRunContext, TraceProjectResult
+from .workflow_types import (
+    FlowControl,
+    SubmitRunContext,
+    TraceProjectDeps,
+    TraceProjectResult,
+)
 
 
 def run_trace_project_stage(
@@ -14,26 +19,28 @@ def run_trace_project_stage(
     context: SubmitRunContext,
     logger,
     report,
-    shorten_path_fn,
-    format_size_fn,
-    is_filesystem_root_fn,
-    debug_enabled_fn,
-    log_fn,
+    deps: TraceProjectDeps,
     is_mac: bool,
-    mac_permission_help_fn,
-    trace_dependencies,
-    compute_project_root,
-    classify_out_of_root_ok_files,
-    apply_project_validation,
-    validate_project_upload,
-    meta_project_validation_version: str,
-    meta_project_validation_stats: str,
-    default_project_validation_version: str,
-    prompt_continue_with_reports,
-    open_folder_fn,
-    generate_test_report,
-    safe_input_fn,
 ) -> TraceProjectResult:
+    shorten_path_fn = deps.shorten_path_fn
+    format_size_fn = deps.format_size_fn
+    is_filesystem_root_fn = deps.is_filesystem_root_fn
+    debug_enabled_fn = deps.debug_enabled_fn
+    log_fn = deps.log_fn
+    mac_permission_help_fn = deps.mac_permission_help_fn
+    trace_dependencies = deps.trace_dependencies
+    compute_project_root = deps.compute_project_root
+    classify_out_of_root_ok_files = deps.classify_out_of_root_ok_files
+    apply_project_validation = deps.apply_project_validation
+    validate_project_upload = deps.validate_project_upload
+    prompt_continue_with_reports = deps.prompt_continue_with_reports
+    open_folder_fn = deps.open_folder_fn
+    generate_test_report = deps.generate_test_report
+    safe_input_fn = deps.safe_input_fn
+    meta_project_validation_version = deps.meta_project_validation_version
+    meta_project_validation_stats = deps.meta_project_validation_stats
+    default_project_validation_version = deps.default_project_validation_version
+
     data = context.data
     blend_path = context.blend_path
     automatic_project_path = context.automatic_project_path

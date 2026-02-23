@@ -8,47 +8,53 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
-from .workflow_types import UploadResult
+from .workflow_types import StageArtifacts, SubmitRunContext, UploadDeps, UploadResult
 
 
 def run_upload_stage(
     *,
-    data: Dict[str, Any],
+    context: SubmitRunContext,
+    artifacts: StageArtifacts,
     session,
     headers: Dict[str, str],
     logger,
     report,
-    use_project: bool,
-    blend_path: str,
-    zip_file: Path,
-    filelist: Path,
-    job_id: str,
-    project_name: str,
-    common_path: str,
-    rel_manifest: List[str],
-    main_blend_s3: str,
-    dependency_total_size: int,
-    required_storage: int,
     rclone_bin: str,
-    build_base_fn,
-    cloudflare_r2_domain: str,
-    run_rclone,
-    debug_enabled_fn,
-    log_fn,
-    format_size_fn,
-    rclone_bytes_fn,
-    rclone_stats_fn,
-    is_empty_upload_fn,
-    get_rclone_tail_fn,
-    log_upload_result_fn,
-    check_rclone_errors_fn,
-    is_filesystem_root_fn,
-    split_manifest_by_first_dir,
-    record_manifest_touch_mismatch,
-    upload_touched_lt_manifest: str,
-    clean_key_fn,
-    normalize_nfc_fn,
+    deps: UploadDeps,
 ) -> UploadResult:
+    data: Dict[str, Any] = context.data
+    use_project = context.use_project
+    blend_path = context.blend_path
+    zip_file = context.zip_file
+    filelist = context.filelist
+    job_id = context.job_id
+    project_name = context.project_name
+
+    common_path = artifacts.common_path
+    rel_manifest: List[str] = artifacts.rel_manifest
+    main_blend_s3 = artifacts.main_blend_s3
+    dependency_total_size = artifacts.dependency_total_size
+    required_storage = artifacts.required_storage
+
+    build_base_fn = deps.build_base_fn
+    cloudflare_r2_domain = deps.cloudflare_r2_domain
+    run_rclone = deps.run_rclone
+    debug_enabled_fn = deps.debug_enabled_fn
+    log_fn = deps.log_fn
+    format_size_fn = deps.format_size_fn
+    rclone_bytes_fn = deps.rclone_bytes_fn
+    rclone_stats_fn = deps.rclone_stats_fn
+    is_empty_upload_fn = deps.is_empty_upload_fn
+    get_rclone_tail_fn = deps.get_rclone_tail_fn
+    log_upload_result_fn = deps.log_upload_result_fn
+    check_rclone_errors_fn = deps.check_rclone_errors_fn
+    is_filesystem_root_fn = deps.is_filesystem_root_fn
+    split_manifest_by_first_dir = deps.split_manifest_by_first_dir
+    record_manifest_touch_mismatch = deps.record_manifest_touch_mismatch
+    upload_touched_lt_manifest = deps.upload_touched_lt_manifest
+    clean_key_fn = deps.clean_key_fn
+    normalize_nfc_fn = deps.normalize_nfc_fn
+
     logger.stage_header(3, "Uploading", "Transferring data to farm storage")
     report.start_stage("upload")
 

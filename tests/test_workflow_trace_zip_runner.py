@@ -66,6 +66,25 @@ def _context(td: str, *, test_mode: bool) -> workflow_types.SubmitRunContext:
     )
 
 
+def _deps(
+    *,
+    trace_dependencies,
+    compute_project_root,
+    prompt_continue_with_reports,
+    generate_test_report=lambda **kwargs: ({}, None),
+) -> workflow_types.TraceZipDeps:
+    return workflow_types.TraceZipDeps(
+        shorten_path_fn=lambda p: p,
+        format_size_fn=lambda n: str(n),
+        trace_dependencies=trace_dependencies,
+        compute_project_root=compute_project_root,
+        prompt_continue_with_reports=prompt_continue_with_reports,
+        open_folder_fn=lambda *args, **kwargs: None,
+        generate_test_report=generate_test_report,
+        safe_input_fn=lambda *args, **kwargs: None,
+    )
+
+
 class TestWorkflowTraceZipRunner(unittest.TestCase):
     def test_zip_test_mode_returns_exit_flow(self):
         with tempfile.TemporaryDirectory() as td:
@@ -76,20 +95,18 @@ class TestWorkflowTraceZipRunner(unittest.TestCase):
                 context=context,
                 logger=_Logger(),
                 report=_Report(),
-                shorten_path_fn=lambda p: p,
-                format_size_fn=lambda n: str(n),
-                trace_dependencies=lambda *args, **kwargs: (
-                    [dep],
-                    set(),
-                    {},
-                    [],
-                    set(),
+                deps=_deps(
+                    trace_dependencies=lambda *args, **kwargs: (
+                        [dep],
+                        set(),
+                        {},
+                        [],
+                        set(),
+                    ),
+                    compute_project_root=lambda *args, **kwargs: (Path(td), [dep], []),
+                    prompt_continue_with_reports=lambda **kwargs: True,
+                    generate_test_report=lambda **kwargs: ({}, Path(td) / "report.json"),
                 ),
-                compute_project_root=lambda *args, **kwargs: (Path(td), [dep], []),
-                prompt_continue_with_reports=lambda **kwargs: True,
-                open_folder_fn=lambda *args, **kwargs: None,
-                generate_test_report=lambda **kwargs: ({}, Path(td) / "report.json"),
-                safe_input_fn=lambda *args, **kwargs: None,
             )
 
             self.assertTrue(result.flow.should_exit)
@@ -105,20 +122,17 @@ class TestWorkflowTraceZipRunner(unittest.TestCase):
                 context=context,
                 logger=_Logger(),
                 report=_Report(),
-                shorten_path_fn=lambda p: p,
-                format_size_fn=lambda n: str(n),
-                trace_dependencies=lambda *args, **kwargs: (
-                    [dep],
-                    {Path(td) / "missing.exr"},
-                    {},
-                    [],
-                    set(),
+                deps=_deps(
+                    trace_dependencies=lambda *args, **kwargs: (
+                        [dep],
+                        {Path(td) / "missing.exr"},
+                        {},
+                        [],
+                        set(),
+                    ),
+                    compute_project_root=lambda *args, **kwargs: (Path(td), [dep], []),
+                    prompt_continue_with_reports=lambda **kwargs: False,
                 ),
-                compute_project_root=lambda *args, **kwargs: (Path(td), [dep], []),
-                prompt_continue_with_reports=lambda **kwargs: False,
-                open_folder_fn=lambda *args, **kwargs: None,
-                generate_test_report=lambda **kwargs: ({}, None),
-                safe_input_fn=lambda *args, **kwargs: None,
             )
 
             self.assertTrue(result.flow.should_exit)

@@ -94,8 +94,10 @@ class TestWorkflowPackZipRunner(unittest.TestCase):
                 trace_result=_trace_result(Path(td)),
                 logger=_Logger(),
                 report=report,
-                pack_blend=lambda *args, **kwargs: ({}, None),
-                norm_abs_for_detection_fn=lambda p: p,
+                deps=workflow_types.PackZipDeps(
+                    pack_blend=lambda *args, **kwargs: ({}, None),
+                    norm_abs_for_detection_fn=lambda p: p,
+                ),
             )
 
             self.assertIsNotNone(result.fatal_error)
@@ -116,8 +118,10 @@ class TestWorkflowPackZipRunner(unittest.TestCase):
                 trace_result=_trace_result(Path(td)),
                 logger=_Logger(),
                 report=_Report(),
-                pack_blend=_pack_blend,
-                norm_abs_for_detection_fn=lambda p: p,
+                deps=workflow_types.PackZipDeps(
+                    pack_blend=_pack_blend,
+                    norm_abs_for_detection_fn=lambda p: p,
+                ),
             )
 
             self.assertIsNone(result.fatal_error)

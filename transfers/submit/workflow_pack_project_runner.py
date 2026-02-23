@@ -6,6 +6,7 @@ import os
 
 from .workflow_types import (
     FlowControl,
+    PackProjectDeps,
     PackProjectResult,
     StageArtifacts,
     SubmitRunContext,
@@ -19,25 +20,27 @@ def run_pack_project_stage(
     trace_result: TraceProjectResult,
     logger,
     report,
-    pack_blend,
-    norm_abs_for_detection_fn,
-    build_project_manifest_from_map,
-    samepath_fn,
-    relpath_safe_fn,
-    clean_key_fn,
-    normalize_nfc_fn,
-    apply_manifest_validation,
-    validate_manifest_entries,
-    write_manifest_file,
-    validate_manifest_writeback,
-    prompt_continue_with_reports,
-    open_folder_fn,
-    meta_manifest_entry_count: str,
-    meta_manifest_source_match_count: str,
-    meta_manifest_validation_stats: str,
-    debug_enabled_fn,
-    log_fn,
+    deps: PackProjectDeps,
 ) -> PackProjectResult:
+    pack_blend = deps.pack_blend
+    norm_abs_for_detection_fn = deps.norm_abs_for_detection_fn
+    build_project_manifest_from_map = deps.build_project_manifest_from_map
+    samepath_fn = deps.samepath_fn
+    relpath_safe_fn = deps.relpath_safe_fn
+    clean_key_fn = deps.clean_key_fn
+    normalize_nfc_fn = deps.normalize_nfc_fn
+    apply_manifest_validation = deps.apply_manifest_validation
+    validate_manifest_entries = deps.validate_manifest_entries
+    write_manifest_file = deps.write_manifest_file
+    validate_manifest_writeback = deps.validate_manifest_writeback
+    prompt_continue_with_reports = deps.prompt_continue_with_reports
+    open_folder_fn = deps.open_folder_fn
+    meta_manifest_entry_count = deps.meta_manifest_entry_count
+    meta_manifest_source_match_count = deps.meta_manifest_source_match_count
+    meta_manifest_validation_stats = deps.meta_manifest_validation_stats
+    debug_enabled_fn = deps.debug_enabled_fn
+    log_fn = deps.log_fn
+
     blend_path = context.blend_path
     filelist = context.filelist
 

@@ -147,6 +147,90 @@ class FinalizeResult:
     fatal_error: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class TraceProjectDeps:
+    shorten_path_fn: Any
+    format_size_fn: Any
+    is_filesystem_root_fn: Any
+    debug_enabled_fn: Any
+    log_fn: Any
+    mac_permission_help_fn: Any
+    trace_dependencies: Any
+    compute_project_root: Any
+    classify_out_of_root_ok_files: Any
+    apply_project_validation: Any
+    validate_project_upload: Any
+    prompt_continue_with_reports: Any
+    open_folder_fn: Any
+    generate_test_report: Any
+    safe_input_fn: Any
+    meta_project_validation_version: str
+    meta_project_validation_stats: str
+    default_project_validation_version: str
+
+
+@dataclass(frozen=True)
+class TraceZipDeps:
+    shorten_path_fn: Any
+    format_size_fn: Any
+    trace_dependencies: Any
+    compute_project_root: Any
+    prompt_continue_with_reports: Any
+    open_folder_fn: Any
+    generate_test_report: Any
+    safe_input_fn: Any
+
+
+@dataclass(frozen=True)
+class PackProjectDeps:
+    pack_blend: Any
+    norm_abs_for_detection_fn: Any
+    build_project_manifest_from_map: Any
+    samepath_fn: Any
+    relpath_safe_fn: Any
+    clean_key_fn: Any
+    normalize_nfc_fn: Any
+    apply_manifest_validation: Any
+    validate_manifest_entries: Any
+    write_manifest_file: Any
+    validate_manifest_writeback: Any
+    prompt_continue_with_reports: Any
+    open_folder_fn: Any
+    meta_manifest_entry_count: str
+    meta_manifest_source_match_count: str
+    meta_manifest_validation_stats: str
+    debug_enabled_fn: Any
+    log_fn: Any
+
+
+@dataclass(frozen=True)
+class PackZipDeps:
+    pack_blend: Any
+    norm_abs_for_detection_fn: Any
+
+
+@dataclass(frozen=True)
+class UploadDeps:
+    build_base_fn: Any
+    cloudflare_r2_domain: str
+    run_rclone: Any
+    debug_enabled_fn: Any
+    log_fn: Any
+    format_size_fn: Any
+    rclone_bytes_fn: Any
+    rclone_stats_fn: Any
+    is_empty_upload_fn: Any
+    get_rclone_tail_fn: Any
+    log_upload_result_fn: Any
+    check_rclone_errors_fn: Any
+    is_filesystem_root_fn: Any
+    split_manifest_by_first_dir: Any
+    record_manifest_touch_mismatch: Any
+    upload_touched_lt_manifest: str
+    clean_key_fn: Any
+    normalize_nfc_fn: Any
+
+
 @dataclass
 class BootstrapDeps:
     pkg_name: str
@@ -187,6 +271,11 @@ class BootstrapDeps:
     ensure_rclone: Any
     diagnostic_report_class: Any
     generate_test_report: Any
+    trace_project_deps: TraceProjectDeps
+    trace_zip_deps: TraceZipDeps
+    pack_project_deps: PackProjectDeps
+    pack_zip_deps: PackZipDeps
+    upload_deps: UploadDeps
     run_preflight_phase: Any
     run_trace_project_stage: Any
     run_trace_zip_stage: Any

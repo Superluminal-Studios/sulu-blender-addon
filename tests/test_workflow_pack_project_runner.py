@@ -57,6 +57,34 @@ def _trace_result(root: Path) -> workflow_types.TraceProjectResult:
     )
 
 
+def _deps(
+    *,
+    build_project_manifest_from_map,
+    apply_manifest_validation,
+    write_manifest_file=lambda *args, **kwargs: None,
+) -> workflow_types.PackProjectDeps:
+    return workflow_types.PackProjectDeps(
+        pack_blend=lambda *args, **kwargs: ({}, None),
+        norm_abs_for_detection_fn=lambda p: p,
+        build_project_manifest_from_map=build_project_manifest_from_map,
+        samepath_fn=lambda a, b: a == b,
+        relpath_safe_fn=lambda p, b: p,
+        clean_key_fn=lambda k: k,
+        normalize_nfc_fn=lambda s: s,
+        apply_manifest_validation=apply_manifest_validation,
+        validate_manifest_entries=lambda *args, **kwargs: None,
+        write_manifest_file=write_manifest_file,
+        validate_manifest_writeback=lambda **kwargs: None,
+        prompt_continue_with_reports=lambda **kwargs: True,
+        open_folder_fn=lambda *args, **kwargs: None,
+        meta_manifest_entry_count="count",
+        meta_manifest_source_match_count="match",
+        meta_manifest_validation_stats="stats",
+        debug_enabled_fn=lambda: False,
+        log_fn=lambda msg: None,
+    )
+
+
 class TestWorkflowPackProjectRunner(unittest.TestCase):
     def test_manifest_validation_cancelled_returns_exit_flow(self):
         with tempfile.TemporaryDirectory() as td:
@@ -86,29 +114,15 @@ class TestWorkflowPackProjectRunner(unittest.TestCase):
                 trace_result=_trace_result(root),
                 logger=_Logger(),
                 report=_Report(),
-                pack_blend=lambda *args, **kwargs: ({}, None),
-                norm_abs_for_detection_fn=lambda p: p,
-                build_project_manifest_from_map=lambda **kwargs: workflow_types.ManifestBuildResult(
-                    rel_manifest=[],
-                    manifest_source_map={},
-                    dependency_total_size=0,
-                    ok_count=0,
+                deps=_deps(
+                    build_project_manifest_from_map=lambda **kwargs: workflow_types.ManifestBuildResult(
+                        rel_manifest=[],
+                        manifest_source_map={},
+                        dependency_total_size=0,
+                        ok_count=0,
+                    ),
+                    apply_manifest_validation=lambda **kwargs: ([], False),
                 ),
-                samepath_fn=lambda a, b: a == b,
-                relpath_safe_fn=lambda p, b: p,
-                clean_key_fn=lambda k: k,
-                normalize_nfc_fn=lambda s: s,
-                apply_manifest_validation=lambda **kwargs: ([], False),
-                validate_manifest_entries=lambda *args, **kwargs: None,
-                write_manifest_file=lambda *args, **kwargs: None,
-                validate_manifest_writeback=lambda **kwargs: None,
-                prompt_continue_with_reports=lambda **kwargs: True,
-                open_folder_fn=lambda *args, **kwargs: None,
-                meta_manifest_entry_count="count",
-                meta_manifest_source_match_count="match",
-                meta_manifest_validation_stats="stats",
-                debug_enabled_fn=lambda: False,
-                log_fn=lambda msg: None,
             )
 
             self.assertTrue(result.flow.should_exit)
@@ -144,31 +158,33 @@ class TestWorkflowPackProjectRunner(unittest.TestCase):
                 trace_result=_trace_result(root),
                 logger=_Logger(),
                 report=_Report(),
-                pack_blend=lambda *args, **kwargs: ({}, None),
-                norm_abs_for_detection_fn=lambda p: p,
-                build_project_manifest_from_map=lambda **kwargs: workflow_types.ManifestBuildResult(
-                    rel_manifest=["textures/a.jpg"],
-                    manifest_source_map={"textures/a.jpg": str(root / "textures/a.jpg")},
-                    dependency_total_size=dep_size,
-                    ok_count=1,
+                deps=workflow_types.PackProjectDeps(
+                    pack_blend=lambda *args, **kwargs: ({}, None),
+                    norm_abs_for_detection_fn=lambda p: p,
+                    build_project_manifest_from_map=lambda **kwargs: workflow_types.ManifestBuildResult(
+                        rel_manifest=["textures/a.jpg"],
+                        manifest_source_map={"textures/a.jpg": str(root / "textures/a.jpg")},
+                        dependency_total_size=dep_size,
+                        ok_count=1,
+                    ),
+                    samepath_fn=lambda a, b: a == b,
+                    relpath_safe_fn=lambda p, b: Path(p).name,
+                    clean_key_fn=lambda k: k,
+                    normalize_nfc_fn=lambda s: s,
+                    apply_manifest_validation=lambda **kwargs: (["textures/a.jpg"], True),
+                    validate_manifest_entries=lambda *args, **kwargs: None,
+                    write_manifest_file=lambda p, lines: p.write_text(
+                        "".join(f"{line}\n" for line in lines), encoding="utf-8"
+                    ),
+                    validate_manifest_writeback=lambda **kwargs: None,
+                    prompt_continue_with_reports=lambda **kwargs: True,
+                    open_folder_fn=lambda *args, **kwargs: None,
+                    meta_manifest_entry_count="count",
+                    meta_manifest_source_match_count="match",
+                    meta_manifest_validation_stats="stats",
+                    debug_enabled_fn=lambda: False,
+                    log_fn=lambda msg: None,
                 ),
-                samepath_fn=lambda a, b: a == b,
-                relpath_safe_fn=lambda p, b: Path(p).name,
-                clean_key_fn=lambda k: k,
-                normalize_nfc_fn=lambda s: s,
-                apply_manifest_validation=lambda **kwargs: (["textures/a.jpg"], True),
-                validate_manifest_entries=lambda *args, **kwargs: None,
-                write_manifest_file=lambda p, lines: p.write_text(
-                    "".join(f"{line}\n" for line in lines), encoding="utf-8"
-                ),
-                validate_manifest_writeback=lambda **kwargs: None,
-                prompt_continue_with_reports=lambda **kwargs: True,
-                open_folder_fn=lambda *args, **kwargs: None,
-                meta_manifest_entry_count="count",
-                meta_manifest_source_match_count="match",
-                meta_manifest_validation_stats="stats",
-                debug_enabled_fn=lambda: False,
-                log_fn=lambda msg: None,
             )
 
             self.assertFalse(result.flow.should_exit)

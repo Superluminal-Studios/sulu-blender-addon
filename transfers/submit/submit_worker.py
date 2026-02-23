@@ -199,24 +199,10 @@ def main() -> None:
     deps = _bootstrap_addon_modules(data)
 
     clear_console = deps.clear_console
-    shorten_path = deps.shorten_path
     is_blend_saved = deps.is_blend_saved
     open_folder = deps.open_folder
-    pack_blend = deps.pack_blend
-    trace_dependencies = deps.trace_dependencies
-    compute_project_root = deps.compute_project_root
-    classify_out_of_root_ok_files = deps.classify_out_of_root_ok_files
-    validate_project_upload = deps.validate_project_upload
-    validate_manifest_entries = deps.validate_manifest_entries
-    prompt_continue_with_reports = deps.prompt_continue_with_reports
-    build_project_manifest_from_map = deps.build_project_manifest_from_map
-    apply_manifest_validation = deps.apply_manifest_validation
-    write_manifest_file = deps.write_manifest_file
-    validate_manifest_writeback = deps.validate_manifest_writeback
     build_job_payload = deps.build_job_payload
-    apply_project_validation = deps.apply_project_validation
     DiagnosticReport = deps.diagnostic_report_class
-    generate_test_report = deps.generate_test_report
 
     proj = data["project"]
 
@@ -275,14 +261,6 @@ def main() -> None:
         flow = getattr(result, "flow", None)
         if flow is not None and getattr(flow, "should_exit", False):
             sys.exit(int(flow.exit_code or 0))
-
-    META_PROJECT_VALIDATION_VERSION = deps.meta_project_validation_version
-    META_PROJECT_VALIDATION_STATS = deps.meta_project_validation_stats
-    META_MANIFEST_ENTRY_COUNT = deps.meta_manifest_entry_count
-    META_MANIFEST_SOURCE_MATCH_COUNT = deps.meta_manifest_source_match_count
-    META_MANIFEST_VALIDATION_STATS = deps.meta_manifest_validation_stats
-    DEFAULT_PROJECT_VALIDATION_VERSION = deps.default_project_validation_version
-    UPLOAD_TOUCHED_LT_MANIFEST = deps.upload_touched_lt_manifest
 
     # Single resilient session for all HTTP traffic
     session = deps.requests_retry_session()
@@ -344,25 +322,8 @@ def main() -> None:
             context=context,
             logger=logger,
             report=report,
-            shorten_path_fn=shorten_path,
-            format_size_fn=_format_size,
-            is_filesystem_root_fn=_is_filesystem_root,
-            debug_enabled_fn=_debug_enabled,
-            log_fn=_LOG,
+            deps=deps.trace_project_deps,
             is_mac=_IS_MAC,
-            mac_permission_help_fn=_mac_permission_help,
-            trace_dependencies=trace_dependencies,
-            compute_project_root=compute_project_root,
-            classify_out_of_root_ok_files=classify_out_of_root_ok_files,
-            apply_project_validation=apply_project_validation,
-            validate_project_upload=validate_project_upload,
-            meta_project_validation_version=META_PROJECT_VALIDATION_VERSION,
-            meta_project_validation_stats=META_PROJECT_VALIDATION_STATS,
-            default_project_validation_version=DEFAULT_PROJECT_VALIDATION_VERSION,
-            prompt_continue_with_reports=prompt_continue_with_reports,
-            open_folder_fn=open_folder,
-            generate_test_report=generate_test_report,
-            safe_input_fn=_safe_input,
         )
         _handle_stage_outcome(trace_project_result)
 
@@ -371,24 +332,7 @@ def main() -> None:
             trace_result=trace_project_result,
             logger=logger,
             report=report,
-            pack_blend=pack_blend,
-            norm_abs_for_detection_fn=_norm_abs_for_detection,
-            build_project_manifest_from_map=build_project_manifest_from_map,
-            samepath_fn=_samepath,
-            relpath_safe_fn=_relpath_safe,
-            clean_key_fn=_s3key_clean,
-            normalize_nfc_fn=_nfc,
-            apply_manifest_validation=apply_manifest_validation,
-            validate_manifest_entries=validate_manifest_entries,
-            write_manifest_file=write_manifest_file,
-            validate_manifest_writeback=validate_manifest_writeback,
-            prompt_continue_with_reports=prompt_continue_with_reports,
-            open_folder_fn=open_folder,
-            meta_manifest_entry_count=META_MANIFEST_ENTRY_COUNT,
-            meta_manifest_source_match_count=META_MANIFEST_SOURCE_MATCH_COUNT,
-            meta_manifest_validation_stats=META_MANIFEST_VALIDATION_STATS,
-            debug_enabled_fn=_debug_enabled,
-            log_fn=_LOG,
+            deps=deps.pack_project_deps,
         )
         _handle_stage_outcome(pack_project_result)
         stage_artifacts = pack_project_result.artifacts
@@ -397,14 +341,7 @@ def main() -> None:
             context=context,
             logger=logger,
             report=report,
-            shorten_path_fn=shorten_path,
-            format_size_fn=_format_size,
-            trace_dependencies=trace_dependencies,
-            compute_project_root=compute_project_root,
-            prompt_continue_with_reports=prompt_continue_with_reports,
-            open_folder_fn=open_folder,
-            generate_test_report=generate_test_report,
-            safe_input_fn=_safe_input,
+            deps=deps.trace_zip_deps,
         )
         _handle_stage_outcome(trace_zip_result)
 
@@ -413,8 +350,7 @@ def main() -> None:
             trace_result=trace_zip_result,
             logger=logger,
             report=report,
-            pack_blend=pack_blend,
-            norm_abs_for_detection_fn=_norm_abs_for_detection,
+            deps=deps.pack_zip_deps,
         )
         _handle_stage_outcome(pack_zip_result)
         stage_artifacts = pack_zip_result.artifacts
@@ -424,11 +360,8 @@ def main() -> None:
         sys.exit(1)
 
     project_root_str = stage_artifacts.project_root_str
-    common_path = stage_artifacts.common_path
-    rel_manifest = stage_artifacts.rel_manifest
     main_blend_s3 = stage_artifacts.main_blend_s3
     required_storage = stage_artifacts.required_storage
-    dependency_total_size = stage_artifacts.dependency_total_size
 
     no_submit_flow = deps.handle_no_submit_mode(
         context=context,
@@ -440,41 +373,14 @@ def main() -> None:
         sys.exit(int(no_submit_flow.exit_code or 0))
 
     upload_result = deps.run_upload_stage(
-        data=data,
+        context=context,
+        artifacts=stage_artifacts,
         session=session,
         headers=headers,
         logger=logger,
         report=report,
-        use_project=use_project,
-        blend_path=blend_path,
-        zip_file=zip_file,
-        filelist=filelist,
-        job_id=job_id,
-        project_name=project_name,
-        common_path=common_path,
-        rel_manifest=rel_manifest,
-        main_blend_s3=main_blend_s3,
-        dependency_total_size=dependency_total_size,
-        required_storage=required_storage,
         rclone_bin=rclone_bin,
-        build_base_fn=deps.build_base,
-        cloudflare_r2_domain=deps.cloudflare_r2_domain,
-        run_rclone=deps.run_rclone,
-        debug_enabled_fn=_debug_enabled,
-        log_fn=_LOG,
-        format_size_fn=_format_size,
-        rclone_bytes_fn=_rclone_bytes,
-        rclone_stats_fn=_rclone_stats,
-        is_empty_upload_fn=_is_empty_upload,
-        get_rclone_tail_fn=_get_rclone_tail,
-        log_upload_result_fn=_log_upload_result,
-        check_rclone_errors_fn=_check_rclone_errors,
-        is_filesystem_root_fn=_is_filesystem_root,
-        split_manifest_by_first_dir=deps.split_manifest_by_first_dir,
-        record_manifest_touch_mismatch=deps.record_manifest_touch_mismatch,
-        upload_touched_lt_manifest=UPLOAD_TOUCHED_LT_MANIFEST,
-        clean_key_fn=_s3key_clean,
-        normalize_nfc_fn=_nfc,
+        deps=deps.upload_deps,
     )
     _handle_stage_outcome(upload_result)
 

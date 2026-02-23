@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Dict
 
-from .workflow_types import FlowControl, SubmitRunContext, TraceZipResult
+from .workflow_types import FlowControl, SubmitRunContext, TraceZipDeps, TraceZipResult
 
 
 def run_trace_zip_stage(
@@ -14,15 +14,17 @@ def run_trace_zip_stage(
     context: SubmitRunContext,
     logger,
     report,
-    shorten_path_fn,
-    format_size_fn,
-    trace_dependencies,
-    compute_project_root,
-    prompt_continue_with_reports,
-    open_folder_fn,
-    generate_test_report,
-    safe_input_fn,
+    deps: TraceZipDeps,
 ) -> TraceZipResult:
+    shorten_path_fn = deps.shorten_path_fn
+    format_size_fn = deps.format_size_fn
+    trace_dependencies = deps.trace_dependencies
+    compute_project_root = deps.compute_project_root
+    prompt_continue_with_reports = deps.prompt_continue_with_reports
+    open_folder_fn = deps.open_folder_fn
+    generate_test_report = deps.generate_test_report
+    safe_input_fn = deps.safe_input_fn
+
     data = context.data
     blend_path = context.blend_path
     test_mode = context.test_mode

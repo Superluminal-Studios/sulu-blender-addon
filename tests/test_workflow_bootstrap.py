@@ -13,6 +13,7 @@ if str(_addon_dir) not in sys.path:
     sys.path.insert(0, str(_addon_dir))
 
 workflow_bootstrap = importlib.import_module("transfers.submit.workflow_bootstrap")
+workflow_types = importlib.import_module("transfers.submit.workflow_types")
 
 
 class TestWorkflowBootstrap(unittest.TestCase):
@@ -106,6 +107,15 @@ class TestWorkflowBootstrap(unittest.TestCase):
             "pkg.transfers.submit.workflow_upload_runner": types.SimpleNamespace(
                 run_upload_stage=lambda **kwargs: None,
             ),
+            "pkg.transfers.submit.workflow_runtime_helpers": types.SimpleNamespace(
+                is_filesystem_root=lambda path: False,
+                rclone_bytes=lambda result: 0,
+                rclone_stats=lambda result: None,
+                is_empty_upload=lambda result, expected: False,
+                get_rclone_tail=lambda result: [],
+                log_upload_result=lambda *args, **kwargs: None,
+                check_rclone_errors=lambda *args, **kwargs: None,
+            ),
             "pkg.transfers.submit.workflow_no_submit": types.SimpleNamespace(
                 handle_no_submit_mode=lambda **kwargs: None,
             ),
@@ -146,6 +156,11 @@ class TestWorkflowBootstrap(unittest.TestCase):
         self.assertTrue(callable(deps.run_trace_zip_stage))
         self.assertTrue(callable(deps.run_pack_project_stage))
         self.assertTrue(callable(deps.run_pack_zip_stage))
+        self.assertIsInstance(deps.trace_project_deps, workflow_types.TraceProjectDeps)
+        self.assertIsInstance(deps.trace_zip_deps, workflow_types.TraceZipDeps)
+        self.assertIsInstance(deps.pack_project_deps, workflow_types.PackProjectDeps)
+        self.assertIsInstance(deps.pack_zip_deps, workflow_types.PackZipDeps)
+        self.assertIsInstance(deps.upload_deps, workflow_types.UploadDeps)
 
 
 if __name__ == "__main__":

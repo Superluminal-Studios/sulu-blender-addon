@@ -89,6 +89,37 @@ def _validation_result(has_blocking_risk: bool = False):
     )
 
 
+def _deps(
+    *,
+    trace_dependencies,
+    compute_project_root,
+    classify_out_of_root_ok_files,
+    apply_project_validation,
+    prompt_continue_with_reports,
+    generate_test_report=lambda **kwargs: ({}, None),
+) -> workflow_types.TraceProjectDeps:
+    return workflow_types.TraceProjectDeps(
+        shorten_path_fn=lambda p: p,
+        format_size_fn=lambda n: str(n),
+        is_filesystem_root_fn=lambda p: False,
+        debug_enabled_fn=lambda: False,
+        log_fn=lambda msg: None,
+        mac_permission_help_fn=lambda p, err: "",
+        trace_dependencies=trace_dependencies,
+        compute_project_root=compute_project_root,
+        classify_out_of_root_ok_files=classify_out_of_root_ok_files,
+        apply_project_validation=apply_project_validation,
+        validate_project_upload=lambda **kwargs: None,
+        prompt_continue_with_reports=prompt_continue_with_reports,
+        open_folder_fn=lambda *args, **kwargs: None,
+        generate_test_report=generate_test_report,
+        safe_input_fn=lambda *args, **kwargs: None,
+        meta_project_validation_version="v1",
+        meta_project_validation_stats="stats",
+        default_project_validation_version="1.0",
+    )
+
+
 class TestWorkflowTraceProjectRunner(unittest.TestCase):
     def test_custom_project_path_empty_returns_fatal_error(self):
         with tempfile.TemporaryDirectory() as td:
@@ -103,31 +134,20 @@ class TestWorkflowTraceProjectRunner(unittest.TestCase):
                 context=context,
                 logger=_Logger(),
                 report=_Report(),
-                shorten_path_fn=lambda p: p,
-                format_size_fn=lambda n: str(n),
-                is_filesystem_root_fn=lambda p: False,
-                debug_enabled_fn=lambda: False,
-                log_fn=lambda msg: None,
-                is_mac=False,
-                mac_permission_help_fn=lambda p, err: "",
-                trace_dependencies=lambda *args, **kwargs: (
-                    [Path(td) / "tex.png"],
-                    set(),
-                    {},
-                    [],
-                    set(),
+                deps=_deps(
+                    trace_dependencies=lambda *args, **kwargs: (
+                        [Path(td) / "tex.png"],
+                        set(),
+                        {},
+                        [],
+                        set(),
+                    ),
+                    compute_project_root=lambda *args, **kwargs: (Path(td), [], []),
+                    classify_out_of_root_ok_files=lambda *args, **kwargs: [],
+                    apply_project_validation=lambda **kwargs: _validation_result(False),
+                    prompt_continue_with_reports=lambda **kwargs: True,
                 ),
-                compute_project_root=lambda *args, **kwargs: (Path(td), [], []),
-                classify_out_of_root_ok_files=lambda *args, **kwargs: [],
-                apply_project_validation=lambda **kwargs: _validation_result(False),
-                validate_project_upload=lambda **kwargs: None,
-                meta_project_validation_version="v1",
-                meta_project_validation_stats="stats",
-                default_project_validation_version="1.0",
-                prompt_continue_with_reports=lambda **kwargs: True,
-                open_folder_fn=lambda *args, **kwargs: None,
-                generate_test_report=lambda **kwargs: ({}, None),
-                safe_input_fn=lambda *args, **kwargs: None,
+                is_mac=False,
             )
 
             self.assertIsNotNone(result.fatal_error)
@@ -148,31 +168,21 @@ class TestWorkflowTraceProjectRunner(unittest.TestCase):
                 context=context,
                 logger=_Logger(),
                 report=_Report(),
-                shorten_path_fn=lambda p: p,
-                format_size_fn=lambda n: str(n),
-                is_filesystem_root_fn=lambda p: False,
-                debug_enabled_fn=lambda: False,
-                log_fn=lambda msg: None,
-                is_mac=False,
-                mac_permission_help_fn=lambda p, err: "",
-                trace_dependencies=lambda *args, **kwargs: (
-                    [dep],
-                    set(),
-                    {},
-                    [],
-                    set(),
+                deps=_deps(
+                    trace_dependencies=lambda *args, **kwargs: (
+                        [dep],
+                        set(),
+                        {},
+                        [],
+                        set(),
+                    ),
+                    compute_project_root=lambda *args, **kwargs: (Path(td), [dep], []),
+                    classify_out_of_root_ok_files=lambda *args, **kwargs: [],
+                    apply_project_validation=lambda **kwargs: _validation_result(False),
+                    prompt_continue_with_reports=lambda **kwargs: True,
+                    generate_test_report=lambda **kwargs: ({}, Path(td) / "report.json"),
                 ),
-                compute_project_root=lambda *args, **kwargs: (Path(td), [dep], []),
-                classify_out_of_root_ok_files=lambda *args, **kwargs: [],
-                apply_project_validation=lambda **kwargs: _validation_result(False),
-                validate_project_upload=lambda **kwargs: None,
-                meta_project_validation_version="v1",
-                meta_project_validation_stats="stats",
-                default_project_validation_version="1.0",
-                prompt_continue_with_reports=lambda **kwargs: True,
-                open_folder_fn=lambda *args, **kwargs: None,
-                generate_test_report=lambda **kwargs: ({}, Path(td) / "report.json"),
-                safe_input_fn=lambda *args, **kwargs: None,
+                is_mac=False,
             )
 
             self.assertTrue(result.flow.should_exit)
@@ -194,31 +204,20 @@ class TestWorkflowTraceProjectRunner(unittest.TestCase):
                 context=context,
                 logger=_Logger(),
                 report=_Report(),
-                shorten_path_fn=lambda p: p,
-                format_size_fn=lambda n: str(n),
-                is_filesystem_root_fn=lambda p: False,
-                debug_enabled_fn=lambda: False,
-                log_fn=lambda msg: None,
-                is_mac=False,
-                mac_permission_help_fn=lambda p, err: "",
-                trace_dependencies=lambda *args, **kwargs: (
-                    [dep],
-                    missing,
-                    {},
-                    [],
-                    set(),
+                deps=_deps(
+                    trace_dependencies=lambda *args, **kwargs: (
+                        [dep],
+                        missing,
+                        {},
+                        [],
+                        set(),
+                    ),
+                    compute_project_root=lambda *args, **kwargs: (Path(td), [dep], []),
+                    classify_out_of_root_ok_files=lambda *args, **kwargs: [],
+                    apply_project_validation=lambda **kwargs: _validation_result(False),
+                    prompt_continue_with_reports=lambda **kwargs: False,
                 ),
-                compute_project_root=lambda *args, **kwargs: (Path(td), [dep], []),
-                classify_out_of_root_ok_files=lambda *args, **kwargs: [],
-                apply_project_validation=lambda **kwargs: _validation_result(False),
-                validate_project_upload=lambda **kwargs: None,
-                meta_project_validation_version="v1",
-                meta_project_validation_stats="stats",
-                default_project_validation_version="1.0",
-                prompt_continue_with_reports=lambda **kwargs: False,
-                open_folder_fn=lambda *args, **kwargs: None,
-                generate_test_report=lambda **kwargs: ({}, None),
-                safe_input_fn=lambda *args, **kwargs: None,
+                is_mac=False,
             )
 
             self.assertTrue(result.flow.should_exit)
