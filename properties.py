@@ -235,8 +235,11 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     # ------------------------------------------------------------
     download_path: bpy.props.StringProperty(
         name="Download Path",
-        default="/tmp/",
-        description="Path to download the rendered frames to.",
+        default="//",
+        description=(
+            "Path to download rendered frames to. "
+            "Supports Blender-relative paths (for example //downloads)."
+        ),
         subtype="DIR_PATH",
     )
     use_bserver: bpy.props.BoolProperty(

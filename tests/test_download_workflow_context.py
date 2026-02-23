@@ -66,6 +66,32 @@ class TestDownloadWorkflowContext(unittest.TestCase):
             (sub / "b.txt").write_text("b", encoding="utf-8")
             self.assertEqual(2, workflow_context.count_existing_files(td))
 
+    def test_resolve_download_path_blender_relative_uses_base_dir(self):
+        resolved = workflow_context.resolve_download_path("//downloads", "/work/project")
+        self.assertEqual(os.path.abspath("/work/project/downloads"), resolved)
+
+    def test_resolve_download_path_plain_relative_uses_base_dir(self):
+        resolved = workflow_context.resolve_download_path("downloads/frames", "/work/project")
+        self.assertEqual(os.path.abspath("/work/project/downloads/frames"), resolved)
+
+    def test_resolve_download_path_empty_defaults_to_base_dir(self):
+        resolved = workflow_context.resolve_download_path("", "/work/project")
+        self.assertEqual(os.path.abspath("/work/project"), resolved)
+
+    def test_build_context_uses_download_base_dir_for_relative_path(self):
+        data = {
+            "job_id": "abc",
+            "job_name": "My Job",
+            "download_path": "//downloads",
+            "download_base_dir": "/work/project",
+        }
+        context = workflow_context.build_download_context(data)
+        self.assertEqual(os.path.abspath("/work/project/downloads"), context.download_path)
+        self.assertEqual(
+            os.path.abspath("/work/project/downloads/My Job"),
+            context.dest_dir,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

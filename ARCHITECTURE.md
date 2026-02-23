@@ -335,12 +335,13 @@ Current required keys (from `submit_operator.py:189-232`):
 
 ### 13.2 Download handoff contract (operator -> worker)
 
-Current required keys (from `download_operator.py:50-60`):
+Current required keys (from `download_operator.py`):
 
 ```json
 {
   "addon_dir": "...",
   "download_path": "...",
+  "download_base_dir": "...",
   "project": {"id": "..."},
   "job_id": "...",
   "job_name": "...",

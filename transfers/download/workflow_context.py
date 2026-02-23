@@ -8,6 +8,8 @@ from typing import Dict
 
 from .workflow_types import DownloadRunContext
 
+_WINDOWS_ABS_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
 
 def safe_dir_name(name: str, fallback: str) -> str:
     """Make a filesystem-safe folder name (cross-platform)."""
@@ -30,10 +32,41 @@ def count_existing_files(path: str) -> int:
     return count
 
 
+def _is_absolute_path(path: str) -> bool:
+    return (
+        os.path.isabs(path)
+        or bool(_WINDOWS_ABS_PATH_RE.match(path))
+        or path.startswith("\\\\")
+    )
+
+
+def resolve_download_path(raw_path: str, base_dir: str) -> str:
+    """Resolve Blender-style and plain relative download paths to absolute."""
+    value = str(raw_path or "").strip()
+    anchor = os.path.abspath(str(base_dir or "").strip() or os.getcwd())
+
+    if not value:
+        value = "//"
+
+    if value.startswith("//"):
+        suffix = value[2:].lstrip("/\\")
+        if suffix:
+            return os.path.abspath(os.path.join(anchor, suffix))
+        return anchor
+
+    if _is_absolute_path(value):
+        return os.path.abspath(value)
+
+    return os.path.abspath(os.path.join(anchor, value))
+
+
 def build_download_context(data: Dict[str, object]) -> DownloadRunContext:
     job_id = str(data.get("job_id", "") or "").strip()
     job_name = str(data.get("job_name", "") or f"job_{job_id}").strip() or f"job_{job_id}"
-    download_path = str(data.get("download_path", "") or "").strip() or os.getcwd()
+    download_path = resolve_download_path(
+        str(data.get("download_path", "") or ""),
+        str(data.get("download_base_dir", "") or ""),
+    )
     safe_job_dir = safe_dir_name(job_name, f"job_{job_id}")
     dest_dir = os.path.abspath(os.path.join(download_path, safe_job_dir))
 

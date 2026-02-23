@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import bpy
 import json
+import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -26,6 +28,30 @@ def _blender_python_args() -> list[str]:
         return []
 
 
+_WINDOWS_ABS_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _is_relative_ui_path(path: str) -> bool:
+    value = str(path or "").strip()
+    if not value:
+        return True
+    if value.startswith("//"):
+        return True
+    if value.startswith("\\\\"):
+        return False
+    if _WINDOWS_ABS_PATH_RE.match(value):
+        return False
+    return not os.path.isabs(value)
+
+
+def _download_base_dir() -> str:
+    blend_path = str(getattr(bpy.data, "filepath", "") or "").strip()
+    if blend_path:
+        blend_abs = bpy.path.abspath(blend_path)
+        return os.path.abspath(str(Path(blend_abs).parent))
+    return os.path.abspath(tempfile.gettempdir())
+
+
 class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
     """Download the rendered frames from the selected job."""
 
@@ -43,6 +69,18 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
         scene = context.scene
         props = scene.superluminal_settings
         prefs = get_prefs()
+        raw_download_path = str(props.download_path or "").strip()
+        blend_saved = bool(str(getattr(bpy.data, "filepath", "") or "").strip())
+        download_base_dir = _download_base_dir()
+
+        if not blend_saved and _is_relative_ui_path(raw_download_path):
+            self.report(
+                {"WARNING"},
+                (
+                    "Blend file is unsaved. Relative download path will use the "
+                    f"temporary folder: {download_base_dir}"
+                ),
+            )
 
         # Find the currently selected project
         selected_project = next(
@@ -55,7 +93,8 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
 
         handoff = {
             "addon_dir": str(get_addon_dir()),
-            "download_path": props.download_path,
+            "download_path": raw_download_path,
+            "download_base_dir": download_base_dir,
             "project": selected_project,
             "job_id": self.job_id,
             "job_name": self.job_name,
