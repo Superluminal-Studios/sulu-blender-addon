@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import os
 import sys
 import tempfile
@@ -13,21 +13,10 @@ if str(_addon_dir) not in sys.path:
     sys.path.insert(0, str(_addon_dir))
 
 
-def _load_module_directly(name: str, filepath: Path):
-    spec = importlib.util.spec_from_file_location(name, filepath)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
 class TestProjectUploadValidator(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.mod = _load_module_directly(
-            "project_upload_validator",
-            _addon_dir / "utils" / "project_upload_validator.py",
-        )
+        cls.mod = importlib.import_module("utils.project_upload_validator")
 
     def test_detects_blocking_project_path_risks(self):
         with tempfile.TemporaryDirectory() as td:
@@ -87,10 +76,7 @@ class TestProjectUploadValidator(unittest.TestCase):
 class TestManifestValidator(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.mod = _load_module_directly(
-            "project_upload_validator_manifest",
-            _addon_dir / "utils" / "project_upload_validator.py",
-        )
+        cls.mod = importlib.import_module("utils.project_upload_validator")
 
     @staticmethod
     def _clean_key(value: str) -> str:

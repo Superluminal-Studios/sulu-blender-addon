@@ -5,6 +5,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
+try:
+    from .diagnostic_schema import (
+        MANIFEST_ENTRY_INVALID,
+        MANIFEST_SOURCE_MISMATCH,
+        PROJECT_ABSOLUTE_PATH_REFERENCE,
+        PROJECT_OUT_OF_ROOT_EXCLUDED,
+        PROJECT_ROOT_ESCAPE,
+    )
+except ImportError:
+    from utils.diagnostic_schema import (
+        MANIFEST_ENTRY_INVALID,
+        MANIFEST_SOURCE_MISMATCH,
+        PROJECT_ABSOLUTE_PATH_REFERENCE,
+        PROJECT_OUT_OF_ROOT_EXCLUDED,
+        PROJECT_ROOT_ESCAPE,
+    )
+
 
 def _unique(items: Iterable[str]) -> List[str]:
     seen: Set[str] = set()
@@ -138,8 +155,8 @@ def validate_project_upload(
     res.details["cross_drive_files"] = cross_drive_files_list
 
     if absolute_path_files_list:
-        res.issue_codes.append("PROJECT_ABSOLUTE_PATH_REFERENCE")
-        res.actions["PROJECT_ABSOLUTE_PATH_REFERENCE"] = (
+        res.issue_codes.append(PROJECT_ABSOLUTE_PATH_REFERENCE)
+        res.actions[PROJECT_ABSOLUTE_PATH_REFERENCE] = (
             "Make all asset paths relative or switch to Zip upload."
         )
         res.warnings.append(
@@ -147,8 +164,8 @@ def validate_project_upload(
         )
 
     if out_of_root_files_list:
-        res.issue_codes.append("PROJECT_OUT_OF_ROOT_EXCLUDED")
-        res.actions["PROJECT_OUT_OF_ROOT_EXCLUDED"] = (
+        res.issue_codes.append(PROJECT_OUT_OF_ROOT_EXCLUDED)
+        res.actions[PROJECT_OUT_OF_ROOT_EXCLUDED] = (
             "Broaden project root or switch to Zip upload."
         )
         res.warnings.append(
@@ -156,8 +173,8 @@ def validate_project_upload(
         )
 
     if root_escape_files:
-        res.issue_codes.append("PROJECT_ROOT_ESCAPE")
-        res.actions["PROJECT_ROOT_ESCAPE"] = (
+        res.issue_codes.append(PROJECT_ROOT_ESCAPE)
+        res.actions[PROJECT_ROOT_ESCAPE] = (
             "Fix path traversal outside project root before Project upload."
         )
         res.warnings.append(
@@ -225,8 +242,8 @@ def validate_manifest_entries(
             res.source_mismatches.append(rel)
 
     if res.invalid_entries:
-        res.issue_codes.append("MANIFEST_ENTRY_INVALID")
-        res.actions["MANIFEST_ENTRY_INVALID"] = (
+        res.issue_codes.append(MANIFEST_ENTRY_INVALID)
+        res.actions[MANIFEST_ENTRY_INVALID] = (
             "Regenerate manifest from a valid project root."
         )
         res.warnings.append(
@@ -234,8 +251,8 @@ def validate_manifest_entries(
         )
 
     if res.source_mismatches:
-        res.issue_codes.append("MANIFEST_SOURCE_MISMATCH")
-        res.actions["MANIFEST_SOURCE_MISMATCH"] = (
+        res.issue_codes.append(MANIFEST_SOURCE_MISMATCH)
+        res.actions[MANIFEST_SOURCE_MISMATCH] = (
             "Manifest entries did not map to readable local files."
         )
         res.warnings.append(

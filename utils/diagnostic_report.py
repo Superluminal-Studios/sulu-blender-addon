@@ -16,6 +16,40 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from .diagnostic_schema import (
+        CROSS_DRIVE_EXCLUDED,
+        META_MANIFEST_ENTRY_COUNT,
+        META_MANIFEST_SOURCE_MATCH_COUNT,
+        META_PROJECT_VALIDATION_STATS,
+        META_PROJECT_VALIDATION_VERSION,
+        MISSING_DEPENDENCY,
+        PROJECT_ABSOLUTE_PATH_REFERENCE,
+        PROJECT_OUT_OF_ROOT_EXCLUDED,
+        RCLONE_EMPTY_TRANSFER,
+        RCLONE_ERRORS_REPORTED,
+        RCLONE_NO_STATS,
+        RCLONE_ZERO_TRANSFERS,
+        UNREADABLE_DEPENDENCY,
+    )
+except ImportError:
+    # Tests may load this module directly outside package context.
+    from utils.diagnostic_schema import (
+        CROSS_DRIVE_EXCLUDED,
+        META_MANIFEST_ENTRY_COUNT,
+        META_MANIFEST_SOURCE_MATCH_COUNT,
+        META_PROJECT_VALIDATION_STATS,
+        META_PROJECT_VALIDATION_VERSION,
+        MISSING_DEPENDENCY,
+        PROJECT_ABSOLUTE_PATH_REFERENCE,
+        PROJECT_OUT_OF_ROOT_EXCLUDED,
+        RCLONE_EMPTY_TRANSFER,
+        RCLONE_ERRORS_REPORTED,
+        RCLONE_NO_STATS,
+        RCLONE_ZERO_TRANSFERS,
+        UNREADABLE_DEPENDENCY,
+    )
+
 
 # Maximum tail_lines stored per upload step in the report JSON.
 # rclone_utils keeps up to 160 lines in memory; we only persist the last N
@@ -72,10 +106,10 @@ class DiagnosticReport:
                 "upload_type": "",
                 "project_root": "",
                 "project_root_method": "",  # "automatic", "custom", "filesystem_root"
-                "project_validation_version": "",
-                "project_validation_stats": {},
-                "manifest_entry_count": 0,
-                "manifest_source_match_count": 0,
+                META_PROJECT_VALIDATION_VERSION: "",
+                META_PROJECT_VALIDATION_STATS: {},
+                META_MANIFEST_ENTRY_COUNT: 0,
+                META_MANIFEST_SOURCE_MATCH_COUNT: 0,
                 "blender_version": "",
                 "addon_version": [],
                 "started_at": datetime.now().isoformat(),
@@ -303,17 +337,17 @@ class DiagnosticReport:
                     ]
                     if self._data["issues"]["missing_files"]:
                         self._append_issue_code(
-                            "MISSING_DEPENDENCY",
+                            MISSING_DEPENDENCY,
                             "Restore missing files or switch to Zip upload.",
                         )
                     if self._data["issues"]["unreadable_files"]:
                         self._append_issue_code(
-                            "UNREADABLE_DEPENDENCY",
+                            UNREADABLE_DEPENDENCY,
                             "Fix file permissions/cloud-sync state and submit again.",
                         )
                     if self._data["issues"]["absolute_path_files"]:
                         self._append_issue_code(
-                            "PROJECT_ABSOLUTE_PATH_REFERENCE",
+                            PROJECT_ABSOLUTE_PATH_REFERENCE,
                             "Make all paths relative or use Zip upload.",
                         )
 
@@ -531,7 +565,7 @@ class DiagnosticReport:
                             "completed instantly"
                         )
                         self._append_issue_code(
-                            "RCLONE_NO_STATS",
+                            RCLONE_NO_STATS,
                             "Retry upload and check diagnostic tail logs.",
                         )
                     # 2. checks/transfers counters
@@ -541,7 +575,7 @@ class DiagnosticReport:
                             "empty or source path doesn't match"
                         )
                         self._append_issue_code(
-                            "RCLONE_EMPTY_TRANSFER",
+                            RCLONE_EMPTY_TRANSFER,
                             "Validate manifest/source root and retry upload.",
                         )
                     elif checks > 0 and transfers == 0:
@@ -552,7 +586,7 @@ class DiagnosticReport:
                             "missing"
                         )
                         self._append_issue_code(
-                            "RCLONE_ZERO_TRANSFERS",
+                            RCLONE_ZERO_TRANSFERS,
                             "Verify destination permissions and remote object state.",
                         )
 
@@ -588,7 +622,7 @@ class DiagnosticReport:
                         )
                         warning = (warning + "; " + error_warning) if warning else error_warning
                         self._append_issue_code(
-                            "RCLONE_ERRORS_REPORTED",
+                            RCLONE_ERRORS_REPORTED,
                             "Inspect rclone errors in report tail logs and retry failed files.",
                         )
 
@@ -639,7 +673,7 @@ class DiagnosticReport:
             self._data["issues"]["cross_drive_files"] = files
             if files:
                 self._append_issue_code(
-                    "CROSS_DRIVE_EXCLUDED",
+                    CROSS_DRIVE_EXCLUDED,
                     "Use Zip upload or move assets to the project drive.",
                 )
             self._entries_since_flush += 1
@@ -651,7 +685,7 @@ class DiagnosticReport:
             self._data["issues"]["absolute_path_files"] = files
             if files:
                 self._append_issue_code(
-                    "PROJECT_ABSOLUTE_PATH_REFERENCE",
+                    PROJECT_ABSOLUTE_PATH_REFERENCE,
                     "Make all paths relative or use Zip upload.",
                 )
             self._entries_since_flush += 1
@@ -663,7 +697,7 @@ class DiagnosticReport:
             self._data["issues"]["out_of_root_files"] = files
             if files:
                 self._append_issue_code(
-                    "PROJECT_OUT_OF_ROOT_EXCLUDED",
+                    PROJECT_OUT_OF_ROOT_EXCLUDED,
                     "Broaden custom project path or use Zip upload.",
                 )
             self._entries_since_flush += 1
