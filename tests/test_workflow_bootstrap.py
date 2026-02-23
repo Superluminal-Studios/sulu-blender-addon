@@ -101,9 +101,6 @@ class TestWorkflowBootstrap(unittest.TestCase):
             "pkg.transfers.submit.workflow_pack_zip_runner": types.SimpleNamespace(
                 run_pack_zip_stage=lambda **kwargs: None,
             ),
-            "pkg.transfers.submit.workflow_trace_pack_runner": types.SimpleNamespace(
-                run_trace_and_pack_stage=lambda **kwargs: None,
-            ),
             "pkg.transfers.submit.workflow_upload_runner": types.SimpleNamespace(
                 run_upload_stage=lambda **kwargs: None,
             ),
@@ -122,7 +119,6 @@ class TestWorkflowBootstrap(unittest.TestCase):
             "pkg.transfers.submit.workflow_finalize": types.SimpleNamespace(
                 finalize_submission=lambda **kwargs: None,
             ),
-            "pkg.utils.cloud_files": types.SimpleNamespace(),
             "pkg.utils.submit_logger": types.SimpleNamespace(
                 create_logger=lambda *args, **kwargs: None
             ),

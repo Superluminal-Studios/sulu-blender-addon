@@ -38,6 +38,28 @@ class TestWorkflowUpload(unittest.TestCase):
         self.assertEqual(["a.jpg", "b.jpg"], groups["tex"])
         self.assertEqual(["root.exr"], groups[""])
 
+    def test_split_manifest_by_first_dir_mixed_roots(self):
+        groups = workflow_upload.split_manifest_by_first_dir(
+            [
+                "Users/jonas/Dropbox/3. Resources/3D/Megascans/Downloaded/3d/a/albedo.jpg",
+                "Users/jonas/Dropbox/3. Resources/3D/Megascans/Downloaded/3d/a/normal.jpg",
+                "Application Support/Blender Studio Tools/styles/maps/oil_paint.exr",
+                "scene.blend",
+            ]
+        )
+        self.assertEqual(
+            [
+                "jonas/Dropbox/3. Resources/3D/Megascans/Downloaded/3d/a/albedo.jpg",
+                "jonas/Dropbox/3. Resources/3D/Megascans/Downloaded/3d/a/normal.jpg",
+            ],
+            groups["Users"],
+        )
+        self.assertEqual(
+            ["Blender Studio Tools/styles/maps/oil_paint.exr"],
+            groups["Application Support"],
+        )
+        self.assertEqual(["scene.blend"], groups[""])
+
     def test_record_manifest_touch_mismatch_adds_issue(self):
         logger = _DummyLogger()
         report = _DummyReport()

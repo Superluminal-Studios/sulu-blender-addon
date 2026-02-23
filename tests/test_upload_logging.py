@@ -5,8 +5,7 @@ Tests for bulletproof upload logging.
 Covers:
 - DiagnosticReport.complete_upload_step() warning generation
 - rclone_utils._redact_cmd() credential masking
-- submit_worker._log_upload_result() terminal output
-- submit_worker._is_filesystem_root() detection
+- workflow_runtime_helpers logging and path helpers
 
 Usage:
     python -m pytest tests/test_upload_logging.py -v
@@ -46,10 +45,9 @@ _diagnostic_report = _load_module_directly(
 _rclone_utils = _load_module_directly(
     "rclone_utils", _addon_dir / "transfers" / "rclone_utils.py"
 )
-# submit_worker imports requests at module level, so load it carefully.
-# We only need the free-standing helpers, not the full main().
-_submit_worker = _load_module_directly(
-    "submit_worker", _addon_dir / "transfers" / "submit" / "submit_worker.py"
+_runtime_helpers = _load_module_directly(
+    "workflow_runtime_helpers",
+    _addon_dir / "transfers" / "submit" / "workflow_runtime_helpers.py",
 )
 
 
@@ -357,7 +355,7 @@ class TestRedactCmd(unittest.TestCase):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-#  3. _log_upload_result (submit_worker)
+#  3. runtime helper logging/path utilities
 # ═════════════════════════════════════════════════════════════════════════
 
 
@@ -365,45 +363,44 @@ class TestLogUploadResult(unittest.TestCase):
     """Test terminal stats logging helper."""
 
     def setUp(self):
-        self._mod = _submit_worker
-        self._log_upload_result = self._mod._log_upload_result
         self._captured = []
 
-        # Patch _LOG, _format_size, and _debug_enabled
-        self._orig_log = self._mod._LOG
-        self._orig_fmt = self._mod._format_size
-        self._orig_debug = self._mod._debug_enabled
-        self._mod._LOG = lambda msg: self._captured.append(str(msg))
-        self._mod._format_size = lambda n: f"{n} B"
-        self._mod._debug_enabled = lambda: True
-
-    def tearDown(self):
-        self._mod._LOG = self._orig_log
-        self._mod._format_size = self._orig_fmt
-        self._mod._debug_enabled = self._orig_debug
+    def _call(self, result, *, expected_bytes=0, label=""):
+        _runtime_helpers.log_upload_result(
+            result,
+            expected_bytes=expected_bytes,
+            label=label,
+            debug_enabled_fn=lambda: True,
+            format_size_fn=lambda n: f"{n} B",
+            log_fn=lambda msg: self._captured.append(str(msg)),
+        )
 
     def test_none_result(self):
         """None result should log 'no stats'."""
-        self._log_upload_result(None, label="Test: ")
+        self._call(None, label="Test: ")
         self.assertEqual(len(self._captured), 1)
         self.assertIn("no stats", self._captured[0])
         self.assertIn("Test: ", self._captured[0])
 
     def test_non_dict_result(self):
         """Non-dict result should log the value."""
-        self._log_upload_result(42, label="X: ")
+        self._call(42, label="X: ")
         self.assertEqual(len(self._captured), 1)
         self.assertIn("42", self._captured[0])
 
     def test_normal_stats(self):
         """Normal dict result should log all fields."""
-        self._log_upload_result({
-            "bytes_transferred": 1024,
-            "checks": 10,
-            "transfers": 10,
-            "errors": 0,
-            "stats_received": True,
-        }, expected_bytes=2000, label="Deps: ")
+        self._call(
+            {
+                "bytes_transferred": 1024,
+                "checks": 10,
+                "transfers": 10,
+                "errors": 0,
+                "stats_received": True,
+            },
+            expected_bytes=2000,
+            label="Deps: ",
+        )
         self.assertEqual(len(self._captured), 1)
         line = self._captured[0]
         self.assertIn("Deps: ", line)
@@ -411,87 +408,99 @@ class TestLogUploadResult(unittest.TestCase):
         self.assertIn("expected=2000 B", line)
         self.assertIn("checks=10", line)
         self.assertIn("transfers=10", line)
-        # errors=0 should be omitted
         self.assertNotIn("errors=", line)
 
     def test_stats_received_false(self):
         """stats_received=False should appear in the output."""
-        self._log_upload_result({
-            "bytes_transferred": 0,
-            "checks": 0,
-            "transfers": 0,
-            "errors": 0,
-            "stats_received": False,
-        })
+        self._call(
+            {
+                "bytes_transferred": 0,
+                "checks": 0,
+                "transfers": 0,
+                "errors": 0,
+                "stats_received": False,
+            }
+        )
         line = self._captured[0]
         self.assertIn("stats_received=False", line)
 
     def test_errors_shown(self):
         """Nonzero errors should be logged."""
-        self._log_upload_result({
-            "bytes_transferred": 500,
-            "checks": 5,
-            "transfers": 3,
-            "errors": 2,
-            "stats_received": True,
-        })
+        self._call(
+            {
+                "bytes_transferred": 500,
+                "checks": 5,
+                "transfers": 3,
+                "errors": 2,
+                "stats_received": True,
+            }
+        )
         line = self._captured[0]
         self.assertIn("errors=2", line)
 
     def test_command_logged(self):
         """command field in result should be logged as a separate line."""
-        self._log_upload_result({
-            "bytes_transferred": 100,
-            "checks": 1,
-            "transfers": 1,
-            "errors": 0,
-            "stats_received": True,
-            "command": "rclone copy /src :s3:dst --s3-access-key-id ***",
-        }, label="Arc: ")
+        self._call(
+            {
+                "bytes_transferred": 100,
+                "checks": 1,
+                "transfers": 1,
+                "errors": 0,
+                "stats_received": True,
+                "command": "rclone copy /src :s3:dst --s3-access-key-id ***",
+            },
+            label="Arc: ",
+        )
         self.assertEqual(len(self._captured), 2)
         self.assertIn("cmd:", self._captured[1])
         self.assertIn("rclone copy /src", self._captured[1])
-        # Verify label propagates to cmd line too
         self.assertIn("Arc: ", self._captured[1])
 
     def test_no_command_no_extra_line(self):
         """Missing command field should not produce an extra log line."""
-        self._log_upload_result({
-            "bytes_transferred": 100,
-            "checks": 1,
-            "transfers": 1,
-            "errors": 0,
-            "stats_received": True,
-        })
+        self._call(
+            {
+                "bytes_transferred": 100,
+                "checks": 1,
+                "transfers": 1,
+                "errors": 0,
+                "stats_received": True,
+            }
+        )
         self.assertEqual(len(self._captured), 1)
 
     def test_no_expected_bytes_omits_field(self):
         """expected_bytes=0 should omit the expected= field."""
-        self._log_upload_result({
-            "bytes_transferred": 100,
-            "checks": 1,
-            "transfers": 1,
-            "errors": 0,
-            "stats_received": True,
-        }, expected_bytes=0)
+        self._call(
+            {
+                "bytes_transferred": 100,
+                "checks": 1,
+                "transfers": 1,
+                "errors": 0,
+                "stats_received": True,
+            },
+            expected_bytes=0,
+        )
         line = self._captured[0]
         self.assertNotIn("expected=", line)
 
     def test_empty_command_not_logged(self):
         """Empty string command should not produce an extra log line."""
-        self._log_upload_result({
-            "bytes_transferred": 100,
-            "checks": 1,
-            "transfers": 1,
-            "errors": 0,
-            "stats_received": True,
-            "command": "",
-        })
+        self._call(
+            {
+                "bytes_transferred": 100,
+                "checks": 1,
+                "transfers": 1,
+                "errors": 0,
+                "stats_received": True,
+                "command": "",
+            }
+        )
         self.assertEqual(len(self._captured), 1)
 
 
 # ═════════════════════════════════════════════════════════════════════════
-#  4. _is_filesystem_root
+#  4. is_filesystem_root
 # ═════════════════════════════════════════════════════════════════════════
 
 
@@ -499,7 +508,7 @@ class TestIsFilesystemRoot(unittest.TestCase):
     """Test filesystem root detection."""
 
     def setUp(self):
-        self._is_root = _submit_worker._is_filesystem_root
+        self._is_root = _runtime_helpers.is_filesystem_root
 
     def test_unix_root(self):
         self.assertTrue(self._is_root("/"))
@@ -533,7 +542,7 @@ class TestIsFilesystemRoot(unittest.TestCase):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-#  5. _split_manifest_by_first_dir
+#  5. split_manifest_by_first_dir
 # ═════════════════════════════════════════════════════════════════════════
 
 
@@ -541,7 +550,7 @@ class TestSplitManifest(unittest.TestCase):
     """Test manifest splitting for filesystem-root uploads."""
 
     def setUp(self):
-        self._split = _submit_worker._split_manifest_by_first_dir
+        self._split = _runtime_helpers.split_manifest_by_first_dir
 
     def test_basic_split(self):
         manifest = [
@@ -553,7 +562,6 @@ class TestSplitManifest(unittest.TestCase):
         self.assertEqual(set(groups.keys()), {"Users", "Projects"})
         self.assertEqual(len(groups["Users"]), 2)
         self.assertEqual(len(groups["Projects"]), 1)
-        # Check that the first-dir prefix is stripped from entries
         self.assertIn("artist/textures/a.png", groups["Users"])
 
     def test_files_at_root(self):
@@ -569,7 +577,7 @@ class TestSplitManifest(unittest.TestCase):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-#  6. _rclone_bytes / _rclone_stats / _is_empty_upload helpers
+#  6. rclone result helpers
 # ═════════════════════════════════════════════════════════════════════════
 
 
@@ -577,56 +585,51 @@ class TestRcloneHelpers(unittest.TestCase):
     """Test the small rclone result extraction helpers."""
 
     def test_rclone_bytes_none(self):
-        self.assertEqual(_submit_worker._rclone_bytes(None), 0)
+        self.assertEqual(_runtime_helpers.rclone_bytes(None), 0)
 
     def test_rclone_bytes_dict(self):
-        self.assertEqual(
-            _submit_worker._rclone_bytes({"bytes_transferred": 42}), 42
-        )
+        self.assertEqual(_runtime_helpers.rclone_bytes({"bytes_transferred": 42}), 42)
 
     def test_rclone_bytes_int(self):
-        self.assertEqual(_submit_worker._rclone_bytes(99), 99)
+        self.assertEqual(_runtime_helpers.rclone_bytes(99), 99)
 
     def test_rclone_stats_dict(self):
         d = {"bytes_transferred": 1, "checks": 2}
-        self.assertIs(_submit_worker._rclone_stats(d), d)
+        self.assertIs(_runtime_helpers.rclone_stats(d), d)
 
     def test_rclone_stats_none(self):
-        self.assertIsNone(_submit_worker._rclone_stats(None))
+        self.assertIsNone(_runtime_helpers.rclone_stats(None))
 
     def test_rclone_stats_int(self):
-        self.assertIsNone(_submit_worker._rclone_stats(42))
+        self.assertIsNone(_runtime_helpers.rclone_stats(42))
 
     def test_is_empty_upload_none_result(self):
-        self.assertTrue(_submit_worker._is_empty_upload(None, 10))
+        self.assertTrue(_runtime_helpers.is_empty_upload(None, 10))
 
     def test_is_empty_upload_no_stats(self):
-        self.assertTrue(_submit_worker._is_empty_upload(
-            {"stats_received": False}, 10
-        ))
+        self.assertTrue(
+            _runtime_helpers.is_empty_upload({"stats_received": False}, 10)
+        )
 
     def test_is_empty_upload_zero_transfers(self):
-        self.assertTrue(_submit_worker._is_empty_upload(
-            {"stats_received": True, "transfers": 0}, 10
-        ))
+        self.assertTrue(
+            _runtime_helpers.is_empty_upload({"stats_received": True, "transfers": 0}, 10)
+        )
 
     def test_is_empty_upload_has_transfers(self):
-        self.assertFalse(_submit_worker._is_empty_upload(
-            {"stats_received": True, "transfers": 5}, 10
-        ))
+        self.assertFalse(
+            _runtime_helpers.is_empty_upload({"stats_received": True, "transfers": 5}, 10)
+        )
 
     def test_is_empty_upload_zero_expected(self):
         """If no files expected, never considered empty."""
-        self.assertFalse(_submit_worker._is_empty_upload(None, 0))
+        self.assertFalse(_runtime_helpers.is_empty_upload(None, 0))
 
     def test_get_rclone_tail_dict(self):
-        self.assertEqual(
-            _submit_worker._get_rclone_tail({"tail_lines": ["a", "b"]}),
-            ["a", "b"]
-        )
+        self.assertEqual(_runtime_helpers.get_rclone_tail({"tail_lines": ["a", "b"]}), ["a", "b"])
 
     def test_get_rclone_tail_none(self):
-        self.assertEqual(_submit_worker._get_rclone_tail(None), [])
+        self.assertEqual(_runtime_helpers.get_rclone_tail(None), [])
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -1341,7 +1344,7 @@ class TestCheckRiskyPathChars(unittest.TestCase):
     """Test preflight warning for shell-risky path characters."""
 
     def setUp(self):
-        self._check = _submit_worker._check_risky_path_chars
+        self._check = _runtime_helpers.check_risky_path_chars
 
     def test_parens_detected(self):
         """Parentheses in path should produce a warning."""
@@ -1404,7 +1407,7 @@ class TestRiskyCharsConstant(unittest.TestCase):
 
     def test_expected_chars(self):
         expected = set("()'\"` &|;$!#")
-        self.assertEqual(_submit_worker._RISKY_CHARS, expected)
+        self.assertEqual(_runtime_helpers.RISKY_CHARS, expected)
 
 
 if __name__ == "__main__":

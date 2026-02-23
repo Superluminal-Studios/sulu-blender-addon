@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
+
+JsonMap = Dict[str, Any]
+LogFn = Callable[[str], None]
+DebugEnabledFn = Callable[[], bool]
+FormatSizeFn = Callable[[int], str]
+StringTransformFn = Callable[[str], str]
+BuildBaseFn = Callable[..., List[str]]
+RunRcloneFn = Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -29,8 +37,8 @@ class FlowControl:
 
 @dataclass
 class SubmitRunContext:
-    data: Dict[str, Any]
-    project: Dict[str, Any]
+    data: JsonMap
+    project: JsonMap
     blend_path: str
     use_project: bool
     automatic_project_path: bool
@@ -61,13 +69,6 @@ class StageArtifacts:
     main_blend_s3: str
     required_storage: int
     dependency_total_size: int
-
-
-@dataclass
-class TracePackResult:
-    artifacts: Optional[StageArtifacts] = None
-    flow: FlowControl = field(default_factory=FlowControl.continue_flow)
-    fatal_error: Optional[str] = None
 
 
 @dataclass
@@ -211,24 +212,15 @@ class PackZipDeps:
 
 @dataclass(frozen=True)
 class UploadDeps:
-    build_base_fn: Any
+    build_base_fn: BuildBaseFn
     cloudflare_r2_domain: str
-    run_rclone: Any
-    debug_enabled_fn: Any
-    log_fn: Any
-    format_size_fn: Any
-    rclone_bytes_fn: Any
-    rclone_stats_fn: Any
-    is_empty_upload_fn: Any
-    get_rclone_tail_fn: Any
-    log_upload_result_fn: Any
-    check_rclone_errors_fn: Any
-    is_filesystem_root_fn: Any
-    split_manifest_by_first_dir: Any
-    record_manifest_touch_mismatch: Any
+    run_rclone: RunRcloneFn
+    debug_enabled_fn: DebugEnabledFn
+    log_fn: LogFn
+    format_size_fn: FormatSizeFn
     upload_touched_lt_manifest: str
-    clean_key_fn: Any
-    normalize_nfc_fn: Any
+    clean_key_fn: StringTransformFn
+    normalize_nfc_fn: StringTransformFn
 
 
 @dataclass
@@ -237,40 +229,13 @@ class BootstrapDeps:
     worker_utils: Any
     safe_input: Any
     clear_console: Any
-    shorten_path: Any
     is_blend_saved: Any
     requests_retry_session: Any
-    build_base: Any
-    cloudflare_r2_domain: str
     open_folder: Any
-    pack_blend: Any
-    trace_dependencies: Any
-    compute_project_root: Any
-    classify_out_of_root_ok_files: Any
-    validate_project_upload: Any
-    validate_manifest_entries: Any
-    meta_project_validation_version: str
-    meta_project_validation_stats: str
-    meta_manifest_entry_count: str
-    meta_manifest_source_match_count: str
-    meta_manifest_validation_stats: str
-    default_project_validation_version: str
-    upload_touched_lt_manifest: str
-    prompt_continue_with_reports: Any
-    build_project_manifest_from_map: Any
-    apply_manifest_validation: Any
-    write_manifest_file: Any
-    validate_manifest_writeback: Any
-    split_manifest_by_first_dir: Any
-    record_manifest_touch_mismatch: Any
     build_job_payload: Any
-    apply_project_validation: Any
-    cloud_files: Any
     create_logger: Any
-    run_rclone: Any
     ensure_rclone: Any
     diagnostic_report_class: Any
-    generate_test_report: Any
     trace_project_deps: TraceProjectDeps
     trace_zip_deps: TraceZipDeps
     pack_project_deps: PackProjectDeps
@@ -281,8 +246,6 @@ class BootstrapDeps:
     run_trace_zip_stage: Any
     run_pack_project_stage: Any
     run_pack_zip_stage: Any
-    # Compatibility shim for external callers still importing old orchestration.
-    run_trace_and_pack_stage: Any
     run_upload_stage: Any
     handle_no_submit_mode: Any
     finalize_submission: Any

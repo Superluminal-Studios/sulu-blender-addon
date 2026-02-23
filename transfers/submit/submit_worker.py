@@ -24,7 +24,6 @@ from __future__ import annotations
 # ─── stdlib ──────────────────────────────────────────────────────
 import importlib
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -34,7 +33,6 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 _RISKY_CHARS = set("()'\"` &|;$!#")
-_RUNTIME_HELPERS = None
 
 
 # ─── Lightweight logger fallback ──────────────────────────────────
@@ -51,83 +49,24 @@ def _set_logger(fn) -> None:
     _LOG = fn if callable(fn) else _default_logger
 
 
-def _runtime_helpers():
-    global _RUNTIME_HELPERS
-    if _RUNTIME_HELPERS is None:
-        helper_path = Path(__file__).with_name("workflow_runtime_helpers.py")
-        spec = importlib.util.spec_from_file_location(
-            "_sulu_submit_runtime_helpers",
-            helper_path,
-        )
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
-        _RUNTIME_HELPERS = module
-    return _RUNTIME_HELPERS
-
-
-def _rclone_bytes(result) -> int:
-    return _runtime_helpers().rclone_bytes(result)
-
-
-def _rclone_stats(result):
-    return _runtime_helpers().rclone_stats(result)
-
-
-def _is_empty_upload(result, expected_file_count: int) -> bool:
-    return _runtime_helpers().is_empty_upload(result, expected_file_count)
-
-
-def _get_rclone_tail(result) -> list:
-    return _runtime_helpers().get_rclone_tail(result)
-
-
-def _log_upload_result(result, expected_bytes: int = 0, label: str = "") -> None:
-    _runtime_helpers().log_upload_result(
-        result,
-        expected_bytes=expected_bytes,
-        label=label,
-        debug_enabled_fn=_debug_enabled,
-        format_size_fn=_format_size,
-        log_fn=_LOG,
-    )
-
-
-def _check_rclone_errors(result, label: str = "") -> None:
-    _runtime_helpers().check_rclone_errors(
-        result,
-        label=label,
-        debug_enabled_fn=_debug_enabled,
-        log_fn=_LOG,
-    )
-
-
-def _is_filesystem_root(path: str) -> bool:
-    return _runtime_helpers().is_filesystem_root(path)
-
-
 def _check_risky_path_chars(path_str: str) -> Optional[str]:
-    return _runtime_helpers().check_risky_path_chars(path_str)
-
-
-def _split_manifest_by_first_dir(rel_manifest):
-    return _runtime_helpers().split_manifest_by_first_dir(rel_manifest)
+    found = set(c for c in path_str if c in _RISKY_CHARS)
+    if found:
+        chars = " ".join(repr(c) for c in sorted(found))
+        return (
+            f"Path contains special characters ({chars}) that may cause "
+            f"issues on the render farm: {path_str}"
+        )
+    return None
 
 
 # ─── Utilities imported after bootstrap ───────────────────────────
 # These will be set by _bootstrap_addon_modules() at runtime.
 # Declared here to satisfy static analysis and allow early use in type hints.
-_count = None
-_format_size = None
 _nfc = None
 _debug_enabled = None
-_is_interactive = None
 _safe_input = None
-_norm_abs_for_detection = None
-_relpath_safe = None
 _s3key_clean = None
-_samepath = None
-_mac_permission_help = None
 _IS_MAC = sys.platform == "darwin"
 
 
@@ -150,13 +89,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     Import internal add-on modules based on addon_dir in the handoff file.
     Returns a typed dependency container.
     """
-    global _count, _format_size, _nfc, _debug_enabled, _is_interactive, _safe_input
-    global \
-        _norm_abs_for_detection, \
-        _relpath_safe, \
-        _s3key_clean, \
-        _samepath, \
-        _mac_permission_help
+    global _nfc, _debug_enabled, _safe_input, _s3key_clean
 
     addon_dir = Path(data["addon_dir"]).resolve()
     pkg_name = addon_dir.name.replace("-", "_")
@@ -177,16 +110,9 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     )
 
     worker_utils = deps.worker_utils
-    _count = worker_utils.count
-    _format_size = worker_utils.format_size
     _nfc = worker_utils.normalize_nfc
     _debug_enabled = worker_utils.debug_enabled
-    _is_interactive = worker_utils.is_interactive
-    _norm_abs_for_detection = worker_utils.norm_abs_for_detection
-    _relpath_safe = worker_utils.relpath_safe
     _s3key_clean = worker_utils.s3key_clean
-    _samepath = worker_utils.samepath
-    _mac_permission_help = worker_utils.mac_permission_help
     _safe_input = deps.safe_input
     return deps
 
