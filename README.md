@@ -58,6 +58,20 @@ Repository layout:
 └── docs/architecture/leaf-pack/   # Architecture leaf documentation
 ```
 
+## Structure Index and Critical Code Paths
+
+- Generated structure index: `sulu-blender-addon/docs/architecture/structure-index.md`
+- Critical code paths for reasoning and change impact:
+  - `__init__.py`
+  - `operators.py`
+  - `panels.py`
+  - `properties.py`
+  - `storage.py`
+  - `transfers/submit/submit_worker.py`
+  - `transfers/download/download_worker.py`
+  - `ARCHITECTURE.md`
+  - `docs/architecture/leaf-pack/`
+
 ## Runtime Interfaces
 
 | Interface | Path/topic | Auth | Purpose |
