@@ -18,6 +18,13 @@ from ...utils.version_utils import resolved_worker_blender_value
 from ...storage import Storage
 from ...utils.prefs import get_prefs, get_addon_dir
 from ...utils.project_scan import quick_cross_drive_hint
+from ...utils.request_utils import fetch_projects, get_render_queue_key
+from ...utils.project_context import (
+    ProjectContextError,
+    resolve_org_context,
+    resolve_selected_project,
+    validate_project_identity,
+)
 
 
 def _blender_python_args() -> list[str]:
@@ -108,21 +115,49 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             self.report({"ERROR"}, "You are not logged in.")
             return {"CANCELLED"}
 
-        # Resolve project from Storage + prefs
-        project = next(
-            (
-                p
-                for p in Storage.data.get("projects", [])
-                if p.get("id") == getattr(prefs, "project_id", None)
-            ),
-            None,
-        )
-        if not project:
+        selected_project_id = getattr(prefs, "project_id", "")
+        if not selected_project_id:
+            self.report({"ERROR"}, "No project selected. Sign in and select a project.")
+            return {"CANCELLED"}
+
+        try:
+            project, projects, did_refresh = resolve_selected_project(
+                selected_project_id,
+                Storage.data.get("projects", []),
+                fetch_projects,
+            )
+        except Exception as exc:
+            self.report({"ERROR"}, f"Could not refresh selected project: {exc}")
+            return {"CANCELLED"}
+
+        if did_refresh:
+            Storage.data["projects"] = projects
+
+        is_valid, missing = validate_project_identity(project)
+        if not project or not is_valid:
+            Storage.save()
+            missing_fields = ", ".join(missing) if missing else "id, organization_id, sqid"
             self.report(
                 {"ERROR"},
-                "No project selected. Sign in and select a project.",
+                (
+                    "Selected project is missing organization metadata "
+                    f"({missing_fields}). Click Refresh Projects or re-login."
+                ),
             )
             return {"CANCELLED"}
+
+        try:
+            org_id, user_key = resolve_org_context(project, get_render_queue_key)
+        except ProjectContextError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        except Exception as exc:
+            self.report({"ERROR"}, f"Could not resolve project context: {exc}")
+            return {"CANCELLED"}
+
+        Storage.data["org_id"] = org_id
+        Storage.data["user_key"] = user_key
+        Storage.save()
 
         # Validate custom project path if automatic is disabled
         if props.upload_type == "PROJECT":
@@ -228,7 +263,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "project": project,
             "use_bserver": props.use_bserver,
             "use_async_upload": props.use_async_upload,
-            "farm_url": f"{FARM_IP}/farm/{Storage.data.get('org_id', '')}/api/",
+            "farm_url": f"{FARM_IP}/farm/{org_id}/api/",
         }
 
         worker = Path(__file__).with_name("submit_worker.py")

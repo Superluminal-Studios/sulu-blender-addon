@@ -4,6 +4,13 @@ import bpy
 from .storage            import Storage
 from .utils.date_utils   import format_submitted
 from .icons              import get_status_icon_id, get_fallback_icon
+from .utils.request_utils import fetch_jobs, fetch_projects, get_render_queue_key
+from .utils.project_context import (
+    ProjectContextError,
+    resolve_org_context,
+    resolve_selected_project,
+    validate_project_identity,
+)
 
 COLUMN_ORDER = [
     "name",
@@ -26,6 +33,64 @@ def get_project_items(self, context):
 
 def get_job_items(self, context):
     return [(jid, j["name"], j["name"]) for jid, j in Storage.data["jobs"].items()]
+
+
+def _clear_project_runtime_state(clear_jobs: bool = True) -> None:
+    Storage.data["org_id"] = ""
+    Storage.data["user_key"] = ""
+    if clear_jobs:
+        Storage.data["jobs"] = {}
+
+
+def apply_project_context(project_id: str, *, refresh_jobs: bool = True) -> dict | None:
+    """
+    Resolve selected project context and persist org/user-key (and optionally jobs).
+    """
+    if not project_id:
+        _clear_project_runtime_state(clear_jobs=refresh_jobs)
+        Storage.save()
+        return None
+
+    project, projects, did_refresh = resolve_selected_project(
+        project_id,
+        Storage.data.get("projects", []),
+        fetch_projects,
+    )
+    if did_refresh:
+        Storage.data["projects"] = projects
+
+    is_valid, missing = validate_project_identity(project)
+    if not project:
+        _clear_project_runtime_state(clear_jobs=refresh_jobs)
+        Storage.save()
+        raise ProjectContextError(
+            f"Selected project '{project_id}' was not found.",
+            missing_fields=missing,
+        )
+    if not is_valid:
+        _clear_project_runtime_state(clear_jobs=refresh_jobs)
+        Storage.save()
+        raise ProjectContextError(
+            "Selected project is missing required identity fields.",
+            missing_fields=missing,
+        )
+
+    org_id, user_key = resolve_org_context(project, get_render_queue_key)
+    Storage.data["org_id"] = org_id
+    Storage.data["user_key"] = user_key
+    if refresh_jobs:
+        Storage.data["jobs"] = fetch_jobs(org_id, user_key, project_id) or {}
+    Storage.save()
+    return project
+
+
+def _on_project_id_changed(self, context):
+    if not Storage.data.get("user_token"):
+        return
+    try:
+        apply_project_context(self.project_id, refresh_jobs=True)
+    except Exception as exc:
+        print(f"Could not sync selected project context: {exc}")
 
 
 def _get_column_label(key: str) -> str:
@@ -92,7 +157,12 @@ def refresh_jobs_collection(prefs):
     if not Storage.data["projects"]:
         return
 
-    selected_project =  [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0]
+    selected_project = next(
+        (p for p in Storage.data["projects"] if p.get("id") == prefs.project_id),
+        None,
+    )
+    if not selected_project:
+        return
 
     for jid, job in Storage.data["jobs"].items():
         if job.get("project_id") != selected_project.get("id"):
@@ -271,7 +341,11 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
 
-    project_id: bpy.props.EnumProperty(name="Project", items=get_project_items)
+    project_id: bpy.props.EnumProperty(
+        name="Project",
+        items=get_project_items,
+        update=_on_project_id_changed,
+    )
 
 
     jobs:             bpy.props.CollectionProperty(type=SuperluminalJobItem)

@@ -335,12 +335,18 @@ def main() -> None:
         payload = s3_resp.json()
         items = payload.get("items", [])
         if not items:
-            raise IndexError("No storage records returned for this project.")
+            raise RuntimeError(
+                "No accessible storage records found for this project "
+                "(organization membership may be missing)."
+            )
         s3info = items[0]
         bucket = s3info["bucket_name"]
 
-    except (IndexError, requests.RequestException, KeyError) as exc:
-        logger.fatal(f"Couldn't connect to storage: {exc}")
+    except (RuntimeError, requests.RequestException, KeyError) as exc:
+        logger.fatal(
+            "Couldn't get storage credentials. Check your connection and try again.\n"
+            f"Details: {exc}"
+        )
 
     # Build rclone base once
     base_cmd = _build_rclone_base()

@@ -1,6 +1,7 @@
 from ..constants import POCKETBASE_URL
 from ..pocketbase_auth import authorized_request
 from ..storage import Storage
+from .project_context import ProjectContextError
 from .prefs import get_prefs
 import time
 import threading
@@ -23,7 +24,19 @@ def get_render_queue_key(org_id: str) -> str:
         f"{POCKETBASE_URL}/api/collections/render_queues/records",
         params={"filter": f"(organization_id='{org_id}')"},
     )
-    return rq_resp.json()["items"][0]["user_key"]
+    payload = rq_resp.json() or {}
+    items = payload.get("items") or []
+    if not items:
+        raise ProjectContextError(
+            f"No render queue is available for organization '{org_id}'."
+        )
+
+    user_key = str(items[0].get("user_key") or "").strip()
+    if not user_key:
+        raise ProjectContextError(
+            f"Render queue user_key is missing for organization '{org_id}'."
+        )
+    return user_key
 
 
 def request_jobs(org_id: str, user_key: str, project_id: str):

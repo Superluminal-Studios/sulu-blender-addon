@@ -242,16 +242,17 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
 
         if Storage.data.get("user_token") != Storage.panel_data.get("last_token"):
             Storage.panel_data["last_token"] = Storage.data.get("user_token")
-            if prefs.project_id:
-                print("Fetching jobs for project:", prefs.project_id)
-                jobs = Storage.data["jobs"] = fetch_jobs(
-                    Storage.data["org_id"], Storage.data["user_key"], prefs.project_id
-                )
-                if jobs and hasattr(context.scene, "superluminal_settings"):
-                    if hasattr(context.scene.superluminal_settings, "job_id"):
-                        context.scene.superluminal_settings.job_id = list(jobs.keys())[
-                            0
-                        ]
+            org_id = Storage.data.get("org_id")
+            user_key = Storage.data.get("user_key")
+            if prefs.project_id and org_id and user_key:
+                try:
+                    print("Fetching jobs for project:", prefs.project_id)
+                    jobs = Storage.data["jobs"] = fetch_jobs(org_id, user_key, prefs.project_id)
+                    if jobs and hasattr(context.scene, "superluminal_settings"):
+                        if hasattr(context.scene.superluminal_settings, "job_id"):
+                            context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
+                except Exception as exc:
+                    print(f"Could not fetch jobs after token change: {exc}")
 
         refresh_jobs_collection(prefs)
 

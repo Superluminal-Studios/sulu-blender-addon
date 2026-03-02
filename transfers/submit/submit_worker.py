@@ -191,6 +191,42 @@ def _split_manifest_by_first_dir(rel_manifest):
     return groups
 
 
+def _missing_project_identity_fields(project: dict | None) -> list[str]:
+    """Return required project fields that are missing/blank."""
+    if not isinstance(project, dict):
+        return ["id", "organization_id", "sqid"]
+    missing = []
+    for key in ("id", "organization_id", "sqid"):
+        value = project.get(key)
+        if value is None or (isinstance(value, str) and value.strip() == ""):
+            missing.append(key)
+    return missing
+
+
+def _parse_project_storage_payload(payload: dict | None) -> tuple[dict, str]:
+    """
+    Parse project_storage list payload and return (storage_record, bucket_name).
+    """
+    if not isinstance(payload, dict):
+        raise RuntimeError("storage API returned a non-object payload")
+
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        raise RuntimeError(
+            "no accessible project_storage records found for this project "
+            "(organization membership may be missing)"
+        )
+
+    first = items[0]
+    if not isinstance(first, dict):
+        raise RuntimeError("storage API returned an invalid record shape")
+
+    bucket = str(first.get("bucket_name") or "").strip()
+    if not bucket:
+        raise RuntimeError("project_storage record is missing bucket_name")
+    return first, bucket
+
+
 # ─── Utilities imported after bootstrap ───────────────────────────
 # These will be set by _bootstrap_addon_modules() at runtime.
 # Declared here to satisfy static analysis and allow early use in type hints.
@@ -448,6 +484,14 @@ def main() -> None:
         )
 
     # Verify farm availability (nice error if org misconfigured)
+    missing_project_fields = _missing_project_identity_fields(proj)
+    if missing_project_fields:
+        logger.fatal(
+            "Selected project metadata is incomplete "
+            f"({', '.join(missing_project_fields)}).\n"
+            "Refresh projects in the add-on and try again."
+        )
+
     try:
         farm_status = session.get(
             f"{data['pocketbase_url']}/api/farm_status/{proj['organization_id']}",
@@ -1130,8 +1174,7 @@ def main() -> None:
             timeout=30,
         )
         s3_response.raise_for_status()
-        s3info = s3_response.json()["items"][0]
-        bucket = s3info["bucket_name"]
+        s3info, bucket = _parse_project_storage_payload(s3_response.json())
     except Exception as exc:
         logger.fatal(
             f"Couldn't get storage credentials. Check your connection and try again.\nDetails: {exc}"

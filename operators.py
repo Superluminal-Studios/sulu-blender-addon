@@ -10,8 +10,10 @@ import threading
 from .constants import POCKETBASE_URL
 from .pocketbase_auth import NotAuthenticated
 from .storage import Storage
-from .utils.request_utils import fetch_projects, get_render_queue_key, fetch_jobs
+from .utils.request_utils import fetch_projects
 from .utils.logging import report_exception
+from .utils.project_context import ProjectContextError
+from .preferences import apply_project_context
 
 
 def _flush_wm_credentials(wm: bpy.types.WindowManager) -> None:
@@ -64,21 +66,30 @@ def _browser_login_thread_v2(txn):
 def first_login(token):
     Storage.data["user_token"] = token
     Storage.data["user_token_time"] = int(time.time())
+    Storage.data["org_id"] = ""
+    Storage.data["user_key"] = ""
+    Storage.data["jobs"] = {}
 
-    projects = fetch_projects()
+    projects = fetch_projects() or []
     Storage.data["projects"] = projects
-    bpy.context.preferences.addons[__package__].preferences.project_id = projects[0].get("id", "")
-    print("First login project:", bpy.context.preferences.addons[__package__].preferences.project_id)
-
-    if projects:
-        project = projects[0]
-        org_id = project["organization_id"]
-        user_key = get_render_queue_key(org_id)
-        Storage.data["org_id"] = org_id
-        Storage.data["user_key"] = user_key
-        jobs = fetch_jobs(org_id, user_key, bpy.context.preferences.addons[__package__].preferences.project_id)
-        Storage.data["jobs"] = jobs
     Storage.save()
+
+    prefs = bpy.context.preferences.addons[__package__].preferences
+    previous_project_id = prefs.project_id
+    selected_project_id = projects[0].get("id", "") if projects else ""
+    prefs.project_id = selected_project_id
+    print("First login project:", selected_project_id)
+
+    if not selected_project_id:
+        return
+
+    if selected_project_id == previous_project_id:
+        try:
+            apply_project_context(selected_project_id, refresh_jobs=True)
+        except ProjectContextError as exc:
+            print(f"Project context incomplete after login: {exc}")
+        except Exception as exc:
+            print(f"Could not sync project context after login: {exc}")
     
 
 class SUPERLUMINAL_OT_Login(bpy.types.Operator):
@@ -87,7 +98,6 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
     bl_label = "Sign In"
 
     def execute(self, context):
-        prefs = context.preferences.addons[__package__].preferences
         wm = context.window_manager
         creds = getattr(wm, "sulu_wm", None)
 
@@ -183,6 +193,9 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
     bl_label = "Refresh Projects"
 
     def execute(self, context):
+        prefs = context.preferences.addons[__package__].preferences
+        previous_project_id = prefs.project_id
+
         try:
             projects = fetch_projects()
         except NotAuthenticated as exc:
@@ -197,6 +210,30 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
             )
 
         Storage.data["projects"] = projects
+        if previous_project_id and any(p.get("id") == previous_project_id for p in projects):
+            selected_project_id = previous_project_id
+        else:
+            selected_project_id = projects[0].get("id", "") if projects else ""
+        prefs.project_id = selected_project_id
+
+        if not selected_project_id:
+            Storage.data["org_id"] = ""
+            Storage.data["user_key"] = ""
+            Storage.data["jobs"] = {}
+            Storage.save()
+            self.report({"INFO"}, "Projects updated.")
+            return {"FINISHED"}
+
+        if selected_project_id == previous_project_id:
+            try:
+                apply_project_context(selected_project_id, refresh_jobs=True)
+            except ProjectContextError as exc:
+                self.report({"WARNING"}, str(exc))
+            except NotAuthenticated as exc:
+                return report_exception(self, exc, str(exc))
+            except Exception as exc:
+                return report_exception(self, exc, "Error syncing project context")
+
         Storage.save()
 
         self.report({"INFO"}, "Projects updated.")
@@ -230,24 +267,19 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
             self.report({"ERROR"}, "No project selected.")
             return {"CANCELLED"}
 
-        org_id   = Storage.data.get("org_id")
-        user_key = Storage.data.get("user_key")
-        if not org_id or not user_key:
-            self.report({"ERROR"}, "Project info missing. Sign in again.")
-            return {"CANCELLED"}
-
         try:
-            jobs = fetch_jobs(org_id, user_key, project_id) or {}
+            apply_project_context(project_id, refresh_jobs=True)
         except NotAuthenticated as exc:
             return report_exception(self, exc, str(exc))
+        except ProjectContextError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
         except Exception as exc:
             return report_exception(self, exc, "Error fetching jobs")
 
-        Storage.data["jobs"] = jobs
-        Storage.save()
-
         # Best-effort set active job id if present
         try:
+            jobs = Storage.data.get("jobs", {})
             if jobs and hasattr(context.scene, "superluminal_settings"):
                 if hasattr(context.scene.superluminal_settings, "job_id"):
                     context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
