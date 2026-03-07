@@ -38,54 +38,35 @@ tests/
 
 ## Running Tests
 
-### Quick Start
+### Canonical Focused Checks
 
 ```bash
-# Run all tests
-python tests/run_tests.py
+python -m unittest tests.test_project_context tests.test_project_identity_guards
+python -m unittest tests.test_upload_logging
+```
 
-# Run specific category
+### Expanded Local-Only Runners
+
+```bash
+python tests/run_tests.py
 python tests/run_tests.py --category paths
 python tests/run_tests.py --category bat
 python tests/run_tests.py --category integration
-
-# Verbose output
-python tests/run_tests.py -v
-
-# List available tests
-python tests/run_tests.py --list
 ```
 
-### Using unittest directly
+### Direct unittest Usage
 
 ```bash
-# Run all path tests
 python -m unittest discover tests/paths/
-
-# Run specific test file
 python -m unittest tests.paths.test_drive_detection
-
-# Run specific test class
 python -m unittest tests.paths.test_drive_detection.TestWindowsDriveDetection
-
-# Run specific test
 python -m unittest tests.paths.test_s3_keys.TestS3KeyValidation.test_valid_keys
 ```
 
-### Using pytest (if installed)
+### pytest
 
-```bash
-# Run all tests
-python -m pytest tests/
-
-# Run with verbose output
-python -m pytest tests/ -v
-
-# Run specific category
-python -m pytest tests/paths/
-python -m pytest tests/bat/
-python -m pytest tests/integration/
-```
+`pytest` is optional and useful for broader local sweeps, but it is not the canonical
+CI or operator path because importing the add-on package can pull in `bpy`.
 
 ## Test Categories
 
