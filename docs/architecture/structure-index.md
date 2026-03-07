@@ -3,8 +3,8 @@
 - Schema: `structure-index-v1`
 - Repo Path: `sulu-blender-addon`
 - README Path: `sulu-blender-addon/README.md`
-- Source Fingerprint: `6643169ca5c585955825a8820187cb715a16e599a197bd789bd7d29fc959a608`
-- Fingerprinted File Count: `275`
+- Source Fingerprint: `23ba75f0660736d3e15ba561ba3de88c607ae3d3129c2987f6528c141e572284`
+- Fingerprinted File Count: `274`
 - Generator: `bin/generate-structure-index`
 
 ## Critical Paths
@@ -268,7 +268,6 @@
 ├── preferences.py
 ├── properties.py
 ├── README.md
-├── session.json
 └── storage.py
 ```
 
