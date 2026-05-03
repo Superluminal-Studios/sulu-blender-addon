@@ -77,6 +77,25 @@ logger: DownloadLogger
 
 
 # Helpers
+_REMOTE_NOT_FOUND_HINTS = (
+    "directory not found",
+    "no such key",
+    "404",
+    "not exist",
+    "cannot find",
+)
+
+_STORAGE_AUTH_HINTS = (
+    "statuscode: 403",
+    " forbidden",
+    "accessdenied",
+    "unauthorized",
+    "invalidaccesskeyid",
+    "signaturedoesnotmatch",
+    "access denied",
+)
+
+
 def _safe_dir_name(name: str, fallback: str) -> str:
     """Make a filesystem-safe folder name (cross-platform)."""
     n = re.sub(r"[\\/:*?\"<>|]+", "_", str(name)).strip()
@@ -102,6 +121,81 @@ def _build_rclone_base() -> List[str]:
         rclone_bin,
         f"https://{CLOUDFLARE_R2_DOMAIN}",
         s3info,
+    )
+
+
+def _is_remote_missing(msg: str) -> bool:
+    low = str(msg).lower()
+    return any(h in low for h in _REMOTE_NOT_FOUND_HINTS)
+
+
+def _looks_like_storage_auth_error(msg: str) -> bool:
+    low = str(msg).lower()
+    return any(h in low for h in _STORAGE_AUTH_HINTS)
+
+
+def _fetch_storage_credentials() -> Tuple[Dict[str, object], str]:
+    headers = {"Authorization": data["user_token"]}
+    s3_resp = session.get(
+        f"{data['pocketbase_url']}/api/collections/project_storage/records",
+        headers=headers,
+        params={
+            "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')",
+            "sort": "-updated",
+            "perPage": 1,
+            "skipTotal": 1,
+        },
+        timeout=30,
+    )
+    s3_resp.raise_for_status()
+    payload = s3_resp.json()
+    items = payload.get("items", [])
+    if not items:
+        raise RuntimeError(
+            "No accessible storage records found for this project "
+            "(organization membership may be missing)."
+        )
+
+    rec = items[0]
+    return rec, rec["bucket_name"]
+
+
+def _refresh_storage_credentials(reason: str | None = None) -> None:
+    global s3info, bucket, base_cmd
+
+    if reason:
+        logger.warning(reason)
+
+    s3info, bucket = _fetch_storage_credentials()
+    base_cmd = _build_rclone_base()
+
+
+def _run_output_copy(dest_dir: str) -> None:
+    remote = f":s3:{bucket}/{job_id}/output/"
+    local = dest_dir.rstrip("/") + "/"
+    rclone_args = [
+        "--exclude",
+        "thumbnails/**",
+        "--transfers",
+        "8",
+        "--checkers",
+        "8",
+        "--size-only",
+        "--retries",
+        "10",
+        "--low-level-retries",
+        "20",
+        "--retries-sleep",
+        "5s",
+    ]
+
+    run_rclone(
+        base_cmd,
+        "copy",
+        remote,
+        local,
+        rclone_args,
+        logger=logger,
     )
 
 
@@ -143,47 +237,28 @@ def _rclone_copy_output(dest_dir: str) -> bool:
     Copy job output from remote to dest_dir.
     Returns True if copy succeeded (even if nothing new), False if remote likely doesn't exist yet.
     """
-    rclone_args = [
-        "--exclude",
-        "thumbnails/**",
-        "--transfers",
-        "8",
-        "--checkers",
-        "8",
-        "--size-only",
-        "--retries",
-        "10",
-        "--low-level-retries",
-        "20",
-        "--retries-sleep",
-        "5s",
-    ]
-
-    remote = f":s3:{bucket}/{job_id}/output/"
-    local = dest_dir.rstrip("/") + "/"
-
     try:
-        run_rclone(
-            base_cmd,
-            "copy",
-            remote,
-            local,
-            rclone_args,
-            logger=logger,
-        )
+        _run_output_copy(dest_dir)
         return True
     except RuntimeError as exc:
-        msg = str(exc).lower()
-        hints = (
-            "directory not found",
-            "no such key",
-            "404",
-            "not exist",
-            "cannot find",
-        )
-        if any(h in msg for h in hints):
+        msg = str(exc)
+        if _is_remote_missing(msg):
             logger.info("No frames available yet")
             return False
+        if _looks_like_storage_auth_error(msg):
+            _refresh_storage_credentials(
+                "Storage credentials were rejected. Refreshing credentials and retrying once."
+            )
+            try:
+                _run_output_copy(dest_dir)
+                return True
+            except RuntimeError as retry_exc:
+                retry_msg = str(retry_exc)
+                if _is_remote_missing(retry_msg):
+                    logger.info("No frames available yet")
+                    return False
+                logger.error(f"Download stopped: {retry_exc}")
+                raise
         logger.error(f"Download stopped: {exc}")
         raise
 
@@ -269,7 +344,6 @@ def main() -> None:
     logger = DownloadLogger()
 
     session = requests_retry_session()
-    headers = {"Authorization": data["user_token"]}
     job_id = str(data.get("job_id", "") or "").strip()
     job_name = (
         str(data.get("job_name", "") or f"job_{job_id}").strip() or f"job_{job_id}"
@@ -323,33 +397,12 @@ def main() -> None:
 
     # Obtain R2 credentials
     try:
-        s3_resp = session.get(
-            f"{data['pocketbase_url']}/api/collections/project_storage/records",
-            headers=headers,
-            params={
-                "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')"
-            },
-            timeout=30,
-        )
-        s3_resp.raise_for_status()
-        payload = s3_resp.json()
-        items = payload.get("items", [])
-        if not items:
-            raise RuntimeError(
-                "No accessible storage records found for this project "
-                "(organization membership may be missing)."
-            )
-        s3info = items[0]
-        bucket = s3info["bucket_name"]
-
+        _refresh_storage_credentials()
     except (RuntimeError, requests.RequestException, KeyError) as exc:
         logger.fatal(
             "Couldn't get storage credentials. Check your connection and try again.\n"
             f"Details: {exc}"
         )
-
-    # Build rclone base once
-    base_cmd = _build_rclone_base()
 
     # Make sure the target directory exists
     _ensure_dir(download_path)

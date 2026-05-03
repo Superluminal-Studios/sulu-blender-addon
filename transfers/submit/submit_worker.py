@@ -1169,7 +1169,10 @@ def main() -> None:
             f"{data['pocketbase_url']}/api/collections/project_storage/records",
             headers=headers,
             params={
-                "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')"
+                "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')",
+                "sort": "-updated",
+                "perPage": 1,
+                "skipTotal": 1,
             },
             timeout=30,
         )
