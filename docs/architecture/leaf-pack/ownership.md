@@ -5,7 +5,7 @@
 - Accountable: `Eng Lead (Client Integrations)`
 - Consulted: `Backend Platform, Queue Platform, Render Platform`
 - Informed: `Support`
-- Last Reviewed: `2026-03-06`
+- Last Reviewed: `2026-05-05`
 - Review Cadence Days: `30`
 
 Upstream governance:
