@@ -3,7 +3,7 @@
 - Schema: `structure-index-v1`
 - Repo Path: `sulu-blender-addon`
 - README Path: `sulu-blender-addon/README.md`
-- Source Fingerprint: `23ba75f0660736d3e15ba561ba3de88c607ae3d3129c2987f6528c141e572284`
+- Source Fingerprint: `e8d7bb4dfeba606b126e5880a906de0cf01c6b65c6880314ef2612f4c9b468ad`
 - Fingerprinted File Count: `274`
 - Generator: `bin/generate-structure-index`
 
