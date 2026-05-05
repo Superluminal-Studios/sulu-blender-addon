@@ -227,6 +227,43 @@ def _parse_project_storage_payload(payload: dict | None) -> tuple[dict, str]:
     return first, bucket
 
 
+def _response_error_message(response) -> str:
+    if response is None:
+        return ""
+
+    body = ""
+    try:
+        payload = response.json()
+    except Exception:
+        payload = None
+
+    if isinstance(payload, dict):
+        message = payload.get("message") or payload.get("error")
+        if isinstance(message, str) and message.strip():
+            body = message.strip()
+        elif payload:
+            body = json.dumps(payload, ensure_ascii=False)
+
+    if not body:
+        try:
+            body = str(response.text or "").strip()
+        except Exception:
+            body = ""
+
+    if len(body) > 800:
+        body = body[:800] + "..."
+    return body
+
+
+def _request_exception_details(exc: requests.RequestException) -> str:
+    details = str(exc)
+    response = getattr(exc, "response", None)
+    message = _response_error_message(response)
+    if message:
+        details = f"{details}\nServer response: {message}"
+    return details
+
+
 # ─── Utilities imported after bootstrap ───────────────────────────
 # These will be set by _bootstrap_addon_modules() at runtime.
 # Declared here to satisfy static analysis and allow early use in type hints.
@@ -1628,7 +1665,8 @@ def main() -> None:
     except requests.RequestException as exc:
         report.set_status("failed")
         logger.fatal(
-            f"Couldn't register job. Check your connection and try again.\nDetails: {exc}"
+            "Couldn't register job. Check your connection and try again.\n"
+            f"Details: {_request_exception_details(exc)}"
         )
 
     # Finalize the diagnostic report

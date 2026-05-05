@@ -5,6 +5,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import requests
+
 
 _tests_dir = Path(__file__).parent
 _addon_dir = _tests_dir.parent
@@ -57,6 +59,27 @@ class TestProjectIdentityGuards(unittest.TestCase):
         )
         self.assertEqual(bucket, "render-abcd")
         self.assertEqual(rec.get("bucket_name"), "render-abcd")
+
+    def test_request_exception_details_includes_server_message(self):
+        response = requests.Response()
+        response.status_code = 400
+        response.reason = "Bad Request"
+        response.url = "https://api.superlumin.al/api/farm/org/jobs"
+        response._content = b'{"message":"Invalid project_id: sql: no rows in result set.","status":400}'
+        response.headers["Content-Type"] = "application/json"
+
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            details = _submit_worker._request_exception_details(exc)
+        else:
+            self.fail("expected raise_for_status to raise")
+
+        self.assertIn("400 Client Error", details)
+        self.assertIn(
+            "Server response: Invalid project_id: sql: no rows in result set.",
+            details,
+        )
 
 
 if __name__ == "__main__":
