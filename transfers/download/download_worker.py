@@ -199,13 +199,45 @@ def _run_output_copy(dest_dir: str) -> None:
     )
 
 
+def _int_value(value: object, default: int = 0) -> int:
+    try:
+        if value is None or value == "":
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _handoff_job_details() -> Tuple[str, int, int]:
+    job = data.get("job") or data.get("job_data") or {}
+    if not isinstance(job, dict):
+        return ("unknown", 0, 0)
+
+    status = str(job.get("status", "unknown") or "unknown").lower()
+    tasks = job.get("tasks", {}) or {}
+    if not isinstance(tasks, dict):
+        tasks = {}
+
+    finished = _int_value(
+        tasks.get("finished", job.get("finished_tasks")),
+        0,
+    )
+    total = _int_value(job.get("total_tasks"), 0)
+    if total <= 0:
+        total = sum(
+            _int_value(tasks.get(key, job.get(f"{key}_tasks")), 0)
+            for key in ("queued", "running", "finished", "paused", "error")
+        )
+    return (status, finished, total)
+
+
 def _fetch_job_details() -> Tuple[str, int, int]:
     """
     Returns (status, finished, total) with safe defaults.
-    If sarfis_url/token not configured, returns ('unknown', 0, 0).
+    Falls back to the job snapshot passed by Blender when live queue data is gone.
     """
     if not sarfis_url or not sarfis_token:
-        return ("unknown", 0, 0)
+        return _handoff_job_details()
 
     try:
         resp = session.get(
@@ -216,20 +248,22 @@ def _fetch_job_details() -> Tuple[str, int, int]:
         )
         if resp.status_code != 200:
             logger.warning(f"Job status check returned {resp.status_code}")
-            return ("unknown", 0, 0)
+            return _handoff_job_details()
         body = (
             resp.json().get("body", {})
             if resp.headers.get("content-type", "").startswith("application/json")
             else {}
         )
+        if not isinstance(body, dict) or not body:
+            return _handoff_job_details()
         status = str(body.get("status", "unknown")).lower()
         tasks = body.get("tasks", {}) or {}
-        finished = int(tasks.get("finished", 0) or 0)
-        total = int(body.get("total_tasks", tasks.get("total", 0) or 0) or 0)
+        finished = _int_value(tasks.get("finished"), 0)
+        total = _int_value(body.get("total_tasks", tasks.get("total")), 0)
         return (status, finished, total)
     except Exception as exc:
         logger.warning(f"Job status check failed: {exc}")
-        return ("unknown", 0, 0)
+        return _handoff_job_details()
 
 
 def _rclone_copy_output(dest_dir: str) -> bool:

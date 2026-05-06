@@ -164,8 +164,19 @@ def refresh_jobs_collection(prefs):
     if not selected_project:
         return
 
+    selected_project_ids = {
+        str(selected_project.get("id") or "").strip(),
+        str(selected_project.get("sqid") or "").strip(),
+    }
+    selected_project_ids.discard("")
+
     for jid, job in Storage.data["jobs"].items():
-        if job.get("project_id") != selected_project.get("id"):
+        job_project_ids = {
+            str(job.get("project_id") or "").strip(),
+            str(job.get("project_sqid") or "").strip(),
+        }
+        job_project_ids.discard("")
+        if selected_project_ids and selected_project_ids.isdisjoint(job_project_ids):
             continue
 
         it = prefs.jobs.add()

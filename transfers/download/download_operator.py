@@ -46,6 +46,9 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
 
         # Find the currently selected project
         selected_project = [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0]
+        job_snapshot = dict(Storage.data.get("jobs", {}).get(self.job_id, {}) or {})
+        if job_snapshot and not job_snapshot.get("id"):
+            job_snapshot["id"] = self.job_id
 
         handoff = {
             "addon_dir": str(get_addon_dir()),
@@ -53,6 +56,7 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
             "project": selected_project,
             "job_id": self.job_id,
             "job_name": self.job_name,
+            "job": job_snapshot,
             "pocketbase_url": POCKETBASE_URL,
             "sarfis_url": f"https://api.superlumin.al/farm/{Storage.data['org_id']}",
             "user_token": Storage.data["user_token"],

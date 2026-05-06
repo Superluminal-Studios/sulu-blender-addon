@@ -577,15 +577,22 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
         selected_project = next(
             (p for p in projects if p.get("id") == prefs.project_id), None
         )
-        selected_project_jobs = (
-            [
-                j
-                for j in Storage.data.get("jobs", {}).values()
-                if j.get("project_id") == selected_project.get("id")
-            ]
-            if selected_project
-            else []
-        )
+        selected_project_ids = set()
+        if selected_project:
+            selected_project_ids = {
+                str(selected_project.get("id") or "").strip(),
+                str(selected_project.get("sqid") or "").strip(),
+            }
+            selected_project_ids.discard("")
+        selected_project_jobs = []
+        for job in Storage.data.get("jobs", {}).values():
+            job_project_ids = {
+                str(job.get("project_id") or "").strip(),
+                str(job.get("project_sqid") or "").strip(),
+            }
+            job_project_ids.discard("")
+            if selected_project_ids and not selected_project_ids.isdisjoint(job_project_ids):
+                selected_project_jobs.append(job)
 
         job_id, job_name, job_status = "", "", ""
         if selected_project_jobs and 0 <= prefs.active_job_index < len(
