@@ -54,6 +54,16 @@ python tests/run_tests.py --category bat
 python tests/run_tests.py --category integration
 ```
 
+### Real Farm Upload Checks
+
+`tests/realworld/test_farm_upload.py` defaults to dry-run mode. Real job
+creation requires an explicit live flag:
+
+```bash
+python tests/realworld/test_farm_upload.py
+python tests/realworld/test_farm_upload.py --live-upload
+```
+
 ### Direct unittest Usage
 
 ```bash

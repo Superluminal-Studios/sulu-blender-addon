@@ -6,8 +6,9 @@ IMPORTANT: These tests actually upload to the Superluminal render farm!
 They use your session.json credentials and will create real jobs.
 
 Usage:
+    python tests/realworld/test_farm_upload.py              # Validate without uploading
     python tests/realworld/test_farm_upload.py --dry-run    # Validate without uploading
-    python tests/realworld/test_farm_upload.py              # Actually upload (creates jobs!)
+    python tests/realworld/test_farm_upload.py --live-upload # Actually upload (creates jobs!)
     python tests/realworld/test_farm_upload.py --report     # Write detailed report
 
 What to check on the farm after running:
@@ -546,11 +547,12 @@ def main():
         description="Real-world farm upload tests",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-IMPORTANT: Without --dry-run, this will actually upload to the farm!
+IMPORTANT: --live-upload will actually upload to the farm!
 
 Examples:
+    python tests/realworld/test_farm_upload.py              # Safe: validate only
     python tests/realworld/test_farm_upload.py --dry-run    # Safe: validate only
-    python tests/realworld/test_farm_upload.py              # Actually upload!
+    python tests/realworld/test_farm_upload.py --live-upload # Actually upload!
     python tests/realworld/test_farm_upload.py --report     # Save detailed report
 
 After running (without --dry-run), check the farm dashboard:
@@ -564,7 +566,12 @@ After running (without --dry-run), check the farm dashboard:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Validate without actually uploading (safe mode)"
+        help="Validate without actually uploading (safe mode; default)"
+    )
+    parser.add_argument(
+        "--live-upload",
+        action="store_true",
+        help="Actually upload to the farm and create real jobs"
     )
     parser.add_argument(
         "--report",
@@ -578,9 +585,11 @@ After running (without --dry-run), check the farm dashboard:
     )
 
     args = parser.parse_args()
+    if args.dry_run and args.live_upload:
+        parser.error("--dry-run and --live-upload are mutually exclusive")
 
     config = FarmTestConfig(
-        dry_run=args.dry_run,
+        dry_run=not args.live_upload,
         write_report=args.report,
         report_dir=args.report_dir,
     )
@@ -621,7 +630,7 @@ After running (without --dry-run), check the farm dashboard:
   Since this was a DRY RUN, no jobs were created.
 
   To actually test uploads:
-    python tests/realworld/test_farm_upload.py
+    python tests/realworld/test_farm_upload.py --live-upload
 
   Then verify on the farm dashboard that:
   1. Jobs appear with names starting with 'SULU_TEST_'

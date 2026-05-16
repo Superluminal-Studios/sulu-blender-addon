@@ -1,4 +1,6 @@
 # Byte-compiled / optimized / DLL files
+.agents/
+.claude/
 __pycache__/
 *.py[cod]
 *$py.class

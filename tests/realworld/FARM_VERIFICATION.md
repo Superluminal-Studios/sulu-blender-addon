@@ -224,3 +224,5 @@ If you find issues:
    - Expected vs actual behavior
    - Screenshots/logs
    - session.json project ID (not token!)
+> Live upload safety: `test_farm_upload.py` defaults to dry-run mode. Real job
+> creation requires `--live-upload`.

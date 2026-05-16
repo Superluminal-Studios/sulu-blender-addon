@@ -3,8 +3,8 @@
 - Schema: `structure-index-v1`
 - Repo Path: `sulu-blender-addon`
 - README Path: `sulu-blender-addon/README.md`
-- Source Fingerprint: `e8d7bb4dfeba606b126e5880a906de0cf01c6b65c6880314ef2612f4c9b468ad`
-- Fingerprinted File Count: `274`
+- Source Fingerprint: `70651bd3d42060b326290ae839d53f8d02a9fb9079d99dcb15385fab923380a3`
+- Fingerprinted File Count: `241`
 - Generator: `bin/generate-structure-index`
 
 ## Critical Paths
@@ -43,18 +43,6 @@
 
 ```text
 .
-├── .agents/
-│   └── skills/
-│       ├── python-design-patterns/
-│       └── python-performance-optimization/
-├── .claude/
-│   ├── skills/
-│   │   ├── bat/
-│   │   ├── python-design-patterns/
-│   │   ├── python-performance-optimization/
-│   │   ├── sulu/
-│   │   └── sulu-design/
-│   └── settings.local.json
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml
@@ -227,6 +215,7 @@
 │   ├── test_path_normalization.py
 │   ├── test_project_context.py
 │   ├── test_project_identity_guards.py
+│   ├── test_request_utils_jobs.py
 │   ├── test_upload_logging.py
 │   ├── test_zipped_compression.py
 │   └── utils.py
@@ -280,6 +269,7 @@ No route signals detected from configured interface sources.
 Detected env/config keys from entrypoints, interface sources, and config files:
 
 - `CLOUDFLARE_R2_DOMAIN`
+- `LIVE_JOB_OVERLAY_FIELDS`
 - `PROJECT`
 - `PROPERTIES`
 - `SCENE`
