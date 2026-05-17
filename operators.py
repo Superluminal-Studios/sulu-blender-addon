@@ -75,7 +75,6 @@ def first_login(token):
     Storage.save()
 
     prefs = bpy.context.preferences.addons[__package__].preferences
-    previous_project_id = prefs.project_id
     selected_project_id = projects[0].get("id", "") if projects else ""
     prefs.project_id = selected_project_id
     print("First login project:", selected_project_id)
@@ -83,13 +82,12 @@ def first_login(token):
     if not selected_project_id:
         return
 
-    if selected_project_id == previous_project_id:
-        try:
-            apply_project_context(selected_project_id, refresh_jobs=True)
-        except ProjectContextError as exc:
-            print(f"Project context incomplete after login: {exc}")
-        except Exception as exc:
-            print(f"Could not sync project context after login: {exc}")
+    try:
+        apply_project_context(selected_project_id, refresh_jobs=True)
+    except ProjectContextError as exc:
+        print(f"Project context incomplete after login: {exc}")
+    except Exception as exc:
+        print(f"Could not sync project context after login: {exc}")
     
 
 class SUPERLUMINAL_OT_Login(bpy.types.Operator):
