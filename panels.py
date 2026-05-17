@@ -302,6 +302,8 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             range_col.prop(props, "frame_end", text="End")
             sub.prop(props, "frame_stepping_size", text="Stepping")
 
+        col.prop(props, "render_order", text="Render order")
+
         row = layout.row(align=True)
         row.prop(props, "image_format", text="Image format")
 

@@ -255,6 +255,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "start_frame": start_frame,
             "end_frame": end_frame,
             "frame_stepping_size": frame_stepping_size,
+            "render_order": props.render_order,
             "render_engine": scene.render.engine.upper(),
             "blender_version": blender_version_payload,  # <- single source of truth
             "ignore_errors": props.ignore_errors,

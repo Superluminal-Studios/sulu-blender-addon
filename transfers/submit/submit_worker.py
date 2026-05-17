@@ -191,6 +191,66 @@ def _split_manifest_by_first_dir(rel_manifest):
     return groups
 
 
+def _build_render_tasks(start_frame: int, end_frame: int, render_order: str) -> List[int]:
+    """
+    Build task order based on requested render order.
+
+    LINEAR: start -> end in ascending order.
+    TEMPORAL_REFINE: first, middle, last, then recursively fill interval midpoints.
+
+    Example with start=1, end=10:
+    [1, 6, 10, 4, 8, 3, 5, 7, 9, 2]
+    """
+    start = int(start_frame)
+    end = int(end_frame)
+    if end < start:
+        return []
+
+    mode = str(render_order or "TEMPORAL_REFINE").upper()
+    if mode == "LINEAR":
+        return list(range(start, end + 1))
+
+    tasks: List[int] = []
+    seen: set[int] = set()
+
+    def _add(frame: int) -> None:
+        if frame not in seen:
+            seen.add(frame)
+            tasks.append(frame)
+
+    # Seed with first, middle, last.
+    _add(start)
+    mid = (start + end + 1) // 2
+    _add(mid)
+    _add(end)
+
+    # Breadth-first interval refinement (left-to-right within each depth).
+    intervals: List[tuple[int, int]] = [(start, mid), (mid, end)]
+    while intervals:
+        next_intervals: List[tuple[int, int]] = []
+        for left, right in intervals:
+            if right - left <= 1:
+                continue
+
+            midpoint = (left + right + 1) // 2
+            if midpoint != left and midpoint != right:
+                _add(midpoint)
+
+            next_intervals.append((left, midpoint))
+            next_intervals.append((midpoint, right))
+        intervals = next_intervals
+
+    # Safety guarantee: always include boundary frames.
+    if start not in seen:
+        tasks.insert(0, start)
+        seen.add(start)
+    if end not in seen:
+        tasks.append(end)
+        seen.add(end)
+
+    return tasks
+
+
 def _missing_project_identity_fields(project: dict | None) -> list[str]:
     """Return required project fields that are missing/blank."""
     if not isinstance(project, dict):
@@ -1572,7 +1632,13 @@ def main() -> None:
     use_scene_image_format = bool(data.get("use_scene_image_format")) or (
         str(data.get("image_format", "")).upper() == "SCENE"
     )
-    frame_step_val = int(data.get("frame_stepping_size", 1))
+    frame_step_val = 1
+    render_order = str(data.get("render_order", "TEMPORAL_REFINE"))
+    render_tasks = _build_render_tasks(
+        int(data["start_frame"]),
+        int(data["end_frame"]),
+        render_order,
+    )
 
     payload: Dict[str, object] = {
         "job_data": {
@@ -1608,9 +1674,7 @@ def main() -> None:
             "use_async_upload": data["use_async_upload"],
             "defer_status": data["use_async_upload"],
             "farm_url": data["farm_url"],
-            "tasks": list(
-                range(data["start_frame"], data["end_frame"] + 1, frame_step_val)
-            ),
+            "tasks": render_tasks,
         }
     }
 

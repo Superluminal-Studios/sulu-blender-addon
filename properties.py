@@ -40,6 +40,15 @@ render_type_items = [
     ("ANIMATION", "Animation", "Render a sequence of frames"),
 ]
 
+render_order_items = [
+    ("LINEAR", "Linear", "Render frames in ascending order (start to end)."),
+    (
+        "TEMPORAL_REFINE",
+        "Temporal Refine",
+        "Render first/middle/last, then iteratively fill the gaps by midpoints.",
+    ),
+]
+
 
 # ────────────────────────────────────────────────────────────────
 #  Live-job-update callback (used by SuluWMSceneProperties)
@@ -154,6 +163,15 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         name="Stepping",
         default=1,
         description="Stepping size for the frame range.",
+    )
+    render_order: bpy.props.EnumProperty(
+        name="Render Order",
+        items=render_order_items,
+        default="TEMPORAL_REFINE",
+        description=(
+            "Choose the frame scheduling strategy. "
+            "Linear renders sequentially; Temporal Refine renders coarse coverage first."
+        ),
     )
     use_scene_frame_range: bpy.props.BoolProperty(
         name="Use Scene Frame Range",
