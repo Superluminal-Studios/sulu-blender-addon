@@ -206,7 +206,7 @@ def _build_render_tasks(start_frame: int, end_frame: int, render_order: str) -> 
     if end < start:
         return []
 
-    mode = str(render_order or "TEMPORAL_REFINE").upper()
+    mode = str(render_order or "LINEAR").upper()
     if mode == "LINEAR":
         return list(range(start, end + 1))
 
@@ -595,6 +595,16 @@ def main() -> None:
     test_mode: bool = bool(data.get("test_mode", False))
     no_submit: bool = bool(data.get("no_submit", False))
 
+    render_order = str(data.get("render_order", "LINEAR"))
+    render_tasks = _build_render_tasks(
+        int(data["start_frame"]),
+        int(data["end_frame"]),
+        render_order,
+    )
+    effective_end_frame = (
+        max(render_tasks) if render_tasks else int(data["end_frame"])
+    )
+
     zip_file = Path(tempfile.gettempdir()) / f"{job_id}.zip"
     filelist = Path(tempfile.gettempdir()) / f"{job_id}.txt"
 
@@ -618,7 +628,7 @@ def main() -> None:
             "addon_version": data["addon_version"],
             "device_type": data.get("device_type", ""),
             "start_frame": data["start_frame"],
-            "end_frame": data["end_frame"],
+            "end_frame": effective_end_frame,
         },
     )
 
@@ -1633,12 +1643,6 @@ def main() -> None:
         str(data.get("image_format", "")).upper() == "SCENE"
     )
     frame_step_val = 1
-    render_order = str(data.get("render_order", "TEMPORAL_REFINE"))
-    render_tasks = _build_render_tasks(
-        int(data["start_frame"]),
-        int(data["end_frame"]),
-        render_order,
-    )
 
     payload: Dict[str, object] = {
         "job_data": {
@@ -1659,7 +1663,7 @@ def main() -> None:
             "name": data["job_name"],
             "status": "queued",
             "start": data["start_frame"],
-            "end": data["end_frame"],
+            "end": effective_end_frame,
             "frame_step": frame_step_val,
             "batch_size": 1,
             "image_format": data["image_format"],

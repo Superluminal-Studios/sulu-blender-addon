@@ -167,7 +167,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     render_order: bpy.props.EnumProperty(
         name="Render Order",
         items=render_order_items,
-        default="TEMPORAL_REFINE",
+        default="LINEAR",
         description=(
             "Choose the frame scheduling strategy. "
             "Linear renders sequentially; Temporal Refine renders coarse coverage first."
