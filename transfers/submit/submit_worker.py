@@ -628,7 +628,7 @@ def main() -> None:
             "addon_version": data["addon_version"],
             "device_type": data.get("device_type", ""),
             "start_frame": data["start_frame"],
-            "end_frame": effective_end_frame,
+            "end_frame": data["end_frame"],
         },
     )
 
@@ -1663,7 +1663,7 @@ def main() -> None:
             "name": data["job_name"],
             "status": "queued",
             "start": data["start_frame"],
-            "end": effective_end_frame,
+            "end": data["end_frame"],
             "frame_step": frame_step_val,
             "batch_size": 1,
             "image_format": data["image_format"],
