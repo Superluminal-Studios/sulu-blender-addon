@@ -197,9 +197,12 @@ def _build_render_tasks(start_frame: int, end_frame: int, render_order: str) -> 
 
     LINEAR: start -> end in ascending order.
     TEMPORAL_REFINE: first, middle, last, then recursively fill interval midpoints.
+    PROGRESSIVE_STEPPING: render with the largest clean power-of-two stride
+    the frame count supports, then halve the stride until all frames are filled.
 
     Example with start=1, end=10:
-    [1, 6, 10, 4, 8, 3, 5, 7, 9, 2]
+    TEMPORAL_REFINE: [1, 6, 10, 4, 8, 3, 5, 7, 9, 2]
+    PROGRESSIVE_STEPPING: [1, 9, 5, 3, 7, 2, 4, 6, 8, 10]
     """
     start = int(start_frame)
     end = int(end_frame)
@@ -209,6 +212,26 @@ def _build_render_tasks(start_frame: int, end_frame: int, render_order: str) -> 
     mode = str(render_order or "LINEAR").upper()
     if mode == "LINEAR":
         return list(range(start, end + 1))
+
+    if mode == "PROGRESSIVE_STEPPING":
+        tasks: List[int] = []
+        seen: set[int] = set()
+
+        def _add(frame: int) -> None:
+            if start <= frame <= end and frame not in seen:
+                seen.add(frame)
+                tasks.append(frame)
+
+        frame_count = end - start + 1
+        stride = 1
+        while stride * 2 <= frame_count - 1:
+            stride *= 2
+
+        while stride >= 1:
+            for frame in range(start, end + 1, stride):
+                _add(frame)
+            stride //= 2
+        return tasks
 
     tasks: List[int] = []
     seen: set[int] = set()
