@@ -51,6 +51,9 @@ _rclone_utils = _load_module_directly(
 _submit_worker = _load_module_directly(
     "submit_worker", _addon_dir / "transfers" / "submit" / "submit_worker.py"
 )
+_farm_upload_harness = _load_module_directly(
+    "farm_upload_harness", _addon_dir / "tests" / "realworld" / "test_farm_upload.py"
+)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -569,7 +572,93 @@ class TestSplitManifest(unittest.TestCase):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-#  6. _rclone_bytes / _rclone_stats / _is_empty_upload helpers
+#  6. Structured upload success marker
+# ═════════════════════════════════════════════════════════════════════════
+
+
+class TestUploadSuccessMarker(unittest.TestCase):
+    """Test the worker marker consumed by the live upload harness."""
+
+    def test_project_payload_counts_scene_files_and_manifest(self):
+        payload = _submit_worker._build_upload_success_payload(
+            job_id="job-1",
+            job_name="Smoke",
+            job_url="https://superlumin.al/p/proj/farm/jobs/job-1",
+            upload_type="PROJECT",
+            rel_manifest=["textures/a.png", "cache/b.vdb"],
+            main_blend_s3="scene.blend",
+            blend_path="/tmp/scene.blend",
+            packed_addons=["addon.zip"],
+            report_path="/tmp/reports",
+            elapsed=1.23456,
+        )
+
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["uploaded_file_count"], 3)
+        self.assertEqual(payload["dependency_file_count"], 2)
+        self.assertEqual(payload["manifest_file_count"], 3)
+        self.assertEqual(payload["storage_object_count"], 5)
+        self.assertEqual(payload["addon_file_count"], 1)
+        self.assertEqual(payload["main_file"], "scene.blend")
+        self.assertEqual(payload["elapsed_sec"], 1.235)
+
+    def test_zip_payload_counts_archive_as_one_scene_file(self):
+        payload = _submit_worker._build_upload_success_payload(
+            job_id="job-2",
+            job_name="Zip",
+            job_url="https://superlumin.al/p/proj/farm/jobs/job-2",
+            upload_type="ZIP",
+            rel_manifest=["ignored.png"],
+            main_blend_s3="",
+            blend_path="/tmp/project/scene.blend",
+        )
+
+        self.assertEqual(payload["uploaded_file_count"], 1)
+        self.assertEqual(payload["dependency_file_count"], 0)
+        self.assertEqual(payload["manifest_file_count"], 0)
+        self.assertEqual(payload["storage_object_count"], 1)
+        self.assertEqual(payload["main_file"], "scene.blend")
+
+    def test_harness_parses_marker_with_job_url_and_file_count(self):
+        output = (
+            "noise before\n"
+            'SULU_UPLOAD_RESULT {"status":"success","job_id":"job-3",'
+            '"job_url":"https://superlumin.al/p/proj/farm/jobs/job-3",'
+            '"uploaded_file_count":4}\n'
+            "noise after\n"
+        )
+
+        payload, error = _farm_upload_harness.parse_upload_success_line(output)
+
+        self.assertIsNone(error)
+        self.assertEqual(payload["job_id"], "job-3")
+        self.assertEqual(payload["uploaded_file_count"], 4)
+        self.assertEqual(
+            payload["job_url"],
+            "https://superlumin.al/p/proj/farm/jobs/job-3",
+        )
+
+    def test_harness_rejects_missing_marker(self):
+        payload, error = _farm_upload_harness.parse_upload_success_line(
+            "Submission complete"
+        )
+
+        self.assertIsNone(payload)
+        self.assertIn("SULU_UPLOAD_RESULT", error)
+
+    def test_harness_rejects_bad_count(self):
+        payload, error = _farm_upload_harness.parse_upload_success_line(
+            'SULU_UPLOAD_RESULT {"status":"success","job_id":"job-4",'
+            '"job_url":"https://superlumin.al/p/proj/farm/jobs/job-4",'
+            '"uploaded_file_count":0}'
+        )
+
+        self.assertIsNone(payload)
+        self.assertIn("uploaded_file_count", error)
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  7. _rclone_bytes / _rclone_stats / _is_empty_upload helpers
 # ═════════════════════════════════════════════════════════════════════════
 
 

@@ -91,15 +91,61 @@ class UploadResult:
     success: bool
     job_id: str = ""
     job_name: str = ""
+    job_url: str = ""
     files_uploaded: int = 0
     upload_time_sec: float = 0
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     s3_keys: List[str] = field(default_factory=list)
     manifest: Dict[str, Any] = field(default_factory=dict)
+    upload_summary: Dict[str, Any] = field(default_factory=dict)
 
     # What to verify on farm
     farm_verification: Dict[str, str] = field(default_factory=dict)
+
+
+UPLOAD_RESULT_PREFIX = "SULU_UPLOAD_RESULT "
+
+
+def _is_positive_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def parse_upload_success_line(
+    output: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Parse the submit worker's structured upload success marker."""
+    marker_lines = [
+        line.strip()
+        for line in str(output or "").splitlines()
+        if line.strip().startswith(UPLOAD_RESULT_PREFIX)
+    ]
+    if not marker_lines:
+        return None, f"Worker did not emit {UPLOAD_RESULT_PREFIX.strip()} success line"
+
+    raw_payload = marker_lines[-1][len(UPLOAD_RESULT_PREFIX):].strip()
+    try:
+        payload = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        return None, f"Malformed {UPLOAD_RESULT_PREFIX.strip()} JSON: {exc}"
+
+    if not isinstance(payload, dict):
+        return None, f"{UPLOAD_RESULT_PREFIX.strip()} payload was not an object"
+    if payload.get("status") != "success":
+        return None, f"{UPLOAD_RESULT_PREFIX.strip()} status was not success"
+    if not str(payload.get("job_id") or "").strip():
+        return None, f"{UPLOAD_RESULT_PREFIX.strip()} missing job_id"
+
+    job_url = payload.get("job_url")
+    if not isinstance(job_url, str) or not job_url.startswith(("http://", "https://")):
+        return None, f"{UPLOAD_RESULT_PREFIX.strip()} missing valid job_url"
+
+    if not _is_positive_int(payload.get("uploaded_file_count")):
+        return None, (
+            f"{UPLOAD_RESULT_PREFIX.strip()} missing positive uploaded_file_count"
+        )
+
+    return payload, None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -431,10 +477,10 @@ def perform_upload(
         worker = _addon_dir / "transfers" / "submit" / "submit_worker.py"
         cmd = [sys.executable, "-u", str(worker), str(tmp_json)]
 
-        # Pipe "n\n" to stdin to auto-answer "Open job in browser?" prompt
+        # Pipe "c\n" to stdin to close the worker success prompt.
         proc = subprocess.run(
             cmd,
-            input="n\n",  # Auto-answer browser prompt with "no"
+            input="c\n",
             capture_output=True,
             text=True,
             timeout=config.upload_timeout,
@@ -446,21 +492,35 @@ def perform_upload(
             result.success = False
             result.errors.append(f"Worker failed with code {proc.returncode}")
             result.errors.append(proc.stderr[-2000:] if proc.stderr else "No stderr")
+            if proc.stdout:
+                result.errors.append(f"stdout tail: {proc.stdout[-2000:]}")
         else:
-            # Parse output for upload info
-            output = proc.stdout
-            if "Upload complete" in output or "SUCCESS" in output:
-                result.success = True
+            summary, parse_error = parse_upload_success_line(proc.stdout)
+            if parse_error:
+                result.success = False
+                result.errors.append(parse_error)
+                if proc.stdout:
+                    result.errors.append(f"stdout tail: {proc.stdout[-2000:]}")
             else:
-                result.warnings.append("Could not confirm upload success in output")
+                result.success = True
+                result.upload_summary = summary or {}
+                result.job_id = str(result.upload_summary.get("job_id") or result.job_id)
+                result.job_name = str(
+                    result.upload_summary.get("job_name") or result.job_name
+                )
+                result.job_url = str(result.upload_summary["job_url"])
+                result.files_uploaded = int(
+                    result.upload_summary["uploaded_file_count"]
+                )
 
         # Set verification checklist
         result.farm_verification = {
             "1_check_job_list": f"Go to farm dashboard, verify job '{result.job_name}' appears",
-            "2_check_status": "Job status should be 'queued' or 'rendering'",
-            "3_check_files": "Click job to verify all files uploaded correctly",
-            "4_check_render": f"Wait for frame {config.frame_start} to render",
-            "5_check_output": "Verify output image looks correct (no pink textures, no missing objects)",
+            "2_open_job": result.job_url or "Worker did not provide a job URL",
+            "3_check_status": "Job status should be 'queued' or 'rendering'",
+            "4_check_files": f"Verify {result.files_uploaded} scene files are present",
+            "5_check_render": f"Wait for frame {config.frame_start} to render",
+            "6_check_output": "Verify output image looks correct (no pink textures, no missing objects)",
         }
 
     except subprocess.TimeoutExpired:
@@ -527,7 +587,9 @@ def run_tests(config: FarmTestConfig) -> TestReporter:
 
             t.add_metadata("job_id", result.job_id)
             t.add_metadata("job_name", result.job_name)
+            t.add_metadata("job_url", result.job_url)
             t.add_metadata("files_count", result.files_uploaded)
+            t.add_metadata("upload_summary", result.upload_summary)
             t.add_metadata("s3_keys_sample", result.s3_keys[:5])
             t.add_metadata("farm_verification", result.farm_verification)
 

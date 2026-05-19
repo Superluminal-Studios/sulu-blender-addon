@@ -46,11 +46,62 @@ def _default_logger(msg: str) -> None:
 
 
 _LOG = _default_logger
+_UPLOAD_RESULT_PREFIX = "SULU_UPLOAD_RESULT "
 
 
 def _set_logger(fn) -> None:
     global _LOG
     _LOG = fn if callable(fn) else _default_logger
+
+
+def _build_upload_success_payload(
+    *,
+    job_id: str,
+    job_name: str,
+    job_url: str,
+    upload_type: str,
+    rel_manifest: List[str],
+    main_blend_s3: str,
+    blend_path: str,
+    packed_addons: Optional[List[object]] = None,
+    report_path: str = "",
+    elapsed: float = 0.0,
+) -> Dict[str, object]:
+    """Build the machine-readable success marker consumed by upload smoke tests."""
+    upload_type = str(upload_type).upper()
+    dependency_file_count = len(rel_manifest) if upload_type == "PROJECT" else 0
+    content_file_count = dependency_file_count + 1
+    manifest_file_count = content_file_count if upload_type == "PROJECT" else 0
+    addon_file_count = len(packed_addons or [])
+
+    return {
+        "status": "success",
+        "job_id": str(job_id),
+        "job_name": str(job_name),
+        "job_url": str(job_url),
+        "upload_type": upload_type,
+        "uploaded_file_count": content_file_count,
+        "dependency_file_count": dependency_file_count,
+        "manifest_file_count": manifest_file_count,
+        "storage_object_count": content_file_count
+        + (1 if upload_type == "PROJECT" else 0)
+        + addon_file_count,
+        "addon_file_count": addon_file_count,
+        "main_file": (
+            str(main_blend_s3)
+            if upload_type == "PROJECT"
+            else Path(str(blend_path)).name
+        ),
+        "report_path": str(report_path),
+        "elapsed_sec": round(max(float(elapsed), 0.0), 3),
+    }
+
+
+def _emit_upload_success_payload(payload: Dict[str, object]) -> None:
+    print(
+        _UPLOAD_RESULT_PREFIX + json.dumps(payload, sort_keys=True),
+        flush=True,
+    )
 
 
 def _rclone_bytes(result) -> int:
@@ -1674,6 +1725,19 @@ def main() -> None:
 
     elapsed = time.perf_counter() - t_start
     job_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{data['job_id']}"
+    upload_result = _build_upload_success_payload(
+        job_id=data["job_id"],
+        job_name=data["job_name"],
+        job_url=job_url,
+        upload_type="PROJECT" if use_project else "ZIP",
+        rel_manifest=rel_manifest,
+        main_blend_s3=main_blend_s3,
+        blend_path=blend_path,
+        packed_addons=data.get("packed_addons") or [],
+        report_path=str(report.get_reports_dir()),
+        elapsed=elapsed,
+    )
+    _emit_upload_success_payload(upload_result)
 
     selection = "c"
     try:
