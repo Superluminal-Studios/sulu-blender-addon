@@ -43,14 +43,9 @@ render_type_items = [
 render_order_items = [
     ("LINEAR", "Linear", "Render frames in ascending order (start to end)."),
     (
-        "PROGRESSIVE_STEPPING",
-        "Progressive Stepping",
-        "Render with the largest clean step, then halve it until all frames are filled.",
-    ),
-    (
         "TEMPORAL_REFINE",
         "Temporal Refine",
-        "Render first/middle/last, then iteratively fill the gaps by midpoints.",
+        "Render with the largest clean step, then halve it until all frames are filled.",
     ),
 ]
 
@@ -175,8 +170,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         default="LINEAR",
         description=(
             "Choose the frame scheduling strategy. "
-            "Linear renders sequentially; Progressive Stepping and Temporal Refine "
-            "render coarse coverage first."
+            "Linear renders sequentially; Temporal Refine renders coarse coverage first."
         ),
     )
     use_scene_frame_range: bpy.props.BoolProperty(
