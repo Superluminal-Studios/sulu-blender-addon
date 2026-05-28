@@ -14,7 +14,9 @@ import importlib
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import time
 import types
 from pathlib import Path
@@ -134,17 +136,20 @@ def _looks_like_storage_auth_error(msg: str) -> bool:
     return any(h in low for h in _STORAGE_AUTH_HINTS)
 
 
-def _fetch_storage_credentials() -> Tuple[Dict[str, object], str]:
+def _fetch_storage_credentials(force_renew: bool = False) -> Tuple[Dict[str, object], str]:
     headers = {"Authorization": data["user_token"]}
+    params = {
+        "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')",
+        "sort": "-updated",
+        "perPage": 1,
+        "skipTotal": 1,
+    }
+    if force_renew:
+        params["force_renew"] = "1"
     s3_resp = session.get(
         f"{data['pocketbase_url']}/api/collections/project_storage/records",
         headers=headers,
-        params={
-            "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')",
-            "sort": "-updated",
-            "perPage": 1,
-            "skipTotal": 1,
-        },
+        params=params,
         timeout=30,
     )
     s3_resp.raise_for_status()
@@ -160,22 +165,167 @@ def _fetch_storage_credentials() -> Tuple[Dict[str, object], str]:
     return rec, rec["bucket_name"]
 
 
-def _refresh_storage_credentials(reason: str | None = None) -> None:
+def _refresh_storage_credentials(reason: str | None = None, force_renew: bool = False) -> None:
     global s3info, bucket, base_cmd
 
     if reason:
         logger.warning(reason)
 
-    s3info, bucket = _fetch_storage_credentials()
+    s3info, bucket = _fetch_storage_credentials(force_renew=force_renew)
     base_cmd = _build_rclone_base()
+
+
+_WINDOWS_RESERVED_NAMES = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+)
+
+_WINDOWS_MAX_COMPONENT_LEN = 240
+_WINDOWS_SAFE_LOCAL_ENCODING = (
+    "Slash,LtGt,DoubleQuote,Colon,Question,Asterisk,Pipe,BackSlash,Del,Ctl,"
+    "LeftSpace,LeftPeriod,RightSpace,RightPeriod,InvalidUtf8,Dot"
+)
+_SKIPPED_OUTPUTS_WARNED = False
+
+
+def _windows_local_path_issue(rel_path: str) -> Optional[str]:
+    """
+    Return a reason this object key cannot be safely materialized on Windows.
+
+    rclone's `--local-encoding` can encode ordinary illegal filename
+    characters (`:`, `*`, trailing spaces/dots, control chars, etc.). It cannot
+    create a file whose final path component is empty, and Windows reserved
+    device names are still unsafe in practice, especially on network drives.
+    """
+    rel = str(rel_path or "").replace("\\", "/").strip("/")
+    if not rel:
+        return "empty relative path"
+    if str(rel_path or "").replace("\\", "/").endswith("/"):
+        return "name ends with '/'"
+
+    for part in rel.split("/"):
+        if not part or part in {".", ".."}:
+            return "empty or relative path segment"
+        if len(part) > _WINDOWS_MAX_COMPONENT_LEN:
+            return "path segment is too long for Windows"
+        device_name = part.rstrip(" .").split(".", 1)[0].upper()
+        if device_name in _WINDOWS_RESERVED_NAMES:
+            return f"reserved Windows device name '{device_name}'"
+    return None
+
+
+def _filter_downloadable_output_files(raw_paths: List[str]) -> Tuple[List[str], List[Tuple[str, str]]]:
+    files: List[str] = []
+    skipped: List[Tuple[str, str]] = []
+    seen = set()
+
+    for raw in raw_paths:
+        rel = str(raw or "").strip().replace("\\", "/")
+        if not rel:
+            continue
+        issue = _windows_local_path_issue(rel)
+        if issue:
+            skipped.append((rel, issue))
+            continue
+        if rel in seen:
+            continue
+        seen.add(rel)
+        files.append(rel)
+
+    return files, skipped
+
+
+def _rclone_list_output_files(remote: str) -> Tuple[List[str], List[Tuple[str, str]]]:
+    """
+    Return downloadable remote paths and malformed object keys.
+
+    S3/R2 can contain real object keys ending in "/". rclone exposes those as
+    files in recursive listings, but Windows cannot materialize them as files:
+    rclone creates the directory, then fails renaming the partial file onto that
+    same path. The worker copies from an explicit, pre-filtered files list so
+    one malformed object cannot abort the whole download.
+    """
+    cmd = [
+        str(base_cmd[0]),
+        "lsf",
+        remote,
+        "--recursive",
+        "--files-only",
+        "--exclude",
+        "thumbnails/**",
+        *base_cmd[1:],
+    ]
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if proc.returncode != 0:
+        combined = "\n".join([proc.stdout or "", proc.stderr or ""])
+        tail = "\n".join(combined.splitlines()[-20:]).strip()
+        raise RuntimeError(f"Failed to list output files: {tail or proc.returncode}")
+
+    return _filter_downloadable_output_files((proc.stdout or "").splitlines())
+
+
+def _write_files_from_list(files: List[str]) -> str:
+    fp = tempfile.NamedTemporaryFile(
+        "w",
+        prefix="superluminal_download_files_",
+        suffix=".txt",
+        encoding="utf-8",
+        newline="\n",
+        delete=False,
+    )
+    try:
+        for rel in files:
+            fp.write(f"{rel}\n")
+        return fp.name
+    finally:
+        fp.close()
+
+
+def _warn_skipped_outputs(skipped: List[Tuple[str, str]]) -> None:
+    global _SKIPPED_OUTPUTS_WARNED
+    if not skipped or _SKIPPED_OUTPUTS_WARNED:
+        return
+    _SKIPPED_OUTPUTS_WARNED = True
+    examples = "; ".join(f"{path} ({reason})" for path, reason in skipped[:3])
+    more = "" if len(skipped) <= 3 else f"; +{len(skipped) - 3} more"
+    logger.warning(
+        "Skipped "
+        f"{len(skipped)} malformed output object"
+        f"{'' if len(skipped) == 1 else 's'} with Windows-incompatible names. "
+        "Valid frame files will continue downloading. "
+        f"Skipped: {examples}{more}"
+    )
 
 
 def _run_output_copy(dest_dir: str) -> None:
     remote = f":s3:{bucket}/{job_id}/output/"
     local = dest_dir.rstrip("/") + "/"
+    files, skipped = _rclone_list_output_files(remote)
+    _warn_skipped_outputs(skipped)
+    if not files:
+        logger.info("No downloadable frame files found yet")
+        return
+
+    files_from = _write_files_from_list(files)
     rclone_args = [
-        "--exclude",
-        "thumbnails/**",
+        "--files-from-raw",
+        files_from,
+        "--no-traverse",
+        "--local-encoding",
+        _WINDOWS_SAFE_LOCAL_ENCODING,
         "--transfers",
         "8",
         "--checkers",
@@ -189,14 +339,20 @@ def _run_output_copy(dest_dir: str) -> None:
         "5s",
     ]
 
-    run_rclone(
-        base_cmd,
-        "copy",
-        remote,
-        local,
-        rclone_args,
-        logger=logger,
-    )
+    try:
+        run_rclone(
+            base_cmd,
+            "copy",
+            remote,
+            local,
+            rclone_args,
+            logger=logger,
+        )
+    finally:
+        try:
+            os.unlink(files_from)
+        except OSError:
+            pass
 
 
 def _int_value(value: object, default: int = 0) -> int:
@@ -231,10 +387,25 @@ def _handoff_job_details() -> Tuple[str, int, int]:
     return (status, finished, total)
 
 
+_JOB_DETAILS_WARNED: set = set()
+
+
 def _fetch_job_details() -> Tuple[str, int, int]:
     """
     Returns (status, finished, total) with safe defaults.
     Falls back to the job snapshot passed by Blender when live queue data is gone.
+
+    Note on null bodies: the queue manager's `job_details` endpoint returns
+    `None` whenever the job_id isn't in `Database.jobs` (jobs that just got
+    submitted, finished and aged out, or were deleted). Sanic wraps that
+    as `{"status": "success", "body": null}`. We previously called
+    `resp.json().get("body", {})` and assumed missing-key semantics — but
+    `dict.get` only returns the default for ABSENT keys, not for keys
+    whose value is None. Combined with the gateway occasionally returning
+    a bare JSON `null` (no wrapper), `resp.json()` itself can be None.
+    Either path bubbled `'NoneType' object has no attribute 'get'` once
+    per 5 s poll forever. This branch handles both cases AND deduplicates
+    the warning so the log doesn't spam.
     """
     if not sarfis_url or not sarfis_token:
         return _handoff_job_details()
@@ -246,24 +417,48 @@ def _fetch_job_details() -> Tuple[str, int, int]:
             headers={"Auth-Token": sarfis_token},
             timeout=20,
         )
-        if resp.status_code != 200:
-            logger.warning(f"Job status check returned {resp.status_code}")
-            return _handoff_job_details()
-        body = (
-            resp.json().get("body", {})
-            if resp.headers.get("content-type", "").startswith("application/json")
-            else {}
-        )
-        if not isinstance(body, dict) or not body:
-            return _handoff_job_details()
-        status = str(body.get("status", "unknown")).lower()
-        tasks = body.get("tasks", {}) or {}
-        finished = _int_value(tasks.get("finished"), 0)
-        total = _int_value(body.get("total_tasks", tasks.get("total")), 0)
-        return (status, finished, total)
     except Exception as exc:
-        logger.warning(f"Job status check failed: {exc}")
+        key = f"req:{type(exc).__name__}"
+        if key not in _JOB_DETAILS_WARNED:
+            _JOB_DETAILS_WARNED.add(key)
+            logger.warning(f"Job status check failed: {exc}")
         return _handoff_job_details()
+
+    if resp.status_code != 200:
+        key = f"http:{resp.status_code}"
+        if key not in _JOB_DETAILS_WARNED:
+            _JOB_DETAILS_WARNED.add(key)
+            logger.warning(f"Job status check returned {resp.status_code}")
+        return _handoff_job_details()
+
+    parsed: object = None
+    if resp.headers.get("content-type", "").startswith("application/json"):
+        try:
+            parsed = resp.json()
+        except ValueError:
+            parsed = None
+
+    # `parsed` can be None when the upstream returns the JSON literal
+    # `null` (jobs not in Database.jobs) — silent fallback, this is the
+    # expected case for freshly-submitted jobs and aged-out terminal jobs.
+    if not isinstance(parsed, dict):
+        return _handoff_job_details()
+
+    body = parsed.get("body")
+    # Same dict-or-fallback pattern: `body` is None when the wrapped
+    # response is `{"status": "success", "body": null}`.
+    if not isinstance(body, dict) or not body:
+        return _handoff_job_details()
+
+    status = str(body.get("status", "unknown") or "unknown").lower()
+    tasks_raw = body.get("tasks") or {}
+    tasks = tasks_raw if isinstance(tasks_raw, dict) else {}
+    finished = _int_value(tasks.get("finished"), 0)
+    total = _int_value(body.get("total_tasks", tasks.get("total")), 0)
+    # Clear the dedupe set so a transient failure doesn't permanently
+    # suppress future warnings of the same kind.
+    _JOB_DETAILS_WARNED.clear()
+    return (status, finished, total)
 
 
 def _rclone_copy_output(dest_dir: str) -> bool:
@@ -281,7 +476,8 @@ def _rclone_copy_output(dest_dir: str) -> bool:
             return False
         if _looks_like_storage_auth_error(msg):
             _refresh_storage_credentials(
-                "Storage credentials were rejected. Refreshing credentials and retrying once."
+                "Storage credentials were rejected. Refreshing credentials and retrying once.",
+                force_renew=True,
             )
             try:
                 _run_output_copy(dest_dir)
