@@ -26,6 +26,7 @@ class Storage:
     data = {
         "user_token": "",
         "user_token_time": 0,
+        "user_email": "",
         "org_id": "",
         "user_key": "",
         "projects": [],
@@ -74,6 +75,7 @@ class Storage:
                 cls.data.update(
                     user_token="",
                     user_token_time=0,
+                    user_email="",
                     org_id="",
                     user_key="",
                     projects=[],
@@ -87,11 +89,11 @@ class Storage:
             cls.data.update(
                 user_token="",
                 user_token_time=0,
+                user_email="",
                 org_id="",
                 user_key="",
                 projects=[],
                 jobs={},
             )
             cls._atomic_write(cls._file, cls.data)
-
 

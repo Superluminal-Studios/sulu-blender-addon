@@ -63,9 +63,34 @@ def _browser_login_thread_v2(txn):
     return token
 
 
-def first_login(token):
+def _user_email_from_auth_payload(payload) -> str:
+    try:
+        record = payload.get("record") or {}
+        return str(record.get("email") or "").strip()
+    except Exception:
+        return ""
+
+
+def _fetch_user_email_for_token(token: str) -> str:
+    if not token:
+        return ""
+    try:
+        res = Storage.session.post(
+            f"{POCKETBASE_URL}/api/collections/users/auth-refresh",
+            headers={"Authorization": token},
+            timeout=Storage.timeout,
+        )
+        if res.status_code != 200:
+            return ""
+        return _user_email_from_auth_payload(res.json())
+    except Exception:
+        return ""
+
+
+def first_login(token, user_email: str = ""):
     Storage.data["user_token"] = token
     Storage.data["user_token_time"] = int(time.time())
+    Storage.data["user_email"] = (user_email or _fetch_user_email_for_token(token)).strip().lower()
     Storage.data["org_id"] = ""
     Storage.data["user_key"] = ""
     Storage.data["jobs"] = {}
@@ -119,7 +144,7 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
             payload = r.json()
             token = payload.get("token")
             if token:
-                first_login(token)
+                first_login(token, _user_email_from_auth_payload(payload) or creds.username)
             if not token:
                 _flush_wm_password(wm)
                 self.report({"WARNING"}, "Sign-in incomplete. Try again.")

@@ -92,12 +92,23 @@ def list_tests():
             print("    (directory not found)")
 
 
+PYTEST_PASSED = "passed"
+PYTEST_FAILED = "failed"
+PYTEST_UNAVAILABLE = "unavailable"
+
+
 def run_with_pytest(category: str = None, verbose: bool = False, quick: bool = False):
-    """Try to run with pytest if available."""
+    """Try to run with pytest if available.
+
+    Returns one of:
+      PYTEST_PASSED      — pytest ran and all tests passed
+      PYTEST_FAILED      — pytest ran and at least one test failed/errored
+      PYTEST_UNAVAILABLE — pytest is not installed (caller should fall back)
+    """
     try:
         import pytest
     except ImportError:
-        return False
+        return PYTEST_UNAVAILABLE
 
     args = [str(_tests_dir)]
 
@@ -119,7 +130,7 @@ def run_with_pytest(category: str = None, verbose: bool = False, quick: bool = F
     # Add color output
     args.append("--color=yes")
 
-    return pytest.main(args) == 0
+    return PYTEST_PASSED if pytest.main(args) == 0 else PYTEST_FAILED
 
 
 def run_with_unittest(category: str = None, verbose: bool = False):
@@ -234,18 +245,22 @@ Real-world farm tests (separate script):
 
     print("=" * 78 + "\n")
 
-    # Try pytest first, fall back to unittest
+    # Try pytest first, fall back to unittest only when pytest is unavailable.
+    # A real pytest failure must NOT fall through to unittest — that would mask
+    # broken tests as "pytest unavailable, unittest passed".
     success = None
     runner_used = None
 
     if not args.no_pytest:
-        success = run_with_pytest(args.category, args.verbose, args.quick)
-        if success is not False:  # pytest ran (success or failure)
+        pytest_result = run_with_pytest(args.category, args.verbose, args.quick)
+        if pytest_result == PYTEST_PASSED:
+            success = True
+            runner_used = "pytest"
+        elif pytest_result == PYTEST_FAILED:
+            success = False
             runner_used = "pytest"
         else:
-            # pytest not available, fall back
             print("  (pytest not available, using unittest)\n")
-            success = None
 
     if success is None:
         success = run_with_unittest(args.category, args.verbose)

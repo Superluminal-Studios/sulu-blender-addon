@@ -13,6 +13,16 @@ After running the real-world upload tests, use this guide to verify everything w
 □ Output images look correct (no pink textures)
 ```
 
+## Retention and Fixture Caveats
+
+- Production render-output buckets expire artifacts after 7 days. Jobs older than
+  that can still appear in job lists while thumbnails, `file_list`, and output
+  downloads return 404. Use fresh `SULU_TEST_` jobs when validating output media.
+- Some legacy BAT fixtures are upload/dependency canaries, not rendered-output
+  canaries. For example, no-camera scenes can still exercise packaging and farm
+  submission but produce no thumbnail/output image. Prefer `image_sequencer.blend`
+  or another known-camera scene when the goal is thumbnail/output validation.
+
 ## Detailed Verification Steps
 
 ### 1. Job Creation
