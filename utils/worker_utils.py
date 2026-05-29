@@ -26,6 +26,7 @@ import time
 import unicodedata
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 # third-party
 import requests
@@ -40,6 +41,7 @@ CREATE_NEW_PROCESS_GROUP = 0x00000200  # allow Ctrl+C to target child
 
 CLOUDFLARE_ACCOUNT_ID = "f09fa628d989ddd93cbe3bf7f7935591"
 CLOUDFLARE_R2_DOMAIN = f"{CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+DEBUG_MODE = False
 
 # Common flags we want on *every* rclone call that uses R2
 COMMON_RCLONE_FLAGS: list[str] = [
@@ -50,6 +52,28 @@ COMMON_RCLONE_FLAGS: list[str] = [
     "auto",
     "--s3-no-check-bucket",
 ]
+
+
+def _request_endpoint(url: str) -> str:
+    parsed = urlparse(url)
+    endpoint = parsed.path or url
+    if parsed.query:
+        endpoint = f"{endpoint}?{parsed.query}"
+    return endpoint
+
+
+def request_timing_logs_enabled() -> bool:
+    return DEBUG_MODE or debug_enabled()
+
+
+class TimingSession(requests.Session):
+    def request(self, method, url, **kwargs):
+        start = time.perf_counter()
+        response = super().request(method, url, **kwargs)
+        if request_timing_logs_enabled():
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            print(f"{str(method).upper()} {_request_endpoint(str(url))} -> {response.status_code} in {elapsed_ms:.0f} ms")
+        return response
 
 
 def clear_console():
@@ -256,7 +280,7 @@ def requests_retry_session(
     Defaults favor reliability on flaky networks, with jitter via
     exponential backoff. This does *not* raise until retries are exhausted.
     """
-    session = session or requests.Session()
+    session = session or TimingSession()
 
     retry = Retry(
         total=retries,
@@ -760,7 +784,7 @@ def check_time_sync(
         "https://api.github.com",
     ]
 
-    sess = session or requests.Session()
+    sess = session or TimingSession()
     local_time = time.time()
 
     for url in check_urls:

@@ -10,6 +10,7 @@ PocketBase JWT helpers for the Superluminal Blender add-on
 
 from __future__ import annotations
 import requests
+from urllib.parse import urlparse
 
 from .constants import POCKETBASE_URL
 from .storage import Storage
@@ -19,6 +20,48 @@ import time
 # ------------------------------------------------------------------
 class NotAuthenticated(RuntimeError):
     """Raised when the user is no longer logged in (token missing/invalid)."""
+
+
+DEBUG_MODE = False
+AUTH_REFRESH_INTERVAL_SECONDS = 8 * 60 * 60
+
+
+def _request_endpoint(url: str) -> str:
+    parsed = urlparse(url)
+    endpoint = parsed.path or url
+    if parsed.query:
+        endpoint = f"{endpoint}?{parsed.query}"
+    return endpoint
+
+
+def _print_request_timing(method: str, url: str, start_time: float, status_code=None) -> None:
+    if not request_timing_logs_enabled():
+        return
+    elapsed_ms = (time.perf_counter() - start_time) * 1000
+    status = f" -> {status_code}" if status_code is not None else ""
+    print(f"{method.upper()} {_request_endpoint(url)}{status} in {elapsed_ms:.0f} ms")
+
+
+def request_timing_logs_enabled() -> bool:
+    if DEBUG_MODE:
+        return True
+    try:
+        from .utils.prefs import get_prefs
+
+        prefs = get_prefs()
+        if prefs is not None and hasattr(prefs, "debug_mode"):
+            return bool(prefs.debug_mode)
+    except Exception:
+        pass
+    return False
+
+
+def logged_session_request(session, method: str, url: str, **kwargs):
+    start = time.perf_counter()
+    with Storage.session_lock:
+        res = session.request(method, url, **kwargs)
+    _print_request_timing(method, url, start, res.status_code)
+    return res
 
 
 def authorized_request(
@@ -42,10 +85,13 @@ def authorized_request(
     headers["Authorization"] = Storage.data["user_token"]
 
     if Storage.data.get('user_token_time', None):
-        if int(time.time()) - int(Storage.data['user_token_time']) > 10:
+        if int(time.time()) - int(Storage.data['user_token_time']) > AUTH_REFRESH_INTERVAL_SECONDS:
 
-            res = Storage.session.post(
-                f"{POCKETBASE_URL}/api/collections/users/auth-refresh",
+            refresh_url = f"{POCKETBASE_URL}/api/collections/users/auth-refresh"
+            res = logged_session_request(
+                Storage.session,
+                "POST",
+                refresh_url,
                 headers=headers,
                 timeout=Storage.timeout,
                 **kwargs)
@@ -61,7 +107,8 @@ def authorized_request(
             else:
                 raise NotAuthenticated("Could not refresh token. Sign in again.")
     try:
-        res = Storage.session.request(
+        res = logged_session_request(
+            Storage.session,
             method,
             url,
             headers=headers,

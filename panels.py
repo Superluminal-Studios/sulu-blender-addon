@@ -9,7 +9,6 @@ from .constants import DEFAULT_ADDONS
 from .storage import Storage
 from .preferences import refresh_jobs_collection, draw_header_row
 from .preferences import draw_login
-from .utils.request_utils import fetch_jobs
 from .icons import get_icon_id, get_fallback_icon
 
 from .utils.project_scan import quick_cross_drive_hint, human_shorten
@@ -240,20 +239,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         prefs = context.preferences.addons[__package__].preferences
         props = scene.superluminal_settings
 
-        if Storage.data.get("user_token") != Storage.panel_data.get("last_token"):
-            Storage.panel_data["last_token"] = Storage.data.get("user_token")
-            org_id = Storage.data.get("org_id")
-            user_key = Storage.data.get("user_key")
-            if prefs.project_id and org_id and user_key:
-                try:
-                    print("Fetching jobs for project:", prefs.project_id)
-                    jobs = Storage.data["jobs"] = fetch_jobs(org_id, user_key, prefs.project_id)
-                    if jobs and hasattr(context.scene, "superluminal_settings"):
-                        if hasattr(context.scene.superluminal_settings, "job_id"):
-                            context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
-                except Exception as exc:
-                    print(f"Could not fetch jobs after token change: {exc}")
-
         refresh_jobs_collection(prefs)
 
         logged_in = bool(Storage.data.get("user_token"))
@@ -301,6 +286,8 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             range_col.prop(props, "frame_start", text="Start")
             range_col.prop(props, "frame_end", text="End")
             sub.prop(props, "frame_stepping_size", text="Stepping")
+
+        col.prop(props, "render_order", text="Render order")
 
         row = layout.row(align=True)
         row.prop(props, "image_format", text="Image format")
@@ -539,21 +526,37 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
 
         logged_in = bool(Storage.data.get("user_token"))
         jobs_ok = len(Storage.data.get("jobs", {})) > 0
+        jobs_updating = bool(
+            getattr(Storage, "jobs_updating", False)
+            or getattr(Storage, "projects_updating", False)
+        )
 
         tools = layout.row(align=True)
         tools.use_property_split = False
         tools.use_property_decorate = False
         tools.separator_spacer()
         tools.prop(wm_props, "live_job_updates", text="Auto refresh")
-        tools.operator("superluminal.fetch_project_jobs", text="", icon="FILE_REFRESH")
+        refresh_row = tools.row(align=True)
+        refresh_row.enabled = not jobs_updating
+        refresh_row.operator("superluminal.fetch_project_jobs", text="", icon="FILE_REFRESH")
         tools.separator()
         tools.menu("SUPERLUMINAL_MT_job_columns", text="", icon="DOWNARROW_HLT")
 
         col = layout.column()
-        col.enabled = logged_in and jobs_ok
+        if jobs_updating:
+            status = col.row(align=True)
+            status.use_property_split = False
+            status.label(text="Updating jobs...", icon="TIME")
+        elif Storage.last_refresh_error:
+            status = col.row(align=True)
+            status.use_property_split = False
+            status.alert = True
+            status.label(text=Storage.last_refresh_error, icon="ERROR")
+
+        col.enabled = logged_in and (jobs_ok or jobs_updating)
         draw_header_row(col, prefs)
 
-        if not logged_in or not jobs_ok:
+        if not logged_in or (not jobs_ok and not jobs_updating):
             box = col.box()
             if not logged_in:
                 box.alert = True

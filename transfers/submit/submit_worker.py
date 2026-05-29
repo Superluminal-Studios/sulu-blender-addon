@@ -242,6 +242,49 @@ def _split_manifest_by_first_dir(rel_manifest):
     return groups
 
 
+def _build_render_tasks(start_frame: int, end_frame: int, render_order: str) -> List[int]:
+    """
+    Build task order based on requested render order.
+
+    LINEAR: start -> end in ascending order.
+    TEMPORAL_REFINE: render with the largest clean power-of-two stride
+    the frame count supports, then halve the stride until all frames are filled.
+
+    Example with start=1, end=10:
+    TEMPORAL_REFINE: [1, 9, 5, 3, 7, 2, 4, 6, 8, 10]
+    """
+    start = int(start_frame)
+    end = int(end_frame)
+    if end < start:
+        return []
+
+    mode = str(render_order or "LINEAR").upper()
+    if mode == "LINEAR":
+        return list(range(start, end + 1))
+
+    if mode in {"TEMPORAL_REFINE", "PROGRESSIVE_STEPPING"}:
+        tasks: List[int] = []
+        seen: set[int] = set()
+
+        def _add(frame: int) -> None:
+            if start <= frame <= end and frame not in seen:
+                seen.add(frame)
+                tasks.append(frame)
+
+        frame_count = end - start + 1
+        stride = 1
+        while stride * 2 <= frame_count - 1:
+            stride *= 2
+
+        while stride >= 1:
+            for frame in range(start, end + 1, stride):
+                _add(frame)
+            stride //= 2
+        return tasks
+
+    return list(range(start, end + 1))
+
+
 def _missing_project_identity_fields(project: dict | None) -> list[str]:
     """Return required project fields that are missing/blank."""
     if not isinstance(project, dict):
@@ -446,6 +489,8 @@ def main() -> None:
     t_start = time.perf_counter()
 
     data = _load_handoff_from_argv(sys.argv)
+    if data.get("debug_mode", False):
+        os.environ["SULU_DEBUG"] = "1"
     mods = _bootstrap_addon_modules(data)
 
     clear_console = mods["clear_console"]
@@ -622,6 +667,16 @@ def main() -> None:
     # Test mode flags (optional in handoff)
     test_mode: bool = bool(data.get("test_mode", False))
     no_submit: bool = bool(data.get("no_submit", False))
+
+    render_order = str(data.get("render_order", "LINEAR"))
+    render_tasks = _build_render_tasks(
+        int(data["start_frame"]),
+        int(data["end_frame"]),
+        render_order,
+    )
+    effective_end_frame = (
+        max(render_tasks) if render_tasks else int(data["end_frame"])
+    )
 
     zip_file = Path(tempfile.gettempdir()) / f"{job_id}.zip"
     filelist = Path(tempfile.gettempdir()) / f"{job_id}.txt"
@@ -1663,7 +1718,7 @@ def main() -> None:
     use_scene_image_format = bool(data.get("use_scene_image_format")) or (
         str(data.get("image_format", "")).upper() == "SCENE"
     )
-    frame_step_val = int(data.get("frame_stepping_size", 1))
+    frame_step_val = 1
 
     payload: Dict[str, object] = {
         "job_data": {
@@ -1699,9 +1754,7 @@ def main() -> None:
             "use_async_upload": data["use_async_upload"],
             "defer_status": data["use_async_upload"],
             "farm_url": data["farm_url"],
-            "tasks": list(
-                range(data["start_frame"], data["end_frame"] + 1, frame_step_val)
-            ),
+            "tasks": render_tasks,
         }
     }
 

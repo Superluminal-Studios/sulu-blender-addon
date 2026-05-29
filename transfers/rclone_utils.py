@@ -25,9 +25,12 @@ import sys
 import json
 import re
 import shutil
+import time
 from collections import deque
 from typing import List, Optional, Tuple, Any
+from urllib.parse import urlparse
 
+DEBUG_MODE = False
 
 # Unicode glyphs (no emoji)
 _GLYPH_DOWN = "↓"
@@ -64,6 +67,32 @@ def _call_logger(logger: Any, method: str, msg: str) -> None:
         print(str(msg))
     except UnicodeEncodeError:
         print(str(msg).encode("ascii", errors="replace").decode("ascii"))
+
+
+def _request_endpoint(url: str) -> str:
+    parsed = urlparse(url)
+    endpoint = parsed.path or url
+    if parsed.query:
+        endpoint = f"{endpoint}?{parsed.query}"
+    return endpoint
+
+
+def _request_timing_logs_enabled() -> bool:
+    return DEBUG_MODE or os.environ.get("SULU_DEBUG", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _timed_get(session: Session, url: str, **kwargs):
+    start = time.perf_counter()
+    response = session.get(url, **kwargs)
+    if _request_timing_logs_enabled():
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        print(f"GET {_request_endpoint(url)} -> {response.status_code} in {elapsed_ms:.0f} ms")
+    return response
 
 
 _UNIT = {
@@ -192,7 +221,7 @@ def download_with_bar(url: str, dest: Path, logger=None) -> None:
     s.mount("https://", HTTPAdapter(max_retries=retries))
 
     _call_logger(logger, "info", f"{_GLYPH_DOWN} Preparing rclone")
-    resp = s.get(url, stream=True, timeout=600)
+    resp = _timed_get(s, url, stream=True, timeout=600)
     resp.raise_for_status()
 
     total = int(resp.headers.get("Content-Length", 0)) or 0
