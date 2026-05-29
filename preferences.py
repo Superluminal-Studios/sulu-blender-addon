@@ -36,6 +36,7 @@ def get_job_items(self, context):
 
 
 def _clear_project_runtime_state(clear_jobs: bool = True) -> None:
+    Storage.data["project_id"] = ""
     Storage.data["org_id"] = ""
     Storage.data["user_key"] = ""
     if clear_jobs:
@@ -50,6 +51,21 @@ def apply_project_context(project_id: str, *, refresh_jobs: bool = True) -> dict
         _clear_project_runtime_state(clear_jobs=refresh_jobs)
         Storage.save()
         return None
+
+    cached_org_id = str(Storage.data.get("org_id") or "").strip()
+    cached_user_key = str(Storage.data.get("user_key") or "").strip()
+    if (
+        Storage.data.get("project_id") == project_id
+        and cached_org_id
+        and cached_user_key
+    ):
+        if refresh_jobs:
+            Storage.data["jobs"] = fetch_jobs(cached_org_id, cached_user_key, project_id) or {}
+        Storage.save()
+        return next(
+            (p for p in Storage.data.get("projects", []) if p.get("id") == project_id),
+            None,
+        )
 
     project, projects, did_refresh = resolve_selected_project(
         project_id,
@@ -76,6 +92,7 @@ def apply_project_context(project_id: str, *, refresh_jobs: bool = True) -> dict
         )
 
     org_id, user_key = resolve_org_context(project, get_render_queue_key)
+    Storage.data["project_id"] = project_id
     Storage.data["org_id"] = org_id
     Storage.data["user_key"] = user_key
     if refresh_jobs:
@@ -85,6 +102,8 @@ def apply_project_context(project_id: str, *, refresh_jobs: bool = True) -> dict
 
 
 def _on_project_id_changed(self, context):
+    if getattr(Storage, "suppress_project_callback", False):
+        return
     if not Storage.data.get("user_token"):
         return
     try:
@@ -376,10 +395,33 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
         options={'SKIP_SAVE'},         # don't persist across sessions
     )
 
+    show_debug_panel: bpy.props.BoolProperty(
+        name="Show debug settings",
+        description="Show debug settings",
+        default=False,
+        options={'SKIP_SAVE'},
+    )
+
+    debug_mode: bpy.props.BoolProperty(
+        name="Enable",
+        description="Enable verbose diagnostic logging",
+        default=False,
+    )
+
 
     def draw(self, context):
         layout = self.layout
         draw_login(layout)
+        layout.separator()
+
+        header = layout.row(align=True)
+        icon = 'TRIA_DOWN' if self.show_debug_panel else 'TRIA_RIGHT'
+        header.prop(self, "show_debug_panel", text="", icon=icon, emboss=False)
+        header.label(text="Debug")
+
+        if self.show_debug_panel:
+            box = layout.box()
+            box.prop(self, "debug_mode")
 
 
 classes = (

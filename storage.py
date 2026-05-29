@@ -16,8 +16,13 @@ class Storage:
     timeout = 20
     session.mount("http://", HTTPAdapter(max_retries=retries))
     session.mount("https://", HTTPAdapter(max_retries=retries))
+    session_lock = threading.Lock()
 
     enable_job_thread = False
+    jobs_updating = False
+    projects_updating = False
+    suppress_project_callback = False
+    last_refresh_error = ""
 
     addon_dir = os.path.dirname(os.path.abspath(__file__))
     _file = os.path.join(addon_dir, "session.json")
@@ -26,6 +31,7 @@ class Storage:
     data = {
         "user_token": "",
         "user_token_time": 0,
+        "project_id": "",
         "org_id": "",
         "user_key": "",
         "projects": [],
@@ -74,6 +80,7 @@ class Storage:
                 cls.data.update(
                     user_token="",
                     user_token_time=0,
+                    project_id="",
                     org_id="",
                     user_key="",
                     projects=[],
@@ -87,6 +94,7 @@ class Storage:
             cls.data.update(
                 user_token="",
                 user_token_time=0,
+                project_id="",
                 org_id="",
                 user_key="",
                 projects=[],

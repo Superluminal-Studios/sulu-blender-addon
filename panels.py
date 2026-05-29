@@ -526,21 +526,37 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
 
         logged_in = bool(Storage.data.get("user_token"))
         jobs_ok = len(Storage.data.get("jobs", {})) > 0
+        jobs_updating = bool(
+            getattr(Storage, "jobs_updating", False)
+            or getattr(Storage, "projects_updating", False)
+        )
 
         tools = layout.row(align=True)
         tools.use_property_split = False
         tools.use_property_decorate = False
         tools.separator_spacer()
         tools.prop(wm_props, "live_job_updates", text="Auto refresh")
-        tools.operator("superluminal.fetch_project_jobs", text="", icon="FILE_REFRESH")
+        refresh_row = tools.row(align=True)
+        refresh_row.enabled = not jobs_updating
+        refresh_row.operator("superluminal.fetch_project_jobs", text="", icon="FILE_REFRESH")
         tools.separator()
         tools.menu("SUPERLUMINAL_MT_job_columns", text="", icon="DOWNARROW_HLT")
 
         col = layout.column()
-        col.enabled = logged_in and jobs_ok
+        if jobs_updating:
+            status = col.row(align=True)
+            status.use_property_split = False
+            status.label(text="Updating jobs...", icon="TIME")
+        elif Storage.last_refresh_error:
+            status = col.row(align=True)
+            status.use_property_split = False
+            status.alert = True
+            status.label(text=Storage.last_refresh_error, icon="ERROR")
+
+        col.enabled = logged_in and (jobs_ok or jobs_updating)
         draw_header_row(col, prefs)
 
-        if not logged_in or not jobs_ok:
+        if not logged_in or (not jobs_ok and not jobs_updating):
             box = col.box()
             if not logged_in:
                 box.alert = True

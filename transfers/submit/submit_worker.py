@@ -401,6 +401,8 @@ def main() -> None:
     t_start = time.perf_counter()
 
     data = _load_handoff_from_argv(sys.argv)
+    if data.get("debug_mode", False):
+        os.environ["SULU_DEBUG"] = "1"
     mods = _bootstrap_addon_modules(data)
 
     clear_console = mods["clear_console"]

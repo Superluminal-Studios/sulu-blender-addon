@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import bpy
-from operator import setitem
 import webbrowser
 import time
 import platform
 import threading
 
 from .constants import POCKETBASE_URL
-from .pocketbase_auth import NotAuthenticated
+from .pocketbase_auth import logged_session_request
 from .storage import Storage
 from .utils.request_utils import fetch_projects
 from .utils.logging import report_exception
@@ -43,11 +42,61 @@ def _redraw_properties_ui() -> None:
                 area.tag_redraw()
 
 
+def _set_default_active_job_id() -> None:
+    try:
+        jobs = Storage.data.get("jobs", {})
+        scene = getattr(bpy.context, "scene", None)
+        if jobs and scene and hasattr(scene, "superluminal_settings"):
+            if hasattr(scene.superluminal_settings, "job_id"):
+                scene.superluminal_settings.job_id = list(jobs.keys())[0]
+    except Exception as exc:
+        print("Could not set default job after refresh.", exc)
+
+
+def _start_background_job_refresh(project_id: str, *, set_active_job: bool = False) -> None:
+    if Storage.jobs_updating:
+        return
+
+    Storage.jobs_updating = True
+    Storage.last_refresh_error = ""
+    _redraw_properties_ui()
+    result = {"message": "Jobs updated."}
+
+    def _worker():
+        try:
+            apply_project_context(project_id, refresh_jobs=True)
+        except Exception as exc:
+            Storage.last_refresh_error = str(exc)
+            result["message"] = f"Error fetching jobs: {exc}"
+
+    worker = threading.Thread(target=_worker, daemon=True)
+    worker.start()
+
+    def _poll_worker():
+        if worker.is_alive():
+            return 0.05
+        Storage.jobs_updating = False
+        Storage.projects_updating = False
+        if set_active_job:
+            _set_default_active_job_id()
+        print(result["message"])
+        _redraw_properties_ui()
+        return None
+
+    bpy.app.timers.register(_poll_worker, first_interval=0.05)
+
+
 def _browser_login_thread_v2(txn):
     token_url = f"{POCKETBASE_URL}/api/cli/token"
     token = None
     while token is None:
-        response = Storage.session.post(token_url, json={"txn": txn}, timeout=Storage.timeout)
+        response = logged_session_request(
+            Storage.session,
+            "POST",
+            token_url,
+            json={"txn": txn},
+            timeout=Storage.timeout,
+        )
 
         if response.status_code == 428:
             time.sleep(0.2)
@@ -76,18 +125,21 @@ def first_login(token):
 
     prefs = bpy.context.preferences.addons[__package__].preferences
     selected_project_id = projects[0].get("id", "") if projects else ""
-    prefs.project_id = selected_project_id
+    previous_project_id = prefs.project_id
+    if selected_project_id != previous_project_id:
+        prefs.project_id = selected_project_id
     print("First login project:", selected_project_id)
 
     if not selected_project_id:
         return
 
-    try:
-        apply_project_context(selected_project_id, refresh_jobs=True)
-    except ProjectContextError as exc:
-        print(f"Project context incomplete after login: {exc}")
-    except Exception as exc:
-        print(f"Could not sync project context after login: {exc}")
+    if selected_project_id == previous_project_id:
+        try:
+            apply_project_context(selected_project_id, refresh_jobs=True)
+        except ProjectContextError as exc:
+            print(f"Project context incomplete after login: {exc}")
+        except Exception as exc:
+            print(f"Could not sync project context after login: {exc}")
     
 
 class SUPERLUMINAL_OT_Login(bpy.types.Operator):
@@ -107,7 +159,13 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
         data  = {"identity": creds.username.strip(), "password": creds.password}
 
         try:
-            r = Storage.session.post(url, json=data, timeout=Storage.timeout)
+            r = logged_session_request(
+                Storage.session,
+                "POST",
+                url,
+                json=data,
+                timeout=Storage.timeout,
+            )
             if r.status_code in (401, 403):
                 _flush_wm_credentials(wm)  # scrub both email+password on wrong creds
                 self.report({"ERROR"}, "Invalid email or password.")
@@ -157,7 +215,13 @@ class SUPERLUMINAL_OT_LoginBrowser(bpy.types.Operator):
         payload = {"device_hint": f"Blender {bpy.app.version_string} / {platform.system()}", "scope": "default"}
 
         try:
-            response = Storage.session.post(url, json=payload, timeout=Storage.timeout)
+            response = logged_session_request(
+                Storage.session,
+                "POST",
+                url,
+                json=payload,
+                timeout=Storage.timeout,
+            )
             response.raise_for_status()
             data = response.json()
         except Exception as exc:
@@ -194,47 +258,60 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
         prefs = context.preferences.addons[__package__].preferences
         previous_project_id = prefs.project_id
 
-        try:
-            projects = fetch_projects()
-        except NotAuthenticated as exc:
-            return report_exception(
-                self, exc, str(exc),
-                cleanup=lambda: setitem(Storage.data, "projects", [])
-            )
-        except Exception as exc:
-            return report_exception(
-                self, exc, "Error fetching projects",
-                cleanup=lambda: setitem(Storage.data, "projects", [])
-            )
-
-        Storage.data["projects"] = projects
-        if previous_project_id and any(p.get("id") == previous_project_id for p in projects):
-            selected_project_id = previous_project_id
-        else:
-            selected_project_id = projects[0].get("id", "") if projects else ""
-        prefs.project_id = selected_project_id
-
-        if not selected_project_id:
-            Storage.data["org_id"] = ""
-            Storage.data["user_key"] = ""
-            Storage.data["jobs"] = {}
-            Storage.save()
-            self.report({"INFO"}, "Projects updated.")
+        if Storage.projects_updating:
+            self.report({"INFO"}, "Projects are already updating.")
             return {"FINISHED"}
 
-        if selected_project_id == previous_project_id:
+        Storage.projects_updating = True
+        Storage.jobs_updating = True
+        Storage.last_refresh_error = ""
+        _redraw_properties_ui()
+        result = {"selected_project_id": "", "message": "Projects updated."}
+
+        def _worker():
             try:
-                apply_project_context(selected_project_id, refresh_jobs=True)
-            except ProjectContextError as exc:
-                self.report({"WARNING"}, str(exc))
-            except NotAuthenticated as exc:
-                return report_exception(self, exc, str(exc))
+                projects = fetch_projects()
+                Storage.data["projects"] = projects
+                if previous_project_id and any(p.get("id") == previous_project_id for p in projects):
+                    result["selected_project_id"] = previous_project_id
+                else:
+                    result["selected_project_id"] = projects[0].get("id", "") if projects else ""
+
+                if not result["selected_project_id"]:
+                    Storage.data["project_id"] = ""
+                    Storage.data["org_id"] = ""
+                    Storage.data["user_key"] = ""
+                    Storage.data["jobs"] = {}
+                    Storage.save()
+                else:
+                    apply_project_context(result["selected_project_id"], refresh_jobs=True)
             except Exception as exc:
-                return report_exception(self, exc, "Error syncing project context")
+                Storage.data["projects"] = []
+                Storage.last_refresh_error = str(exc)
+                result["message"] = f"Error updating projects: {exc}"
 
-        Storage.save()
+        worker = threading.Thread(target=_worker, daemon=True)
+        worker.start()
 
-        self.report({"INFO"}, "Projects updated.")
+        def _poll_worker():
+            if worker.is_alive():
+                return 0.05
+            selected_project_id = result["selected_project_id"]
+            if selected_project_id:
+                Storage.suppress_project_callback = True
+                try:
+                    prefs.project_id = selected_project_id
+                finally:
+                    Storage.suppress_project_callback = False
+            Storage.projects_updating = False
+            Storage.jobs_updating = False
+            Storage.save()
+            print(result["message"])
+            _redraw_properties_ui()
+            return None
+
+        bpy.app.timers.register(_poll_worker, first_interval=0.05)
+        self.report({"INFO"}, "Updating projects...")
         return {"FINISHED"}
     
 
@@ -265,26 +342,12 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
             self.report({"ERROR"}, "No project selected.")
             return {"CANCELLED"}
 
-        try:
-            apply_project_context(project_id, refresh_jobs=True)
-        except NotAuthenticated as exc:
-            return report_exception(self, exc, str(exc))
-        except ProjectContextError as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-        except Exception as exc:
-            return report_exception(self, exc, "Error fetching jobs")
+        if Storage.jobs_updating:
+            self.report({"INFO"}, "Jobs are already updating.")
+            return {"FINISHED"}
 
-        # Best-effort set active job id if present
-        try:
-            jobs = Storage.data.get("jobs", {})
-            if jobs and hasattr(context.scene, "superluminal_settings"):
-                if hasattr(context.scene.superluminal_settings, "job_id"):
-                    context.scene.superluminal_settings.job_id = list(jobs.keys())[0]
-        except Exception as exc:
-            print("Could not set default job after login.", exc)
-
-        _redraw_properties_ui()
+        _start_background_job_refresh(project_id, set_active_job=True)
+        self.report({"INFO"}, "Updating jobs...")
         return {"FINISHED"}
 
 

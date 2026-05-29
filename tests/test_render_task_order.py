@@ -35,28 +35,28 @@ class TestRenderTaskOrder(unittest.TestCase):
     def test_temporal_refine_render_order(self):
         self.assertEqual(
             _submit_worker._build_render_tasks(1, 10, "TEMPORAL_REFINE"),
-            [1, 6, 10, 4, 8, 3, 5, 7, 9, 2],
+            [1, 9, 5, 3, 7, 2, 4, 6, 8, 10],
         )
 
-    def test_progressive_stepping_render_order(self):
+    def test_progressive_stepping_alias_render_order(self):
         self.assertEqual(
             _submit_worker._build_render_tasks(1, 10, "PROGRESSIVE_STEPPING"),
             [1, 9, 5, 3, 7, 2, 4, 6, 8, 10],
         )
 
-    def test_progressive_stepping_supports_non_one_start_frame(self):
+    def test_temporal_refine_supports_non_one_start_frame(self):
         self.assertEqual(
-            _submit_worker._build_render_tasks(10, 18, "PROGRESSIVE_STEPPING"),
+            _submit_worker._build_render_tasks(10, 18, "TEMPORAL_REFINE"),
             [10, 18, 14, 12, 16, 11, 13, 15, 17],
         )
 
-    def test_progressive_stepping_uses_largest_clean_stride(self):
+    def test_temporal_refine_uses_largest_clean_stride(self):
         self.assertEqual(
-            _submit_worker._build_render_tasks(1, 34, "PROGRESSIVE_STEPPING")[:8],
+            _submit_worker._build_render_tasks(1, 34, "TEMPORAL_REFINE")[:8],
             [1, 33, 17, 9, 25, 5, 13, 21],
         )
         self.assertEqual(
-            sorted(_submit_worker._build_render_tasks(1, 34, "PROGRESSIVE_STEPPING")),
+            sorted(_submit_worker._build_render_tasks(1, 34, "TEMPORAL_REFINE")),
             list(range(1, 35)),
         )
 

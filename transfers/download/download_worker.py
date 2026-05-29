@@ -26,6 +26,8 @@ try:
     t_start = time.perf_counter()
     handoff_path = Path(sys.argv[1]).resolve(strict=True)
     data: Dict[str, object] = json.loads(handoff_path.read_text("utf-8"))
+    if data.get("debug_mode", False):
+        os.environ["SULU_DEBUG"] = "1"
 
     # Import add-on internals
     addon_dir = Path(data["addon_dir"]).resolve()

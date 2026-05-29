@@ -2,7 +2,6 @@ from ..constants import POCKETBASE_URL
 from ..pocketbase_auth import authorized_request
 from ..storage import Storage
 from .project_context import ProjectContextError
-from .prefs import get_prefs
 import time
 import threading
 import bpy
@@ -41,8 +40,6 @@ def get_render_queue_key(org_id: str) -> str:
 
 def request_jobs(org_id: str, user_key: str, project_id: str):
     """Verify farm availability and return (display_jobs, raw_jobs_json) for *project_id*."""
-    prefs = get_prefs()
-    prefs.jobs.clear()
     jobs_resp = authorized_request(
         "GET",
         f"{POCKETBASE_URL}/farm/{org_id}/api/job_list",
