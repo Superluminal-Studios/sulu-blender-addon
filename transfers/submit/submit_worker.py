@@ -242,7 +242,19 @@ def _split_manifest_by_first_dir(rel_manifest):
     return groups
 
 
-def _build_render_tasks(start_frame: int, end_frame: int, render_order: str) -> List[int]:
+def _normalize_frame_step(frame_step: object) -> int:
+    try:
+        return max(1, abs(int(frame_step or 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _build_render_tasks(
+    start_frame: int,
+    end_frame: int,
+    render_order: str,
+    frame_step: object = 1,
+) -> List[int]:
     """
     Build task order based on requested render order.
 
@@ -255,12 +267,15 @@ def _build_render_tasks(start_frame: int, end_frame: int, render_order: str) -> 
     """
     start = int(start_frame)
     end = int(end_frame)
+    step = _normalize_frame_step(frame_step)
     if end < start:
         return []
 
+    frame_numbers = list(range(start, end + 1, step))
+
     mode = str(render_order or "LINEAR").upper()
     if mode == "LINEAR":
-        return list(range(start, end + 1))
+        return frame_numbers
 
     if mode in {"TEMPORAL_REFINE", "PROGRESSIVE_STEPPING"}:
         tasks: List[int] = []
@@ -271,18 +286,18 @@ def _build_render_tasks(start_frame: int, end_frame: int, render_order: str) -> 
                 seen.add(frame)
                 tasks.append(frame)
 
-        frame_count = end - start + 1
+        frame_count = len(frame_numbers)
         stride = 1
         while stride * 2 <= frame_count - 1:
             stride *= 2
 
         while stride >= 1:
-            for frame in range(start, end + 1, stride):
-                _add(frame)
+            for index in range(0, frame_count, stride):
+                _add(frame_numbers[index])
             stride //= 2
         return tasks
 
-    return list(range(start, end + 1))
+    return frame_numbers
 
 
 def _missing_project_identity_fields(project: dict | None) -> list[str]:
@@ -669,10 +684,12 @@ def main() -> None:
     no_submit: bool = bool(data.get("no_submit", False))
 
     render_order = str(data.get("render_order", "LINEAR"))
+    frame_step_val = _normalize_frame_step(data.get("frame_stepping_size", 1))
     render_tasks = _build_render_tasks(
         int(data["start_frame"]),
         int(data["end_frame"]),
         render_order,
+        frame_step_val,
     )
     effective_end_frame = (
         max(render_tasks) if render_tasks else int(data["end_frame"])
@@ -1718,7 +1735,6 @@ def main() -> None:
     use_scene_image_format = bool(data.get("use_scene_image_format")) or (
         str(data.get("image_format", "")).upper() == "SCENE"
     )
-    frame_step_val = 1
 
     payload: Dict[str, object] = {
         "job_data": {
@@ -1739,7 +1755,7 @@ def main() -> None:
             "name": data["job_name"],
             "status": "queued",
             "start": data["start_frame"],
-            "end": data["end_frame"],
+            "end": effective_end_frame,
             "frame_step": frame_step_val,
             "batch_size": 1,
             "image_format": data["image_format"],

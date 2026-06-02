@@ -64,6 +64,10 @@ python tests/realworld/test_farm_upload.py
 python tests/realworld/test_farm_upload.py --live-upload
 ```
 
+Manual farm verification guidance is owned by the superrepo:
+
+- <https://github.com/Superluminal-Studios/sulu-super-repo/blob/main/docs/repos/sulu-blender-addon/testing/farm-verification.md>
+
 ### Direct unittest Usage
 
 ```bash

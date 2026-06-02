@@ -32,16 +32,34 @@ class TestRenderTaskOrder(unittest.TestCase):
             [1, 2, 3, 4, 5],
         )
 
+    def test_linear_render_order_honors_frame_step(self):
+        self.assertEqual(
+            _submit_worker._build_render_tasks(1, 10, "LINEAR", 2),
+            [1, 3, 5, 7, 9],
+        )
+
     def test_temporal_refine_render_order(self):
         self.assertEqual(
             _submit_worker._build_render_tasks(1, 10, "TEMPORAL_REFINE"),
             [1, 9, 5, 3, 7, 2, 4, 6, 8, 10],
         )
 
+    def test_temporal_refine_render_order_honors_frame_step(self):
+        self.assertEqual(
+            _submit_worker._build_render_tasks(1, 10, "TEMPORAL_REFINE", 2),
+            [1, 9, 5, 3, 7],
+        )
+
     def test_progressive_stepping_alias_render_order(self):
         self.assertEqual(
             _submit_worker._build_render_tasks(1, 10, "PROGRESSIVE_STEPPING"),
             [1, 9, 5, 3, 7, 2, 4, 6, 8, 10],
+        )
+
+    def test_invalid_frame_step_falls_back_to_one(self):
+        self.assertEqual(
+            _submit_worker._build_render_tasks(1, 5, "LINEAR", 0),
+            [1, 2, 3, 4, 5],
         )
 
     def test_temporal_refine_supports_non_one_start_frame(self):

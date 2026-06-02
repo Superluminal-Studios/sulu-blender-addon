@@ -10,8 +10,8 @@
 | Primary runtime location | Artist workstations running Blender |
 
 Atlas: <https://github.com/Superluminal-Studios/sulu-super-repo/blob/main/docs/atlas/README.md>
-Architecture summary: `ARCHITECTURE.md`
-Leaf pack: `docs/architecture/leaf-pack/`
+Long-form add-on docs: <https://github.com/Superluminal-Studios/sulu-super-repo/tree/main/docs/repos/sulu-blender-addon/>
+Atlas leaf pack: <https://github.com/Superluminal-Studios/sulu-super-repo/tree/main/docs/atlas/leaf-packs/sulu-blender-addon/>
 
 ## Upstream and Downstream Dependencies
 
@@ -59,13 +59,14 @@ Repository map:
 │   ├── submit/submit_worker.py           # Packaging, upload, job registration
 │   └── download/download_worker.py       # Output download worker
 ├── utils/project_context.py              # Project identity and org/user-key guards
-├── ARCHITECTURE.md                       # Add-on architecture summary
-└── docs/architecture/leaf-pack/          # Atlas-linked implementation docs
+└── docs/architecture/structure-index.md # Generated structure index
 ```
 
 ## Structure Index and Critical Code Paths
 
 - Generated structure index: `sulu-blender-addon/docs/architecture/structure-index.md`
+- Long-form add-on docs:
+  - <https://github.com/Superluminal-Studios/sulu-super-repo/tree/main/docs/repos/sulu-blender-addon/>
 - Critical code paths for reasoning and change impact:
   - `__init__.py`
   - `operators.py`
@@ -74,8 +75,7 @@ Repository map:
   - `storage.py`
   - `transfers/submit/submit_worker.py`
   - `transfers/download/download_worker.py`
-  - `ARCHITECTURE.md`
-  - `docs/architecture/leaf-pack/`
+  - <https://github.com/Superluminal-Studios/sulu-super-repo/tree/main/docs/atlas/leaf-packs/sulu-blender-addon/>
 
 ## Runtime Interfaces
 

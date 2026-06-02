@@ -3,8 +3,8 @@
 - Schema: `structure-index-v1`
 - Repo Path: `sulu-blender-addon`
 - README Path: `sulu-blender-addon/README.md`
-- Source Fingerprint: `042ad92d29a05839eba98e0fbd119ede1435a216bec040cd344c510dd745214f`
-- Fingerprinted File Count: `241`
+- Source Fingerprint: `389151453731fb574da513f055dbbac39ad8f70dd2302d9910c8ef4ad45b0a7c`
+- Fingerprinted File Count: `235`
 - Generator: `bin/generate-structure-index`
 
 ## Critical Paths
@@ -18,8 +18,6 @@
 | `storage.py` | file | critical path |
 | `transfers/submit/submit_worker.py` | file | critical path |
 | `transfers/download/download_worker.py` | file | critical path |
-| `ARCHITECTURE.md` | file | critical path |
-| `docs/architecture/leaf-pack/` | dir | critical path |
 
 ## Entrypoints
 
@@ -197,7 +195,6 @@
 │   │   └── test_scenarios.py
 │   ├── realworld/
 │   │   ├── __init__.py
-│   │   ├── FARM_VERIFICATION.md
 │   │   └── test_farm_upload.py
 │   ├── reports/
 │   │   └── .gitkeep
@@ -211,11 +208,14 @@
 │   ├── test_compression_theory.py
 │   ├── test_diagnostic_report.py
 │   ├── test_diagnostic_report_direct.py
+│   ├── test_download_job_status.py
 │   ├── test_linked_library_tracking.py
 │   ├── test_path_normalization.py
 │   ├── test_project_context.py
 │   ├── test_project_identity_guards.py
+│   ├── test_render_task_order.py
 │   ├── test_request_utils_jobs.py
+│   ├── test_run_tests_wrapper.py
 │   ├── test_upload_logging.py
 │   ├── test_zipped_compression.py
 │   └── utils.py
@@ -245,7 +245,6 @@
 │   └── worker_utils.py
 ├── .gitignore
 ├── __init__.py
-├── ARCHITECTURE.md
 ├── CLAUDE.md
 ├── constants.py
 ├── deploy.py
@@ -268,7 +267,10 @@ No route signals detected from configured interface sources.
 
 Detected env/config keys from entrypoints, interface sources, and config files:
 
+- `AUTH_REFRESH_INTERVAL_SECONDS`
 - `CLOUDFLARE_R2_DOMAIN`
+- `DEBUG_MODE`
+- `LINEAR`
 - `LIVE_JOB_OVERLAY_FIELDS`
 - `PROJECT`
 - `PROPERTIES`
