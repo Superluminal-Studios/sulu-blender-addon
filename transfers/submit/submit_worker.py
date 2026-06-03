@@ -1761,6 +1761,7 @@ def main() -> None:
             "image_format": data["image_format"],
             "use_scene_image_format": use_scene_image_format,
             "render_engine": data["render_engine"],
+            "scene_metadata": data.get("scene_metadata") or {},
             "version": "20241125",
             "blender_version": data["blender_version"],
             "required_storage": required_storage,

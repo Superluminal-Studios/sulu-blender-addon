@@ -25,6 +25,7 @@ from ...utils.project_context import (
     resolve_selected_project,
     validate_project_identity,
 )
+from .scene_metadata import build_scene_metadata
 
 
 def _blender_python_args() -> list[str]:
@@ -220,6 +221,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             if use_scene_image_format
             else props.image_format
         )
+        scene_metadata = build_scene_metadata(bpy, context)
 
         job_id = uuid.uuid4()
         handoff = {
@@ -257,6 +259,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "frame_stepping_size": frame_stepping_size,
             "render_order": props.render_order,
             "render_engine": scene.render.engine.upper(),
+            "scene_metadata": scene_metadata,
             "blender_version": blender_version_payload,  # <- single source of truth
             "ignore_errors": props.ignore_errors,
             "pocketbase_url": POCKETBASE_URL,
