@@ -26,6 +26,11 @@ from ...utils.project_context import (
     validate_project_identity,
 )
 from .scene_metadata import build_scene_metadata
+from .settings_schema import (
+    collect_settings_schema,
+    collect_settings_values,
+    collect_settings_values_by_scene,
+)
 
 
 def _blender_python_args() -> list[str]:
@@ -222,6 +227,15 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             else props.image_format
         )
         scene_metadata = build_scene_metadata(bpy, context)
+        # Settings dump (best effort): schema + current values for the web
+        # settings editor. Failures degrade to (None, None) / {} and must
+        # never block submit.
+        settings_schema, settings_schema_key = collect_settings_schema(scene, bpy)
+        # Per-scene snapshots so the web editor's scene selector swaps every
+        # downstream value; falls back to the active scene's flat snapshot.
+        scene_metadata["settings"] = (
+            collect_settings_values_by_scene(bpy) or collect_settings_values(scene)
+        )
 
         job_id = uuid.uuid4()
         handoff = {
@@ -260,6 +274,9 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "render_order": props.render_order,
             "render_engine": scene.render.engine.upper(),
             "scene_metadata": scene_metadata,
+            # Optional: old workers ignore these; None when the dump failed.
+            "settings_schema": settings_schema,
+            "settings_schema_key": settings_schema_key,
             "blender_version": blender_version_payload,  # <- single source of truth
             "ignore_errors": props.ignore_errors,
             "pocketbase_url": POCKETBASE_URL,

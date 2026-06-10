@@ -300,6 +300,45 @@ def _build_render_tasks(
     return frame_numbers
 
 
+def _sync_settings_schema(session, data: Dict[str, object], headers: Dict[str, str]) -> None:
+    """Best-effort registration of the dumped Blender settings schema.
+
+    Schemas are deduped server-side by schema_key: GET first, POST only on
+    404. Any failure is logged and ignored — submission must never depend on
+    the schema registry.
+    """
+    schema = data.get("settings_schema")
+    schema_key = str(data.get("settings_schema_key") or "")
+    if not isinstance(schema, dict) or not schema_key:
+        return
+    try:
+        get_resp = session.get(
+            f"{data['pocketbase_url']}/api/blender_schemas/{schema_key}",
+            headers=headers,
+            timeout=30,
+        )
+        if get_resp.status_code == 200:
+            return
+        if get_resp.status_code != 404:
+            get_resp.raise_for_status()
+        post_resp = session.post(
+            f"{data['pocketbase_url']}/api/blender_schemas",
+            headers={**headers, "Content-Type": "application/json"},
+            data=json.dumps(
+                {
+                    "schema_key": schema_key,
+                    "blender_version": str(schema.get("blender_version", "") or ""),
+                    "schema": schema,
+                }
+            ),
+            timeout=30,
+        )
+        post_resp.raise_for_status()
+    except Exception as exc:
+        if _debug_enabled and _debug_enabled():
+            _LOG(f"Settings schema sync skipped: {exc}")
+
+
 def _missing_project_identity_fields(project: dict | None) -> list[str]:
     """Return required project fields that are missing/blank."""
     if not isinstance(project, dict):
@@ -1736,6 +1775,9 @@ def main() -> None:
         str(data.get("image_format", "")).upper() == "SCENE"
     )
 
+    # Register the dumped settings schema (deduped by key; best effort).
+    _sync_settings_schema(session, data, headers)
+
     payload: Dict[str, object] = {
         "job_data": {
             "id": data["job_id"],
@@ -1757,6 +1799,7 @@ def main() -> None:
             "start": data["start_frame"],
             "end": effective_end_frame,
             "frame_step": frame_step_val,
+            "render_order": render_order,
             "batch_size": 1,
             "image_format": data["image_format"],
             "use_scene_image_format": use_scene_image_format,
@@ -1774,6 +1817,11 @@ def main() -> None:
             "tasks": render_tasks,
         }
     }
+
+    # Optional: only present when the addon's settings schema dump succeeded.
+    settings_schema_key = str(data.get("settings_schema_key") or "")
+    if settings_schema_key:
+        payload["job_data"]["settings_schema_key"] = settings_schema_key
 
     try:
         post_resp = session.post(
