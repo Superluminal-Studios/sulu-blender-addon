@@ -11,6 +11,7 @@ from .preferences import refresh_jobs_collection, draw_header_row
 from .preferences import draw_login
 from .icons import get_icon_id, get_fallback_icon
 
+from .utils.job_list import get_indexed_item
 from .utils.project_scan import quick_cross_drive_hint, human_shorten
 
 addons_to_send: list[str] = []
@@ -525,7 +526,7 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
         refresh_jobs_collection(prefs)
 
         logged_in = bool(Storage.data.get("user_token"))
-        jobs_ok = len(Storage.data.get("jobs", {})) > 0
+        jobs_ok = len(prefs.jobs) > 0
         jobs_updating = bool(
             getattr(Storage, "jobs_updating", False)
             or getattr(Storage, "projects_updating", False)
@@ -575,36 +576,12 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
             rows=3,
         )
 
-        # Determine selected job
-        projects = Storage.data.get("projects", [])
-        selected_project = next(
-            (p for p in projects if p.get("id") == prefs.project_id), None
-        )
-        selected_project_ids = set()
-        if selected_project:
-            selected_project_ids = {
-                str(selected_project.get("id") or "").strip(),
-                str(selected_project.get("sqid") or "").strip(),
-            }
-            selected_project_ids.discard("")
-        selected_project_jobs = []
-        for job in Storage.data.get("jobs", {}).values():
-            job_project_ids = {
-                str(job.get("project_id") or "").strip(),
-                str(job.get("project_sqid") or "").strip(),
-            }
-            job_project_ids.discard("")
-            if selected_project_ids and not selected_project_ids.isdisjoint(job_project_ids):
-                selected_project_jobs.append(job)
-
         job_id, job_name, job_status = "", "", ""
-        if selected_project_jobs and 0 <= prefs.active_job_index < len(
-            selected_project_jobs
-        ):
-            sel_job = selected_project_jobs[prefs.active_job_index]
-            job_id = sel_job.get("id", "")
-            job_name = sel_job.get("name", "")
-            job_status = sel_job.get("status", "")
+        selected_job = get_indexed_item(prefs.jobs, prefs.active_job_index)
+        if selected_job:
+            job_id = selected_job.id
+            job_name = selected_job.name
+            job_status = selected_job.status
 
         has_selection = logged_in and jobs_ok and bool(job_name) and job_id != ""
 

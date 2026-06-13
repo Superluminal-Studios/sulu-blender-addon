@@ -114,7 +114,7 @@ class _Unknown:
 
 class _PanelInfo:
     __slots__ = (
-        "name", "label", "parent", "context", "engines", "order",
+        "name", "label", "parent", "context", "space", "engines", "order",
         "default_closed", "hide_header", "draw", "draw_header", "poll",
         "bases", "is_panel", "skip", "lineno", "module", "methods",
     )
@@ -126,6 +126,7 @@ class _PanelInfo:
         self.label: Optional[str] = None
         self.parent: Optional[str] = None
         self.context: Optional[str] = None
+        self.space: Optional[str] = None
         self.engines: Optional[list] = None
         self.order: Optional[int] = None
         self.default_closed = False
@@ -162,11 +163,36 @@ class _Module:
         self.name = name
         self.functions: dict[str, ast.FunctionDef] = {}
         self.classes: dict[str, _PanelInfo] = {}
+        # Blender registers panels from the module-level `classes = (...)`
+        # tuple — that order, not class definition order, is the UI order
+        self.class_order: dict[str, int] = {}
         for node in tree.body:
             if isinstance(node, ast.FunctionDef):
                 self.functions[node.name] = node
             elif isinstance(node, ast.ClassDef):
                 self.classes[node.name] = _parse_class(node, name)
+            elif (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == "classes"
+                and isinstance(node.value, (ast.Tuple, ast.List))
+            ):
+                self.class_order = {
+                    elt.id: i
+                    for i, elt in enumerate(node.value.elts)
+                    if isinstance(elt, ast.Name)
+                }
+
+    def ordered_class_names(self) -> list:
+        names = list(self.classes.keys())
+        if not self.class_order:
+            return names
+        fallback = len(self.class_order)
+        return sorted(
+            names,
+            key=lambda n: self.class_order.get(n, fallback + names.index(n)),
+        )
 
 
 def _parse_class(cls: ast.ClassDef, module: str) -> _PanelInfo:
@@ -182,6 +208,8 @@ def _parse_class(cls: ast.ClassDef, module: str) -> _PanelInfo:
                 info.parent = value
             elif name == "bl_context" and isinstance(value, str):
                 info.context = value
+            elif name == "bl_space_type" and isinstance(value, str):
+                info.space = value
             elif name == "bl_order" and isinstance(value, int):
                 info.order = value
             elif name == "bl_options" and isinstance(value, (set, frozenset, tuple, list)):
@@ -516,6 +544,9 @@ class _Translator:
             if kw.arg == "text":
                 has_text = True
                 text = _literal(kw.value)
+            elif kw.arg == "expand" and _literal(kw.value) is True:
+                # Blender draws the enum as a row of buttons instead of a menu
+                node["expand"] = True
         if has_text:
             node["text"] = text if isinstance(text, str) else None
         self.emit(layout, node)
@@ -604,9 +635,33 @@ class _Registry:
             self.classes.update(module.classes)
 
 
-def _poll_marks_dev_only(fn: ast.FunctionDef) -> bool:
+def _poll_marks_dev_only(
+    fn: ast.FunctionDef,
+    registry: Optional["_Registry"] = None,
+    depth: int = 0,
+) -> bool:
     source_names = {n.attr for n in ast.walk(fn) if isinstance(n, ast.Attribute)}
-    return bool(source_names & {"show_developer_ui", "use_cycles_debug", "experimental"})
+    if source_names & {"show_developer_ui", "use_cycles_debug", "experimental"}:
+        return True
+    if registry is None or depth >= 3:
+        return False
+    # Composed polls delegate the gate: `return Mixin.poll(context) and …`
+    for node in ast.walk(fn):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "poll"
+            and isinstance(node.func.value, ast.Name)
+        ):
+            base = registry.classes.get(node.func.value.id)
+            if (
+                base is not None
+                and base.poll is not None
+                and base.poll is not fn
+                and _poll_marks_dev_only(base.poll, registry, depth + 1)
+            ):
+                return True
+    return False
 
 
 def _poll_is_engine_gate_only(fn: ast.FunctionDef) -> bool:
@@ -641,6 +696,10 @@ def _resolve_inheritance(info: _PanelInfo, registry: _Registry, seen: Optional[s
             info.skip = True
         if info.context is None:
             info.context = base.context
+        if info.space is None:
+            info.space = base.space
+        if info.parent is None:
+            info.parent = base.parent
         if info.engines is None:
             info.engines = base.engines
         if info.poll is None:
@@ -670,7 +729,8 @@ def build_layout(sources: dict[str, str]) -> Optional[dict]:
     panels = []
     warnings: list[str] = []
     for module in modules:
-        for info in module.classes.values():
+        for class_name in module.ordered_class_names():
+            info = module.classes[class_name]
             try:
                 _resolve_inheritance(info, registry)
                 # mixins carry no bl_label; Menus/UILists/PresetPanels are
@@ -679,7 +739,11 @@ def build_layout(sources: dict[str, str]) -> Optional[dict]:
                     continue
                 if info.skip or info.label is None or info.context not in _TARGET_CONTEXTS:
                     continue
-                if info.poll is not None and _poll_marks_dev_only(info.poll):
+                # 3D-viewport panels (e.g. Cycles' shading popovers) reuse the
+                # buttons mixins but never appear in the properties editor
+                if info.space is not None and info.space != "PROPERTIES":
+                    continue
+                if info.poll is not None and _poll_marks_dev_only(info.poll, registry):
                     continue
                 translator = _Translator(
                     registry,

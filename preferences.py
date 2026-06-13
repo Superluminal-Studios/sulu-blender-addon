@@ -5,6 +5,16 @@ from .storage            import Storage
 from .utils.date_utils   import format_submitted
 from .icons              import get_status_icon_id, get_fallback_icon
 from .utils.request_utils import fetch_jobs, fetch_projects, get_render_queue_key
+from .utils.job_list import (
+    get_indexed_item,
+    int_value,
+    iter_project_jobs,
+    job_progress,
+    job_type_label,
+    sort_job_entries,
+    sort_job_item_indices,
+    timestamp_value,
+)
 from .utils.project_context import (
     ProjectContextError,
     resolve_org_context,
@@ -171,46 +181,61 @@ def draw_header_row(layout, prefs):
 
 def refresh_jobs_collection(prefs):
     """Sync prefs.jobs ←→ Storage.data['jobs'] and format fields."""
+    active_job = get_indexed_item(prefs.jobs, prefs.active_job_index)
+    active_job_id = getattr(active_job, "id", "") if active_job else ""
+
     prefs.jobs.clear()
 
     if not Storage.data["projects"]:
         return
 
-    selected_project = next(
-        (p for p in Storage.data["projects"] if p.get("id") == prefs.project_id),
-        None,
+    entries = sort_job_entries(
+        list(
+            iter_project_jobs(
+                Storage.data["jobs"],
+                Storage.data["projects"],
+                prefs.project_id,
+            )
+        ),
+        prefs.sort_column,
+        prefs.sort_ascending,
     )
-    if not selected_project:
-        return
 
-    selected_project_ids = {
-        str(selected_project.get("id") or "").strip(),
-        str(selected_project.get("sqid") or "").strip(),
-    }
-    selected_project_ids.discard("")
-
-    for jid, job in Storage.data["jobs"].items():
-        job_project_ids = {
-            str(job.get("project_id") or "").strip(),
-            str(job.get("project_sqid") or "").strip(),
-        }
-        job_project_ids.discard("")
-        if selected_project_ids and selected_project_ids.isdisjoint(job_project_ids):
-            continue
-
+    restored_index = -1
+    for index, (jid, job) in enumerate(entries):
         it = prefs.jobs.add()
         it.id               = jid
         it.name             = job.get("name", "")
         it.status           = job.get("status", "")
-        it.submission_time  = format_submitted(job.get("submit_time"))
-        it.started_time     = format_submitted(job.get("start_time"))
-        it.finished_time    = format_submitted(job.get("end_time"))
-        it.start_frame      = job.get("start", 0)
-        it.end_frame        = job.get("end",   0)
-        it.progress         = job.get("tasks", {}).get("finished", 0) / job.get("total_tasks", 1)
-        it.finished_frames  = job.get("tasks", {}).get("finished", 0)
+        submit_time, _      = timestamp_value(job.get("submit_time"))
+        start_time, _       = timestamp_value(job.get("start_time"))
+        end_time, _         = timestamp_value(job.get("end_time"))
+        it.submission_time_sort = submit_time
+        it.started_time_sort    = start_time
+        it.finished_time_sort   = end_time
+        it.submission_time  = format_submitted(submit_time)
+        it.started_time     = format_submitted(start_time)
+        it.finished_time    = format_submitted(end_time)
+        it.start_frame      = int_value(job.get("start"), 0)
+        it.end_frame        = int_value(job.get("end"),   0)
+        it.progress         = job_progress(job)
+        tasks = job.get("tasks", {}) or {}
+        if not isinstance(tasks, dict):
+            tasks = {}
+        it.finished_frames  = int_value(tasks.get("finished"), 0)
         it.blender_version  = job.get("blender_version", "")
-        it.type             = "Zip" if job.get("zip", True) else "Project"
+        it.type             = job_type_label(job)
+        if jid == active_job_id:
+            restored_index = index
+
+    if len(prefs.jobs) == 0:
+        prefs.active_job_index = 0
+    elif restored_index >= 0:
+        prefs.active_job_index = restored_index
+    elif prefs.active_job_index < 0:
+        prefs.active_job_index = 0
+    elif prefs.active_job_index >= len(prefs.jobs):
+        prefs.active_job_index = len(prefs.jobs) - 1
 
 
 class SuperluminalJobItem(bpy.types.PropertyGroup):
@@ -220,6 +245,9 @@ class SuperluminalJobItem(bpy.types.PropertyGroup):
     submission_time:  bpy.props.StringProperty()
     started_time:     bpy.props.StringProperty()
     finished_time:    bpy.props.StringProperty()
+    submission_time_sort: bpy.props.FloatProperty()
+    started_time_sort:    bpy.props.FloatProperty()
+    finished_time_sort:   bpy.props.FloatProperty()
     start_frame:      bpy.props.IntProperty()
     end_frame:        bpy.props.IntProperty()
     progress:         bpy.props.FloatProperty(subtype='FACTOR', min=0.0, max=1.0)
@@ -261,22 +289,11 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
 
         flt_flags = [self.bitflag_filter_item] * len(items)
 
-        # Build sort order based on selected column
-        sort_col = prefs.sort_column
-        ascending = prefs.sort_ascending
-
-        # Create list of (index, sort_value) pairs
-        def get_sort_key(item):
-            val = getattr(item, sort_col, "")
-            # Handle different types for proper sorting
-            if isinstance(val, str):
-                return val.casefold()
-            return val
-
-        indexed = [(i, get_sort_key(it)) for i, it in enumerate(items)]
-        indexed.sort(key=lambda x: x[1], reverse=not ascending)
-
-        flt_neworder = [i for i, _ in indexed]
+        flt_neworder = sort_job_item_indices(
+            items,
+            prefs.sort_column,
+            prefs.sort_ascending,
+        )
         return flt_flags, flt_neworder
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):

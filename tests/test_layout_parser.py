@@ -160,6 +160,7 @@ FIXTURE = textwrap.dedent(
             layout = self.layout
             rd = context.scene.render
             layout.prop(rd, "resolution_x", text="Resolution X")
+            layout.prop(rd, "views_format", expand=True)
             self.draw_framerate(layout, rd)
             layout.template_image_settings(rd.image_settings, color_management=False)
 
@@ -175,12 +176,46 @@ FIXTURE = textwrap.dedent(
             self.layout.prop(context.scene.render, "dither_intensity")
 
 
+    class FAKE_PT_dev_composed(FakeButtonsPanel, Panel):
+        bl_label = "Debug Composed"
+        COMPAT_ENGINES = {'CYCLES'}
+
+        @classmethod
+        def poll(cls, context):
+            return FAKE_PT_dev.poll(context) and context.scene is not None
+
+        def draw(self, context):
+            self.layout.prop(context.scene.cycles, "debug_prop2")
+
+
+    class FakeShadingMixin(FakeButtonsPanel):
+        bl_space_type = 'VIEW_3D'
+        bl_region_type = 'HEADER'
+
+
+    class FAKE_VIEW3D_PT_shading(FakeShadingMixin, Panel):
+        bl_label = "Render Pass"
+        COMPAT_ENGINES = {'CYCLES'}
+
+        def draw(self, context):
+            self.layout.prop(context.scene.cycles, "render_pass", text="")
+
+
     def get_panels():
         exclude_panels = {
             'FAKE_PT_excluded',
         }
         panels = []
         return panels
+
+
+    classes = (
+        FAKE_PT_output,
+        FAKE_PT_excluded,
+        FAKE_PT_layer,
+        FAKE_PT_main,
+        FAKE_PT_child,
+    )
     '''
 )
 
@@ -210,6 +245,11 @@ class LayoutParserTests(unittest.TestCase):
         self.assertNotIn("FAKE_MT_menu", panels)
         self.assertNotIn("FAKE_PT_presets", panels)
         self.assertNotIn("FAKE_PT_dev", panels)
+        # 3D-viewport panels reusing the buttons mixins stay out of the
+        # properties editor (Cycles' shading popovers)
+        self.assertNotIn("FAKE_VIEW3D_PT_shading", panels)
+        # dev gates hidden behind a delegated Mixin.poll(context) call
+        self.assertNotIn("FAKE_PT_dev_composed", panels)
 
         main = panels["FAKE_PT_main"]
         self.assertEqual(main["context"], "render")
@@ -288,6 +328,17 @@ class LayoutParserTests(unittest.TestCase):
         # template_image_settings expands to a struct_props node
         structs = [n for n in output["items"] if n.get("t") == "struct_props"]
         self.assertEqual(structs, [{"t": "struct_props", "path": "render.image_settings"}])
+        # expand=True survives translation (web renders a segmented row)
+        views = next(p for p in props if p["path"] == "render.views_format")
+        self.assertTrue(views.get("expand"))
+        self.assertFalse(any(p.get("expand") for p in props if p["path"] == "render.resolution_x"))
+
+    def test_panels_follow_registration_tuple_order(self):
+        _, doc = build()
+        ids = [p["id"] for p in doc["panels"]]
+        # the classes = (...) tuple, not definition order, drives panel order
+        self.assertLess(ids.index("FAKE_PT_output"), ids.index("FAKE_PT_main"))
+        self.assertLess(ids.index("FAKE_PT_layer"), ids.index("FAKE_PT_main"))
 
     def test_cycles_adoption_respects_exclude_list(self):
         panels, _ = build()
