@@ -30,6 +30,8 @@ LIVE_JOB_OVERLAY_FIELDS = {
     "rolling_task_mask",
 }
 
+_PROJECTS_PER_PAGE = 100
+
 
 def _selected_project_identity(project_id: str) -> tuple[str, str]:
     """Return the selected project's stable id and public sqid when available."""
@@ -134,11 +136,27 @@ def _merge_job_sources(
 
 def fetch_projects():
     """Return all visible projects."""
-    resp = authorized_request(
-        "GET",
-        f"{POCKETBASE_URL}/api/collections/projects/records",
-    )
-    return resp.json()["items"]
+    projects = []
+    page = 1
+    total_pages = 1
+
+    while page <= total_pages:
+        resp = authorized_request(
+            "GET",
+            f"{POCKETBASE_URL}/api/collections/projects/records",
+            params={"page": page, "perPage": _PROJECTS_PER_PAGE},
+        )
+        payload = resp.json() or {}
+        projects.extend(payload.get("items") or [])
+
+        try:
+            total_pages = int(payload.get("totalPages") or 1)
+        except (TypeError, ValueError):
+            total_pages = 1
+
+        page += 1
+
+    return projects
 
 
 def get_render_queue_key(org_id: str) -> str:

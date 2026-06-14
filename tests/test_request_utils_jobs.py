@@ -28,12 +28,81 @@ sys.modules.setdefault("sulu_blender_addon", pkg)
 request_utils = importlib.import_module("sulu_blender_addon.utils.request_utils")
 
 
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
 class _FakePrefs:
     def __init__(self):
         self.jobs = []
 
 
 class TestRequestUtilsJobs(unittest.TestCase):
+    def test_fetch_projects_requests_every_pocketbase_page(self):
+        payloads = [
+            {
+                "page": 1,
+                "perPage": 2,
+                "totalPages": 3,
+                "items": [{"id": "project-1"}],
+            },
+            {
+                "page": 2,
+                "perPage": 2,
+                "totalPages": 3,
+                "items": [{"id": "project-2"}],
+            },
+            {
+                "page": 3,
+                "perPage": 2,
+                "totalPages": 3,
+                "items": [{"id": "project-3"}],
+            },
+        ]
+        calls = []
+
+        def _authorized_request(method, url, **kwargs):
+            calls.append((method, url, kwargs))
+            return _FakeResponse(payloads[len(calls) - 1])
+
+        with (
+            patch.object(request_utils, "_PROJECTS_PER_PAGE", 2),
+            patch.object(
+                request_utils,
+                "authorized_request",
+                side_effect=_authorized_request,
+            ),
+        ):
+            projects = request_utils.fetch_projects()
+
+        self.assertEqual(
+            projects,
+            [{"id": "project-1"}, {"id": "project-2"}, {"id": "project-3"}],
+        )
+        self.assertEqual(
+            [call[2]["params"] for call in calls],
+            [
+                {"page": 1, "perPage": 2},
+                {"page": 2, "perPage": 2},
+                {"page": 3, "perPage": 2},
+            ],
+        )
+
+    def test_fetch_projects_accepts_legacy_single_page_payload(self):
+        with patch.object(
+            request_utils,
+            "authorized_request",
+            return_value=_FakeResponse({"items": [{"id": "project-1"}]}),
+        ):
+            self.assertEqual(
+                request_utils.fetch_projects(),
+                [{"id": "project-1"}],
+            )
+
     def test_selected_project_identity_returns_id_and_sqid(self):
         original = request_utils.Storage.data.get("projects")
         try:
