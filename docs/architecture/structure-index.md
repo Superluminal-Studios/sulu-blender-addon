@@ -3,8 +3,8 @@
 - Schema: `structure-index-v1`
 - Repo Path: `sulu-blender-addon`
 - README Path: `sulu-blender-addon/README.md`
-- Source Fingerprint: `389151453731fb574da513f055dbbac39ad8f70dd2302d9910c8ef4ad45b0a7c`
-- Fingerprinted File Count: `235`
+- Source Fingerprint: `4a24cd5dc205bc0099034ba96d99f74fe3f01627d0168807eaed0d31c646c02a`
+- Fingerprinted File Count: `245`
 - Generator: `bin/generate-structure-index`
 
 ## Critical Paths
@@ -85,7 +85,6 @@
 │   └── py.typed
 ├── docs/
 │   └── architecture/
-│       └── leaf-pack/
 ├── icons/
 │   ├── error.png
 │   ├── finished.png
@@ -209,6 +208,8 @@
 │   ├── test_diagnostic_report.py
 │   ├── test_diagnostic_report_direct.py
 │   ├── test_download_job_status.py
+│   ├── test_job_list_sorting.py
+│   ├── test_layout_parser.py
 │   ├── test_linked_library_tracking.py
 │   ├── test_path_normalization.py
 │   ├── test_project_context.py
@@ -216,6 +217,9 @@
 │   ├── test_render_task_order.py
 │   ├── test_request_utils_jobs.py
 │   ├── test_run_tests_wrapper.py
+│   ├── test_scene_metadata.py
+│   ├── test_settings_schema.py
+│   ├── test_submit_worker_schema_sync.py
 │   ├── test_upload_logging.py
 │   ├── test_zipped_compression.py
 │   └── utils.py
@@ -225,6 +229,9 @@
 │   │   └── download_worker.py
 │   ├── submit/
 │   │   ├── addon_packer.py
+│   │   ├── layout_parser.py
+│   │   ├── scene_metadata.py
+│   │   ├── settings_schema.py
 │   │   ├── submit_operator.py
 │   │   └── submit_worker.py
 │   └── rclone_utils.py
@@ -234,6 +241,7 @@
 │   ├── date_utils.py
 │   ├── diagnostic_report.py
 │   ├── download_logger.py
+│   ├── job_list.py
 │   ├── logger_utils.py
 │   ├── logging.py
 │   ├── prefs.py
@@ -245,6 +253,7 @@
 │   └── worker_utils.py
 ├── .gitignore
 ├── __init__.py
+├── AGENTS.md
 ├── CLAUDE.md
 ├── constants.py
 ├── deploy.py

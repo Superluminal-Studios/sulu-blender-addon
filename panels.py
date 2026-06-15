@@ -500,7 +500,6 @@ class SUPERLUMINAL_PT_RenderNode_Experimental(bpy.types.Panel):
         col = layout.column()
         col.prop(props, "ignore_errors", text="Finish frame when errored")
         col.prop(props, "use_bserver", text="Persistence engine")
-        col.prop(props, "use_async_upload", text="Async frame upload")
 
 
 class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
