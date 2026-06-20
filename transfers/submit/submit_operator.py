@@ -284,7 +284,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "project": project,
             "debug_mode": bool(getattr(prefs, "debug_mode", False)),
             "use_bserver": props.use_bserver,
-            "use_async_upload": props.use_async_upload,
+            "use_async_upload": True,
             "farm_url": f"{FARM_IP}/farm/{org_id}/api/",
         }
 

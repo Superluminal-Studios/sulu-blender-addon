@@ -1811,8 +1811,8 @@ def main() -> None:
             "zip": not use_project,
             "ignore_errors": data["ignore_errors"],
             "use_bserver": data["use_bserver"],
-            "use_async_upload": data["use_async_upload"],
-            "defer_status": data["use_async_upload"],
+            "use_async_upload": True,
+            "defer_status": True,
             "farm_url": data["farm_url"],
             "tasks": render_tasks,
         }
