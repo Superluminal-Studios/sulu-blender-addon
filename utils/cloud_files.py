@@ -40,10 +40,11 @@ def read_file_with_hydration(
     """
     path_str = str(path)
 
-    # Quick check for directories
+    # Quick check for directories. A directory is not an uploadable file; callers
+    # that need directory dependencies should expand them before probing.
     try:
         if os.path.isdir(path_str):
-            return (True, None)  # Directories are "readable"
+            return (False, "is a directory")
     except Exception:
         pass
 
@@ -70,7 +71,7 @@ def read_file_with_hydration(
     except FileNotFoundError:
         return (False, "File not found")
     except IsADirectoryError:
-        return (True, None)  # Directories are ok
+        return (False, "is a directory")
     except PermissionError as e:
         return (False, f"Permission denied: {e}")
     except OSError as e:

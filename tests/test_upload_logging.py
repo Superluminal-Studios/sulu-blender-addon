@@ -1368,6 +1368,7 @@ class TestReportVersionAndMetadata(unittest.TestCase):
             self.assertIn("unreadable_files", data["issues"])
             self.assertIn("cross_drive_files", data["issues"])
             self.assertIn("absolute_path_files", data["issues"])
+            self.assertIn("empty_directory_dependencies", data["issues"])
 
 
 # ═════════════════════════════════════════════════════════════════════════

@@ -127,13 +127,14 @@ class DiagnosticReport:
                 },
             },
             "user_choices": [],
-            "issues": {
-                "missing_files": [],
-                "unreadable_files": {},
-                "cross_drive_files": [],
-                "absolute_path_files": [],
-            },
-        }
+                "issues": {
+                    "missing_files": [],
+                    "unreadable_files": {},
+                    "cross_drive_files": [],
+                    "absolute_path_files": [],
+                    "empty_directory_dependencies": [],
+                },
+            }
 
         # Merge initial metadata
         if metadata:
@@ -278,6 +279,17 @@ class DiagnosticReport:
                     self._data["issues"]["absolute_path_files"] = [
                         e.get("resolved_path", "") for e in entries if e.get("status") == "absolute_path"
                     ]
+                    self._data["issues"]["empty_directory_dependencies"] = [
+                        {
+                            "path": e.get("resolved_path", ""),
+                            "source_blend": e.get("source_blend", ""),
+                            "block_type": e.get("block_type", ""),
+                            "block_name": e.get("block_name", ""),
+                            "error_message": e.get("error_message", "Directory contains no files"),
+                        }
+                        for e in entries
+                        if e.get("issue_type") == "empty_directory_dependency"
+                    ]
 
                 # Update summary for pack stage
                 elif stage == "pack":
@@ -329,6 +341,7 @@ class DiagnosticReport:
         status: str,
         error_msg: Optional[str] = None,
         file_size: int = 0,
+        issue_type: Optional[str] = None,
     ) -> None:
         """
         Add a trace entry for a dependency.
@@ -338,9 +351,10 @@ class DiagnosticReport:
             block_type: DNA type name (e.g., "Image", "Library")
             block_name: Block name
             resolved_path: Absolute path to the resolved file
-            status: "ok", "missing", or "unreadable"
+            status: "ok", "missing", "unreadable", "packed", or "absolute_path"
             error_msg: Error message if unreadable
             file_size: File size in bytes if available
+            issue_type: Optional machine-readable issue category
         """
         with self._lock:
             entry = {
@@ -352,6 +366,8 @@ class DiagnosticReport:
                 "error_message": error_msg,
                 "file_size": file_size,
             }
+            if issue_type:
+                entry["issue_type"] = issue_type
             self._data["stages"]["trace"]["entries"].append(entry)
             self._entries_since_flush += 1
             self._maybe_flush()
@@ -709,6 +725,11 @@ def generate_test_report(
             "unreadable_files": {str(k): v for k, v in sorted(unreadable_dict.items())},
             "cross_drive_count": len(cross_drive_deps),
             "cross_drive_files": [str(p) for p in sorted(cross_drive_deps)],
+            "empty_directory_dependencies": [
+                {"path": str(p), "error_message": err}
+                for p, err in sorted(unreadable_dict.items(), key=lambda kv: str(kv[0]))
+                if err == "Directory contains no files"
+            ],
         },
         "all_dependencies": [str(p) for p in sorted(dep_paths)],
     }

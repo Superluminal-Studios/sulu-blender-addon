@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Any, Set, Tuple
 from ..blender_asset_tracer import trace, bpathlib, blendfile
 from ..blender_asset_tracer.pack import Packer
 from ..blender_asset_tracer.pack import zipped
+from ..blender_asset_tracer.trace import file_sequence
 
 # Import cloud file utilities for handling OneDrive/Google Drive/iCloud placeholders
 from . import cloud_files
@@ -116,6 +117,54 @@ def _get_source_blend_name(usage: Any) -> str:
         return "unknown.blend"
 
 
+def _make_absolute_dependency_path(raw_path: Path) -> Path:
+    """Normalize a traced dependency path the same way BAT's list output does."""
+    try:
+        return bpathlib.make_absolute(raw_path)
+    except Exception as e:
+        _log.debug("make_absolute failed for %s: %s", raw_path, e)
+        return Path(raw_path)
+
+
+def _expand_dependency_file_path(raw_path: Path) -> Tuple[List[Path], Optional[str], Path]:
+    """
+    Return concrete uploadable files for a traced dependency path.
+
+    Some Blender/BAT dependency fields point at cache directories rather than a
+    single file. rclone's `copy --files-from` expects file paths, so project
+    uploads must expand those directories before writing the manifest.
+    """
+    file_path = _make_absolute_dependency_path(raw_path)
+
+    try:
+        is_dir = file_path.is_dir()
+    except OSError as e:
+        return [], f"Could not inspect dependency: {e}", file_path
+
+    if not is_dir:
+        return [file_path], None, file_path
+
+    try:
+        expanded = sorted(
+            (
+                _make_absolute_dependency_path(p)
+                for p in file_sequence.expand_sequence(file_path)
+                if p.is_file()
+            ),
+            key=lambda p: str(p),
+        )
+    except file_sequence.DoesNotExist:
+        return [], "Directory not found", file_path
+    except OSError as e:
+        return [], f"Could not list directory: {e}", file_path
+    except Exception as e:
+        return [], f"{type(e).__name__}: {e}", file_path
+
+    if not expanded:
+        return [], "Directory contains no files", file_path
+    return expanded, None, file_path
+
+
 def trace_dependencies(
     blend_path: Path,
     logger: Optional[Any] = None,
@@ -177,55 +226,91 @@ def trace_dependencies(
             files_error = str(e)
             _log.warning("files() raised unexpected exception for %s: %s", usage.asset_path, e)
 
+        def record_trace_result(
+            file_path: Path,
+            status: str,
+            error_msg: Optional[str],
+            issue_type: Optional[str] = None,
+        ) -> None:
+            if logger is not None:
+                logger.trace_entry(
+                    source_blend=source_blend,
+                    block_type=block_type,
+                    block_name=block_name,
+                    found_file=file_path.name,
+                    status=status,
+                    error_msg=error_msg,
+                )
+
+            if diagnostic_report is not None:
+                # Get file size if file exists and is readable
+                file_size = 0
+                if status == "ok":
+                    try:
+                        file_size = file_path.stat().st_size
+                    except Exception:
+                        pass
+                diagnostic_report.add_trace_entry(
+                    source_blend=source_blend,
+                    block_type=block_type,
+                    block_name=block_name,
+                    resolved_path=str(file_path),
+                    status=status,
+                    error_msg=error_msg,
+                    file_size=file_size,
+                    issue_type=issue_type,
+                )
+
         if not expanded_files:
-            # No files found - either pattern didn't match or file doesn't exist
-            # Use bpathlib.make_absolute() for consistent path normalization (like native BAT)
-            # This handles ../../ resolution without following symlinks, and Windows paths on POSIX
+            # No files found - either pattern didn't match or file doesn't exist.
+            # Use the original absolute path so the common classification below
+            # can report it as missing/unreadable with consistent normalization.
             try:
-                abs_path = bpathlib.make_absolute(usage.abspath)
+                expanded_files = [usage.abspath]
             except Exception as e:
-                # Fallback if make_absolute fails (e.g., invalid path characters)
-                abs_path = usage.abspath
-                _log.debug("make_absolute failed for %s: %s", usage.abspath, e)
+                fallback_path = Path(str(getattr(usage, "asset_path", "")))
+                deps.append(fallback_path)
+                if is_optional:
+                    optional.add(fallback_path)
+                    continue
+                missing.add(fallback_path)
+                record_trace_result(
+                    fallback_path,
+                    "missing",
+                    files_error or str(e),
+                )
+                continue
 
-            deps.append(abs_path)
-            if is_optional:
-                optional.add(abs_path)
-                # Don't log or report optional missing files - they're expected
-            else:
-                missing.add(abs_path)
+        # Check each expanded file. Some BAT usages can still yield a directory
+        # here, especially cache-directory fields. Expand those to concrete
+        # files before they reach the Project upload manifest.
+        for raw_file_path in expanded_files:
+            file_paths, directory_error, normalized_path = _expand_dependency_file_path(
+                raw_file_path
+            )
 
-                if logger is not None:
-                    logger.trace_entry(
-                        source_blend=source_blend,
-                        block_type=block_type,
-                        block_name=block_name,
-                        found_file=abs_path.name,
-                        status="missing",
-                        error_msg=files_error,
-                    )
+            if not file_paths:
+                deps.append(normalized_path)
+                if is_optional:
+                    optional.add(normalized_path)
+                    continue
+                issue_type = (
+                    "empty_directory_dependency"
+                    if directory_error == "Directory contains no files"
+                    else None
+                )
+                unreadable[normalized_path] = (
+                    directory_error or files_error or "No uploadable files found"
+                )
+                record_trace_result(
+                    normalized_path,
+                    "unreadable",
+                    unreadable[normalized_path],
+                    issue_type=issue_type,
+                )
+                continue
 
-                if diagnostic_report is not None:
-                    diagnostic_report.add_trace_entry(
-                        source_blend=source_blend,
-                        block_type=block_type,
-                        block_name=block_name,
-                        resolved_path=str(abs_path),
-                        status="missing",
-                        error_msg=files_error,
-                        file_size=0,
-                    )
-        else:
-            # Check each expanded file
-            for raw_file_path in expanded_files:
-                # Normalize the path using bpathlib.make_absolute() for consistency
-                # This is what native BAT does in list_deps.py
-                try:
-                    file_path = bpathlib.make_absolute(raw_file_path)
-                except Exception:
-                    # Fallback if make_absolute fails
-                    file_path = raw_file_path
-
+            for file_path in file_paths:
                 deps.append(file_path)
                 if is_optional:
                     optional.add(file_path)
@@ -252,33 +337,7 @@ def trace_dependencies(
                     status = "unreadable"
                     error_msg = err
 
-                if logger is not None:
-                    logger.trace_entry(
-                        source_blend=source_blend,
-                        block_type=block_type,
-                        block_name=block_name,
-                        found_file=file_path.name,
-                        status=status,
-                        error_msg=error_msg,
-                    )
-
-                if diagnostic_report is not None:
-                    # Get file size if file exists and is readable
-                    file_size = 0
-                    if status == "ok":
-                        try:
-                            file_size = file_path.stat().st_size
-                        except Exception:
-                            pass
-                    diagnostic_report.add_trace_entry(
-                        source_blend=source_blend,
-                        block_type=block_type,
-                        block_name=block_name,
-                        resolved_path=str(file_path),
-                        status=status,
-                        error_msg=error_msg,
-                        file_size=file_size,
-                    )
+                record_trace_result(file_path, status, error_msg)
 
     # Second pass: scan visited .blend files for packed images so they appear
     # in the diagnostic report (BAT's @skip_packed hides them from trace output).
