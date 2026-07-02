@@ -32,8 +32,9 @@ import shutil
 import tempfile
 import time
 import types
+import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 import webbrowser
 
 import requests
@@ -225,6 +226,78 @@ def _check_risky_path_chars(path_str: str) -> Optional[str]:
             f"issues on the render farm: {path_str}"
         )
     return None
+
+
+def _archive_name_for_display(name: object) -> str:
+    return str(name or "").replace("\\", "/")
+
+
+def _path_basename_cross_platform(path_str: str) -> str:
+    normalized = _archive_name_for_display(path_str).rstrip("/")
+    if not normalized:
+        return ""
+    return normalized.rsplit("/", 1)[-1]
+
+
+def _farm_zip_unpack_skip_reason(archive_name: object) -> Optional[str]:
+    """Return why the farm's ZIP extractor will skip this member, if it will."""
+    name = _archive_name_for_display(archive_name)
+    if not name:
+        return None
+    if name.startswith("/"):
+        return 'starts with "/"'
+    if ".." in name:
+        return 'contains consecutive dots ("..")'
+    return None
+
+
+def _farm_unpack_blocked_archive_names(archive_names: Iterable[object]) -> List[str]:
+    blocked: List[str] = []
+    seen = set()
+    for archive_name in archive_names:
+        name = _archive_name_for_display(archive_name)
+        if name in seen:
+            continue
+        if _farm_zip_unpack_skip_reason(name):
+            blocked.append(name)
+            seen.add(name)
+    return blocked
+
+
+def _farm_unpack_preflight_issue(blocked_names: List[str]) -> str:
+    first = blocked_names[0] if blocked_names else "unknown"
+    extra = "" if len(blocked_names) == 1 else f" and {len(blocked_names) - 1} more"
+    return (
+        "ZIP upload cannot use file names with consecutive dots or leading slashes: "
+        f"{first}{extra}"
+    )
+
+
+def _format_farm_unpack_blocking_message(blocked_names: List[str]) -> str:
+    listed = blocked_names[:8]
+    lines = "\n".join(f"  - {name}" for name in listed)
+    if len(blocked_names) > len(listed):
+        lines += f"\n  - ... and {len(blocked_names) - len(listed)} more"
+
+    subject = (
+        "this file path in the ZIP"
+        if len(blocked_names) == 1
+        else "these file paths in the ZIP"
+    )
+    entry_label = "Blocked entry" if len(blocked_names) == 1 else "Blocked entries"
+    return (
+        f"Submission cancelled: the render farm cannot unpack {subject}.\n\n"
+        'ZIP entries that contain consecutive dots ("..") or start with "/" are '
+        "rejected by the farm extractor. Rename the file(s) below to remove "
+        "consecutive dots, save the .blend, then submit again.\n\n"
+        f"{entry_label}:\n"
+        f"{lines}"
+    )
+
+
+def _farm_unpack_blocked_zip_members(zip_path: Path) -> List[str]:
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        return _farm_unpack_blocked_archive_names(archive.namelist())
 
 
 def _split_manifest_by_first_dir(rel_manifest):
@@ -766,8 +839,20 @@ def main() -> None:
     if _path_warn:
         preflight_issues.append(_path_warn)
 
+    _source_unpack_blocked: List[str] = []
+    if not use_project:
+        _source_unpack_blocked = _farm_unpack_blocked_archive_names(
+            [_path_basename_cross_platform(blend_path)]
+        )
+        if _source_unpack_blocked:
+            preflight_issues.append(_farm_unpack_preflight_issue(_source_unpack_blocked))
+
     # Record preflight results and environment into the diagnostic report
-    report.record_preflight(preflight_ok, preflight_issues, _preflight_user_override)
+    report.record_preflight(
+        preflight_ok and not _source_unpack_blocked,
+        preflight_issues,
+        _preflight_user_override,
+    )
     report.set_environment("rclone_bin", str(rclone_bin))
     try:
         _ver_out = subprocess.check_output(
@@ -777,6 +862,11 @@ def main() -> None:
         report.set_environment("rclone_version", _rclone_ver)
     except Exception:
         pass
+
+    if _source_unpack_blocked:
+        report.set_metadata("farm_unpack_blocked_entries", _source_unpack_blocked)
+        report.set_status("failed")
+        logger.fatal(_format_farm_unpack_blocking_message(_source_unpack_blocked))
 
     # ═══════════════════════════════════════════════════════════════════════════
     # Stage 1: Tracing — discover dependencies
@@ -1325,6 +1415,12 @@ def main() -> None:
         if not zip_file.exists():
             report.set_status("failed")
             logger.fatal("Archive not created. Check disk space and permissions.")
+
+        _blocked_zip_members = _farm_unpack_blocked_zip_members(zip_file)
+        if _blocked_zip_members:
+            report.set_metadata("farm_unpack_blocked_entries", _blocked_zip_members)
+            report.set_status("failed")
+            logger.fatal(_format_farm_unpack_blocking_message(_blocked_zip_members))
 
         required_storage = zip_file.stat().st_size
         rel_manifest = []

@@ -21,6 +21,7 @@ import sys
 import tempfile
 import types
 import unittest
+import zipfile
 from pathlib import Path
 
 _tests_dir = Path(__file__).parent
@@ -1434,7 +1435,67 @@ class TestCheckRiskyPathChars(unittest.TestCase):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-#  18. _RISKY_CHARS constant
+#  18. farm ZIP unpack filename guards
+# ═════════════════════════════════════════════════════════════════════════
+
+
+class TestFarmZipUnpackGuards(unittest.TestCase):
+    """Test submit-side guards for ZIP names the farm extractor skips."""
+
+    def test_consecutive_dots_blocked_anywhere_in_archive_name(self):
+        blocked = _submit_worker._farm_unpack_blocked_archive_names(
+            ["Animation/Animations/On its own, a discrepancy between....blend"]
+        )
+        self.assertEqual(
+            blocked,
+            ["Animation/Animations/On its own, a discrepancy between....blend"],
+        )
+
+    def test_normal_archive_names_allowed(self):
+        blocked = _submit_worker._farm_unpack_blocked_archive_names(
+            [
+                "Animation/Animations/Camille made a phone call.blend",
+                "textures/painted.v001.png",
+            ]
+        )
+        self.assertEqual(blocked, [])
+
+    def test_leading_slash_blocked(self):
+        blocked = _submit_worker._farm_unpack_blocked_archive_names(
+            ["/Animation/Animations/scene.blend"]
+        )
+        self.assertEqual(blocked, ["/Animation/Animations/scene.blend"])
+
+    def test_cross_platform_basename_handles_windows_paths(self):
+        name = _submit_worker._path_basename_cross_platform(
+            "G:\\Dropbox\\Animation\\broken....blend"
+        )
+        self.assertEqual(name, "broken....blend")
+
+    def test_blocking_message_explains_rename_and_resubmit(self):
+        msg = _submit_worker._format_farm_unpack_blocking_message(
+            ["Animation/Animations/broken....blend"]
+        )
+        self.assertIn("Submission cancelled", msg)
+        self.assertIn("consecutive dots", msg)
+        self.assertIn("save the .blend", msg)
+        self.assertIn("submit again", msg)
+        self.assertIn("Animation/Animations/broken....blend", msg)
+
+    def test_zip_member_validation_reads_actual_archive_entries(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / "scene.zip"
+            with zipfile.ZipFile(zip_path, "w") as archive:
+                archive.writestr("Animation/Animations/broken....blend", b"")
+                archive.writestr("textures/safe.png", b"")
+
+            blocked = _submit_worker._farm_unpack_blocked_zip_members(zip_path)
+
+        self.assertEqual(blocked, ["Animation/Animations/broken....blend"])
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  19. _RISKY_CHARS constant
 # ═════════════════════════════════════════════════════════════════════════
 
 
