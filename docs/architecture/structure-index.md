@@ -3,8 +3,8 @@
 - Schema: `structure-index-v1`
 - Repo Path: `sulu-blender-addon`
 - README Path: `sulu-blender-addon/README.md`
-- Source Fingerprint: `4a24cd5dc205bc0099034ba96d99f74fe3f01627d0168807eaed0d31c646c02a`
-- Fingerprinted File Count: `245`
+- Source Fingerprint: `4535c5643082cfeeae04d8187c2f3b95cbbbfdb0d253388a357f626fa46fe6db`
+- Fingerprinted File Count: `246`
 - Generator: `bin/generate-structure-index`
 
 ## Critical Paths
@@ -207,6 +207,7 @@
 │   ├── test_compression_theory.py
 │   ├── test_diagnostic_report.py
 │   ├── test_diagnostic_report_direct.py
+│   ├── test_directory_dependency_expansion.py
 │   ├── test_download_job_status.py
 │   ├── test_job_list_sorting.py
 │   ├── test_layout_parser.py
