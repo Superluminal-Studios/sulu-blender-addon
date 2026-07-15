@@ -101,8 +101,11 @@ name is never sufficient identity.
 
 ## Browser seam
 
-The frontend drag-ticket call receives descriptor bytes or an authenticated
-descriptor URL, creates a same-origin blob/file named `<safe-name>.suluasset`,
-and publishes a Chrome `DownloadURL` entry. It also renders an explicit
-download/open action for browsers or desktop environments that do not deliver
-cross-application file drags. No client-side durable credential is required.
+The authenticated frontend drag-ticket `POST` receives descriptor JSON plus a
+server-selected safe filename ending in `.suluasset`. The frontend always
+serializes that descriptor into a local `application/json` Blob, creates a local
+object URL, and publishes a Chrome `DownloadURL` entry. It must not fetch or
+publish an authenticated descriptor URL, and the ticket must never appear in a
+URL. The frontend also renders an explicit local download/open action for
+browsers or desktop environments that do not deliver cross-application file
+drags. No client-side durable credential is required.
