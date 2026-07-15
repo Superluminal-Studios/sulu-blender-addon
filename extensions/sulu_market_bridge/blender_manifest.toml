@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "sulu_market_bridge"
-version = "0.1.0"
+version = "0.1.1"
 name = "Sulu Market Bridge"
 tagline = "Securely import purchased Sulu Market assets"
 maintainer = "Sulu <support@superlumin.al>"

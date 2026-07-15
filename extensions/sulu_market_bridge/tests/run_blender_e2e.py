@@ -13,7 +13,7 @@ import tomllib
 import zipfile
 from pathlib import Path
 
-from tests.mock_market import VALID_TICKET, MockMarketServer, descriptor_bytes
+from tests.mock_market import SLOW_TICKET, VALID_TICKET, MockMarketServer, descriptor_bytes
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -235,6 +235,8 @@ def main() -> None:
 
             descriptor_path = workdir / "SuluFixtureObject.suluasset"
             descriptor_path.write_bytes(descriptor_bytes(server.origin, VALID_TICKET))
+            slow_descriptor_path = workdir / "SuluFixtureObjectSlow.suluasset"
+            slow_descriptor_path.write_bytes(descriptor_bytes(server.origin, SLOW_TICKET))
             completed = run(
                 [
                     str(blender),
@@ -243,6 +245,7 @@ def main() -> None:
                     "--python",
                     str(REPO_ROOT / "tests" / "blender_e2e_inner.py"),
                     "--",
+                    str(slow_descriptor_path),
                     str(descriptor_path),
                     server.origin,
                     expected_sha256,
@@ -254,8 +257,20 @@ def main() -> None:
             paths = [path for _, path in server.state.requests]
             if any(VALID_TICKET in path for path in paths):
                 raise RuntimeError("One-use ticket leaked into an HTTP request URL")
-            if len(server.state.redeem_bodies) != 2:
-                raise RuntimeError("Expected one successful redemption and one denied replay")
+            if len(server.state.redeem_bodies) != 4:
+                raise RuntimeError(
+                    "Expected two cancelled preparations, one successful redemption, and one denied replay"
+                )
+            redeemed_tickets = [body.get("ticket") for body in server.state.redeem_bodies]
+            if redeemed_tickets != [SLOW_TICKET, SLOW_TICKET, VALID_TICKET, VALID_TICKET]:
+                raise RuntimeError("Modal E2E did not execute the expected redemption sequence")
+            if not server.state.slow_download_started.is_set():
+                raise RuntimeError("Cancellation E2E did not reach the blocked artifact response")
+            if any(
+                body.get("client", {}).get("version") != extension_version
+                for body in server.state.redeem_bodies
+            ):
+                raise RuntimeError("Packaged Bridge runtime version did not match its manifest")
             extension_paths = [path for path, authorized in server.state.extension_requests if authorized]
             expected_repo_path = (
                 f"/api/market/extensions/repo/v1/org/{publication['organization']['id']}/index.json"

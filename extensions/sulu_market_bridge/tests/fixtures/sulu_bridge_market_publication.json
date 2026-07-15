@@ -23,8 +23,8 @@
     "seller_public_eligible": true
   },
   "version": {
-    "id": "sulu_bridge_version_0_1_0",
-    "version": "0.1.0",
+    "id": "sulu_bridge_version_0_1_1",
+    "version": "0.1.1",
     "is_latest": true,
     "extension_id": "sulu_market_bridge",
     "extension_type": "add-on",
@@ -33,7 +33,7 @@
     "extension_platforms": ""
   },
   "file": {
-    "id": "sulu_bridge_archive_0_1_0",
+    "id": "sulu_bridge_archive_0_1_1",
     "file_type": "main",
     "asset_status": "ready",
     "distribution_kind": "blender_extension"

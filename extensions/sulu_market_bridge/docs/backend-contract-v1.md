@@ -63,7 +63,7 @@ Accept: application/json
   "ticket": "opaque-one-use-ticket",
   "client": {
     "name": "sulu-market-bridge",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "blender_version": "5.2.0"
   }
 }

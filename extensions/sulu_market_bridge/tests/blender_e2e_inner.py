@@ -6,7 +6,9 @@ import hashlib
 import importlib
 import json
 import sys
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import bpy
 
@@ -15,9 +17,10 @@ def arguments() -> list[str]:
     return sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
 
 
-descriptor_path = Path(arguments()[0]).resolve()
-origin = arguments()[1]
-expected_sha256 = arguments()[2]
+slow_descriptor_path = Path(arguments()[0]).resolve()
+descriptor_path = Path(arguments()[1]).resolve()
+origin = arguments()[2]
+expected_sha256 = arguments()[3]
 module_name = "bl_ext.user_default.sulu_market_bridge"
 
 if module_name not in bpy.context.preferences.addons:
@@ -33,10 +36,86 @@ preferences.allow_insecure_localhost = True
 preferences.timeout_seconds = 10
 preferences.max_download_mib = 64
 
+addon = importlib.import_module(module_name + ".addon")
+bridge = importlib.import_module(module_name + ".sulu_bridge")
+
+
+def active_operator():  # noqa: ANN201
+    operator = addon._ACTIVE_IMPORT_OPERATOR
+    if operator is None or operator._job is None:
+        raise RuntimeError("Modal Sulu Market worker was not retained after startup")
+    return operator
+
+
+def poll_terminal(operator, *, timeout: float = 10.0):  # noqa: ANN001, ANN201
+    deadline = time.monotonic() + timeout
+    while operator._job is not None and operator._job.is_alive():
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Modal Sulu Market worker did not terminate")
+        time.sleep(0.01)
+    result = operator.modal(bpy.context, SimpleNamespace(type="TIMER"))
+    if addon._ACTIVE_IMPORT_OPERATOR is not None:
+        raise RuntimeError("Terminal modal result left the global import guard active")
+    if operator._job is not None or operator._timer is not None or operator._cancel_requested:
+        raise RuntimeError("Terminal modal result leaked worker, timer, or cancellation state")
+    return result
+
+
+# EXEC_DEFAULT is how the FileHandler dispatches a dropped descriptor. The mock deliberately
+# stalls this download, proving that dispatch returns while pure preparation is still running.
+started_at = time.monotonic()
+result = bpy.ops.sulu_market.import_asset("EXEC_DEFAULT", filepath=str(slow_descriptor_path))
+start_elapsed = time.monotonic() - started_at
+if result != {"RUNNING_MODAL"}:
+    raise RuntimeError(f"FileHandler-style import did not start modally: {result}")
+slow_operator = active_operator()
+if start_elapsed >= 1.0 or not slow_operator._job.is_alive():
+    raise RuntimeError(
+        f"EXEC_DEFAULT blocked instead of returning an active modal worker ({start_elapsed:.3f}s)"
+    )
+
+# A second operator cannot create another worker/timer while one import owns the guard.
+duplicate = bpy.ops.sulu_market.import_asset("EXEC_DEFAULT", filepath=str(descriptor_path))
+if duplicate != {"CANCELLED"}:
+    raise RuntimeError(f"Duplicate Sulu Market import was not rejected: {duplicate}")
+if active_operator() is not slow_operator:
+    raise RuntimeError("Duplicate import replaced the active guarded worker")
+
+# Give the local worker enough time to reach the mock's deliberately half-sent response. It must
+# still be alive there; otherwise the mock did not exercise cancellation of blocking network I/O.
+time.sleep(0.25)
+if not slow_operator._job.is_alive():
+    raise RuntimeError("Slow EXEC_DEFAULT worker ended before the blocked response was released")
+
+if slow_operator.modal(bpy.context, SimpleNamespace(type="ESC")) != {"RUNNING_MODAL"}:
+    raise RuntimeError("ESC did not cooperatively cancel the modal worker")
+if poll_terminal(slow_operator) != {"CANCELLED"}:
+    raise RuntimeError("Cancelled EXEC_DEFAULT import did not terminate as CANCELLED")
+
+# File-selector completion uses invoke-with-filepath and must share the same guarded worker path.
+invoke_started_at = time.monotonic()
+invoke_result = bpy.ops.sulu_market.import_asset(
+    "INVOKE_DEFAULT",
+    filepath=str(slow_descriptor_path),
+)
+invoke_elapsed = time.monotonic() - invoke_started_at
+if invoke_result != {"RUNNING_MODAL"} or invoke_elapsed >= 1.0:
+    raise RuntimeError("Invoke-with-filepath did not return through the non-blocking modal path")
+invoke_operator = active_operator()
+time.sleep(0.25)
+if not invoke_operator._job.is_alive():
+    raise RuntimeError("Invoke-with-filepath did not retain its active pure worker")
+invoke_operator.modal(bpy.context, SimpleNamespace(type="ESC"))
+if poll_terminal(invoke_operator) != {"CANCELLED"}:
+    raise RuntimeError("Cancelled invoke-with-filepath import did not cleanly terminate")
+
 bpy.context.scene.cursor.location = (1.25, -2.5, 3.75)
 result = bpy.ops.sulu_market.import_asset("EXEC_DEFAULT", filepath=str(descriptor_path))
-if result != {"FINISHED"}:
-    raise RuntimeError(f"Sulu Market import operator failed: {result}")
+if result != {"RUNNING_MODAL"}:
+    raise RuntimeError(f"Sulu Market import operator did not start modally: {result}")
+successful_operator = active_operator()
+if poll_terminal(successful_operator) != {"FINISHED"}:
+    raise RuntimeError("Sulu Market modal import did not finish")
 
 matching = [
     obj for obj in bpy.data.objects if obj.get("sulu_market_asset_id") == "asset:sulu-fixture:v1"
@@ -57,8 +136,6 @@ if not any(
     if imported.name not in bpy.context.scene.collection.objects:
         raise RuntimeError("Imported object is not linked to the active scene")
 
-addon = importlib.import_module(module_name + ".addon")
-bridge = importlib.import_module(module_name + ".sulu_bridge")
 cache_root = Path(
     bpy.utils.user_resource(
         "DATAFILES",
@@ -178,7 +255,11 @@ except RuntimeError as exc:
     if "invalid, expired, or used" not in str(exc):
         raise
 else:
-    if replay != {"CANCELLED"}:
+    if replay != {"RUNNING_MODAL"}:
+        raise RuntimeError("Replayed descriptor did not enter the guarded modal path")
+    replay_operator = active_operator()
+    replay_terminal = poll_terminal(replay_operator)
+    if replay_terminal != {"CANCELLED"}:
         raise RuntimeError("A replayed one-use descriptor ticket was accepted")
 
 print(
@@ -187,6 +268,11 @@ print(
         {
             "blender": bpy.app.version_string,
             "file_handler": True,
+            "exec_default_modal_seconds": round(start_elapsed, 6),
+            "invoke_filepath_modal_seconds": round(invoke_elapsed, 6),
+            "duplicate_start_denied": True,
+            "cancellation_cleanup": True,
+            "error_cleanup": True,
             "operator": True,
             "object": imported.name,
             "immutable_id": imported["sulu_market_asset_id"],

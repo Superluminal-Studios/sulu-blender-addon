@@ -29,6 +29,7 @@ from .errors import (
     ImportAssetError,
     TransportError,
 )
+from .modal_worker import ModalPreparationWorker, WorkerOutcome
 from .transport import MarketClient
 from .workflow import PreparedAsset, redeem_descriptor
 
@@ -52,10 +53,12 @@ __all__ = [
     "DisplayHints",
     "ImportAssetError",
     "MarketClient",
+    "ModalPreparationWorker",
     "PreparedAsset",
     "REDEEM_RESPONSE_MAX_BYTES",
     "RedeemGrant",
     "TransportError",
+    "WorkerOutcome",
     "normalize_api_origin",
     "parse_descriptor_bytes",
     "parse_descriptor_file",

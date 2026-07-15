@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import os
-import threading
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +15,7 @@ from .sulu_bridge import (
     BridgeError,
     CancellationToken,
     ImportAssetError,
+    ModalPreparationWorker,
     PreparedAsset,
     normalize_api_origin,
     redeem_descriptor,
@@ -24,6 +24,7 @@ from .sulu_bridge import (
 ADDON_MODULE = __package__
 CACHE_LIBRARY_NAME = "Sulu Market Redeemed Assets"
 IMMUTABLE_ASSET_ID_PROPERTY = "sulu_market_asset_id"
+_ACTIVE_IMPORT_OPERATOR: SULU_MARKET_OT_import_asset | None = None
 
 
 def _preferences(context: bpy.types.Context) -> SULU_MARKET_Preferences:
@@ -254,11 +255,9 @@ class SULU_MARKET_OT_import_asset(bpy.types.Operator):
     filepath: StringProperty(subtype="FILE_PATH")
     filter_glob: StringProperty(default="*.suluasset", options={"HIDDEN"})
 
-    _worker: threading.Thread | None = None
+    _job: ModalPreparationWorker[PreparedAsset] | None = None
     _timer: Any = None
-    _worker_state: dict[str, Any] | None = None
     _cancel_requested: bool = False
-    _cancellation: CancellationToken | None = None
 
     def _settings(self, context: bpy.types.Context) -> dict[str, Any]:
         prefs = _preferences(context)
@@ -284,9 +283,12 @@ class SULU_MARKET_OT_import_asset(bpy.types.Operator):
         }
 
     @staticmethod
-    def _prepare(settings: dict[str, Any]) -> PreparedAsset:
+    def _prepare(
+        settings: dict[str, Any],
+        cancellation: CancellationToken,
+    ) -> PreparedAsset:
         # Pure Python only: safe to execute in a worker thread. Never touch bpy here.
-        return redeem_descriptor(**settings)
+        return redeem_descriptor(**settings, cancellation=cancellation)
 
     def _finish_import(self, context: bpy.types.Context, prepared: PreparedAsset) -> set[str]:
         import_prepared_asset(context, prepared)
@@ -298,21 +300,26 @@ class SULU_MARKET_OT_import_asset(bpy.types.Operator):
         return {"FINISHED"}
 
     def execute(self, context: bpy.types.Context) -> set[str]:
-        try:
-            prepared = self._prepare(self._settings(context))
-            return self._finish_import(context, prepared)
-        except BridgeError as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-        except Exception:
-            self.report({"ERROR"}, "Unexpected error while importing the Sulu Market asset")
-            return {"CANCELLED"}
+        return self._start_modal_worker(context)
 
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event) -> set[str]:
         del event
         if not self.filepath:
             context.window_manager.fileselect_add(self)
             return {"RUNNING_MODAL"}
+        return self._start_modal_worker(context)
+
+    def _start_modal_worker(self, context: bpy.types.Context) -> set[str]:
+        """Start the one guarded pure worker from execute or invoke-with-filepath."""
+
+        global _ACTIVE_IMPORT_OPERATOR
+
+        if _ACTIVE_IMPORT_OPERATOR is self and self._job is not None:
+            return {"RUNNING_MODAL"}
+        if _ACTIVE_IMPORT_OPERATOR is not None:
+            self.report({"WARNING"}, "A Sulu Market asset import is already in progress")
+            return {"CANCELLED"}
+
         try:
             settings = self._settings(context)
         except BridgeError as exc:
@@ -322,58 +329,47 @@ class SULU_MARKET_OT_import_asset(bpy.types.Operator):
             self.report({"ERROR"}, "Unexpected error while preparing the Sulu Market asset")
             return {"CANCELLED"}
 
-        # The worker owns only this ordinary Python dictionary. It never reads
-        # or writes the bpy Operator instance (or any other Blender RNA value).
-        state: dict[str, Any] = {"prepared": None, "error": None}
-        self._worker_state = state
+        job = ModalPreparationWorker(settings, self._prepare)
+        self._job = job
         self._cancel_requested = False
-        cancellation = CancellationToken()
-        self._cancellation = cancellation
-
-        def run() -> None:
-            try:
-                state["prepared"] = redeem_descriptor(
-                    **settings,
-                    cancellation=cancellation,
-                )
-            except BaseException as exc:  # Store only; Blender API reporting stays on main thread.
-                state["error"] = exc
-
-        self._worker = threading.Thread(target=run, name="SuluMarketAssetDownload", daemon=True)
-        self._worker.start()
-        self._timer = context.window_manager.event_timer_add(0.1, window=context.window)
-        context.window_manager.modal_handler_add(self)
+        _ACTIVE_IMPORT_OPERATOR = self
+        try:
+            if not job.start():
+                raise RuntimeError("Sulu Market asset worker was already started")
+            self._timer = context.window_manager.event_timer_add(0.1, window=context.window)
+            context.window_manager.modal_handler_add(self)
+        except Exception:
+            self._release_runtime(context, cancel=True)
+            self.report({"ERROR"}, "Unexpected error while preparing the Sulu Market asset")
+            return {"CANCELLED"}
         return {"RUNNING_MODAL"}
 
     def modal(self, context: bpy.types.Context, event: bpy.types.Event) -> set[str]:
         if event.type == "ESC":
             self._cancel_requested = True
-            if self._cancellation is not None:
-                self._cancellation.cancel()
-        if event.type != "TIMER" or (self._worker is not None and self._worker.is_alive()):
+            if self._job is not None:
+                self._job.cancel()
+        if event.type != "TIMER" or (self._job is not None and self._job.is_alive()):
             return {"RUNNING_MODAL"}
 
-        self._clear_timer(context)
-        self._cancellation = None
-        if self._cancel_requested:
-            self._worker_state = None
+        job = self._job
+        outcome = job.outcome if job is not None else None
+        cancellation_requested = self._cancel_requested
+        self._release_runtime(context)
+        if cancellation_requested:
             self.report({"WARNING"}, "Sulu Market asset import cancelled")
             return {"CANCELLED"}
-        state = self._worker_state or {}
-        worker_error = state.get("error")
+        worker_error = outcome.error if outcome is not None else None
         if worker_error is not None:
-            self._worker_state = None
             if isinstance(worker_error, BridgeError):
                 self.report({"ERROR"}, str(worker_error))
             else:
                 self.report({"ERROR"}, "Unexpected error while preparing the Sulu Market asset")
             return {"CANCELLED"}
-        prepared = state.get("prepared")
+        prepared = outcome.result if outcome is not None else None
         if not isinstance(prepared, PreparedAsset):
-            self._worker_state = None
             self.report({"ERROR"}, "Sulu Market asset preparation did not complete")
             return {"CANCELLED"}
-        self._worker_state = None
         try:
             return self._finish_import(context, prepared)
         except BridgeError as exc:
@@ -385,15 +381,26 @@ class SULU_MARKET_OT_import_asset(bpy.types.Operator):
 
     def _clear_timer(self, context: bpy.types.Context) -> None:
         if self._timer is not None:
-            context.window_manager.event_timer_remove(self._timer)
+            try:
+                context.window_manager.event_timer_remove(self._timer)
+            except (ReferenceError, RuntimeError):
+                pass
             self._timer = None
 
-    def cancel(self, context: bpy.types.Context) -> None:
-        self._cancel_requested = True
-        if self._cancellation is not None:
-            self._cancellation.cancel()
-            self._cancellation = None
+    def _release_runtime(self, context: bpy.types.Context, *, cancel: bool = False) -> None:
+        global _ACTIVE_IMPORT_OPERATOR
+
+        job = self._job
+        if cancel and job is not None:
+            job.cancel()
         self._clear_timer(context)
+        self._job = None
+        self._cancel_requested = False
+        if _ACTIVE_IMPORT_OPERATOR is self:
+            _ACTIVE_IMPORT_OPERATOR = None
+
+    def cancel(self, context: bpy.types.Context) -> None:
+        self._release_runtime(context, cancel=True)
 
 
 class SULU_MARKET_FH_asset(bpy.types.FileHandler):
@@ -437,6 +444,16 @@ def register() -> None:
 
 
 def unregister() -> None:
+    global _ACTIVE_IMPORT_OPERATOR
+
+    active = _ACTIVE_IMPORT_OPERATOR
+    if active is not None:
+        try:
+            active.cancel(bpy.context)
+        except (ReferenceError, RuntimeError):
+            if active._job is not None:
+                active._job.cancel()
+            _ACTIVE_IMPORT_OPERATOR = None
     bpy.types.TOPBAR_MT_file_import.remove(_menu_import)
     for cls in reversed(_CLASSES):
         bpy.utils.unregister_class(cls)

@@ -13,10 +13,13 @@ release. It has two independent flows:
    Blender synchronizes that remote repository, verifies its SHA-256 archive
    binding, downloads, installs, and enables the Bridge. There is no
    `install-file` or source-directory shortcut. The installed package then
-   proves the `.suluasset` FileHandler and operator are registered, redeems a
-   one-use descriptor, downloads and hashes the canonical `.blend`, imports the
-   exact immutable object, rejects replay/wrong identity/unsupported type, and
-   verifies transactional dependency cleanup. Blender's stock
+   proves the `.suluasset` FileHandler and operator are registered. A deliberately
+   blocked response proves `EXEC_DEFAULT` and invoke-with-filepath return
+   `RUNNING_MODAL` without blocking, duplicate starts are rejected, and `Esc`
+   cancellation releases worker/timer/guard state. It then redeems a one-use
+   descriptor, downloads and hashes the canonical `.blend`, imports the exact
+   immutable object, rejects replay/wrong identity/unsupported type, and verifies
+   error and transactional dependency cleanup. Blender's stock
    `asset_listing generate` then recursively discovers the content-addressed
    `objects/<prefix>/<sha256>.blend` cache.
 2. `python3 -m tests.run_asset_processor_e2e --blender <binary>` creates hostile

@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from sulu_bridge import (
+    BRIDGE_VERSION,
     ContractError,
     parse_descriptor_bytes,
     parse_descriptor_file,
@@ -16,6 +17,11 @@ from .mock_market import COMPATIBILITY, VALID_TICKET, descriptor_bytes
 
 
 class DescriptorContractTests(unittest.TestCase):
+    def test_runtime_release_version_retains_v1_protocol_compatibility(self) -> None:
+        self.assertEqual(BRIDGE_VERSION, "0.1.1")
+        self.assertEqual(COMPATIBILITY["bridge_min_version"], "0.1.0")
+        self.assertEqual(COMPATIBILITY["bridge_max_version_exclusive"], "0.2.0")
+
     def test_valid_localhost_descriptor_requires_explicit_development_mode(self) -> None:
         origin = "http://127.0.0.1:8765"
         with self.assertRaisesRegex(ContractError, "HTTPS"):

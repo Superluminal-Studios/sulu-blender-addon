@@ -36,11 +36,15 @@ explicit error; they are not silently coerced.
    Missing or mismatched identity triggers transactional removal of the object
    and every newly appended dependency before anything can be linked.
 
-Network and disk preparation run outside Blender's API thread for interactive
-file drops. Only the final datablock import and scene linking touch `bpy` on the
-main thread. An imported object is placed at the 3D cursor. The verified cache
-is registered as a local `APPEND` asset library in current preferences without
-forcing a preferences-file save.
+Both FileHandler drops (`EXEC_DEFAULT`) and file-selector completion start the
+same guarded modal worker. Network and disk preparation use copied plain-Python
+settings outside Blender's API thread; Blender preferences/context capture,
+reports, timers, cancellation polling, datablock import, and scene linking stay
+on the main thread. `Esc` cooperatively closes an active response, and terminal
+success, cancellation, or error releases the one-shot guard and timer. An
+imported object is placed at the 3D cursor. The verified cache is registered as
+a local `APPEND` asset library in current preferences without forcing a
+preferences-file save.
 
 ## Version-one contracts
 

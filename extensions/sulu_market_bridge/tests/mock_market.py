@@ -259,7 +259,10 @@ class MockMarketServer:
                     self.send_header("Content-Type", "application/octet-stream")
                     self.send_header("Content-Length", str(len(state.artifact)))
                     self.end_headers()
-                    first_chunk = state.artifact[: 1024 * 1024]
+                    # Always hold back bytes for normal Blender fixtures too, which are often
+                    # smaller than the transport's 1 MiB read size.
+                    first_chunk_size = max(1, min(64 * 1024, len(state.artifact) // 2))
+                    first_chunk = state.artifact[:first_chunk_size]
                     self.wfile.write(first_chunk)
                     self.wfile.flush()
                     state.slow_download_started.set()
