@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.superlumin.al/schemas/sulu-market-asset-redeem-response-v1.json",
+  "title": "Sulu Market asset redemption response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "claim_id",
+    "download_path",
+    "download_token",
+    "artifact",
+    "asset"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "claim_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9._~-]+$"
+    },
+    "download_path": {
+      "type": "string",
+      "pattern": "^/api/market/assets/download/[A-Za-z0-9._~-]{8,512}$"
+    },
+    "download_token": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 4096,
+      "pattern": "^[A-Za-z0-9._~-]+$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "size"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "size": {"type": "integer", "minimum": 1}
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["immutable_id", "id_type", "name", "import_method"],
+      "properties": {
+        "immutable_id": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9._:-]+$"
+        },
+        "id_type": {"const": "OBJECT"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 255},
+        "import_method": {"const": "APPEND"}
+      }
+    }
+  }
+}

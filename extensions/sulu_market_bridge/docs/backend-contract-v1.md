@@ -1,0 +1,108 @@
+# Sulu Market asset bridge contract v1
+
+This contract is intentionally narrow. The bridge is not a general URL fetcher,
+and a descriptor is not a durable license or device credential.
+
+## Descriptor issuance
+
+The authenticated browser asks the backend to mint a short-lived, one-use drag
+ticket bound to the current license subject, organization membership, product,
+artifact SHA-256, immutable asset ID, Blender ID type, datablock name, import
+method, and intended API origin. The downloaded file uses a safe
+`Content-Disposition` filename ending in `.suluasset` and the JSON schema at
+[`../schemas/asset-descriptor-v1.schema.json`](../schemas/asset-descriptor-v1.schema.json).
+
+The backend must never include entitlement, repository, device, account, or
+refresh tokens. `display` is optional and non-authoritative.
+
+## Redemption
+
+The bridge sends exactly:
+
+```http
+POST /api/market/assets/redeem
+Content-Type: application/json
+Accept: application/json
+```
+
+```json
+{
+  "schema_version": 1,
+  "ticket": "opaque-one-use-ticket",
+  "client": {
+    "name": "sulu-market-bridge",
+    "version": "0.1.0",
+    "blender_version": "5.2.0"
+  }
+}
+```
+
+The backend atomically claims the ticket before returning success and rechecks
+active entitlement, licensed subject/current organization membership, tier,
+artifact publication/quarantine state, and immutable asset binding. Concurrent
+or repeated redemption must produce exactly one success. Expired, revoked,
+replayed, wrong-subject, wrong-org, or quarantined claims fail without exposing
+which condition would aid enumeration.
+
+The 200 response follows
+[`../schemas/redeem-response-v1.schema.json`](../schemas/redeem-response-v1.schema.json):
+
+```json
+{
+  "schema_version": 1,
+  "claim_id": "opaque-claim-id",
+  "download_path": "/api/market/assets/download/opaque-claim-id",
+  "download_token": "opaque-short-lived-download-token",
+  "artifact": {
+    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "size": 123456
+  },
+  "asset": {
+    "immutable_id": "asset:stable-id:v1",
+    "id_type": "OBJECT",
+    "name": "ExactBlenderDatablockName",
+    "import_method": "APPEND"
+  }
+}
+```
+
+`download_path` is relative and fixed to the Sulu endpoint prefix. Do not return
+a presigned or third-party absolute URL. `download_token` is a single-purpose,
+short-lived claim bearer that authorizes only this exact immutable artifact and
+is sent as `Authorization: Bearer ...` on the download request. The final path
+segment must equal `claim_id`. The backend must reject redirects, return a
+`Content-Length` equal to `size`, and use `application/octet-stream` (preferred)
+or `application/x-blender` for the artifact response.
+
+## Artifact invariant
+
+The published `.blend` file must contain exactly one marked asset for the signed
+ID type/name pair. The asset datablock must contain the string custom property:
+
+```text
+sulu_market_asset_id = <asset.immutable_id>
+```
+
+The processing worker is responsible for inserting or verifying this marker
+before calculating the immutable artifact SHA-256. A seller-controlled mutable
+name is never sufficient identity.
+
+## Failure and retry semantics
+
+- A ticket claim is consumed atomically. The backend records a non-secret audit
+  event for claim and download outcomes.
+- If the product policy permits a download retry after transport failure, mint a
+  new bounded download claim from authenticated browser/library state; do not
+  make a redeemed drag ticket reusable.
+- Response bodies and logs must not echo ticket or download bearer values.
+- Redemptions and downloads must never redirect to another origin.
+- Rate limits apply by ticket, subject, organization, IP, and product without
+  changing entitlement truth.
+
+## Browser seam
+
+The frontend drag-ticket call receives descriptor bytes or an authenticated
+descriptor URL, creates a same-origin blob/file named `<safe-name>.suluasset`,
+and publishes a Chrome `DownloadURL` entry. It also renders an explicit
+download/open action for browsers or desktop environments that do not deliver
+cross-application file drags. No client-side durable credential is required.

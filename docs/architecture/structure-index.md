@@ -3,8 +3,8 @@
 - Schema: `structure-index-v1`
 - Repo Path: `sulu-blender-addon`
 - README Path: `sulu-blender-addon/README.md`
-- Source Fingerprint: `4535c5643082cfeeae04d8187c2f3b95cbbbfdb0d253388a357f626fa46fe6db`
-- Fingerprinted File Count: `246`
+- Source Fingerprint: `353accfaa3c18024756ba47914646c88003edc2eabbe95834b042b49f649e94c`
+- Fingerprinted File Count: `271`
 - Generator: `bin/generate-structure-index`
 
 ## Critical Paths
@@ -85,6 +85,19 @@
 │   └── py.typed
 ├── docs/
 │   └── architecture/
+├── extensions/
+│   └── sulu_market_bridge/
+│       ├── docs/
+│       ├── schemas/
+│       ├── scripts/
+│       ├── sulu_bridge/
+│       ├── tests/
+│       ├── .gitignore
+│       ├── __init__.py
+│       ├── addon.py
+│       ├── blender_manifest.toml
+│       ├── pyproject.toml
+│       └── README.md
 ├── icons/
 │   ├── error.png
 │   ├── finished.png
@@ -205,6 +218,7 @@
 │   ├── run_tests.py
 │   ├── test_blend_compression.py
 │   ├── test_compression_theory.py
+│   ├── test_deploy_extension_exclusion.py
 │   ├── test_diagnostic_report.py
 │   ├── test_diagnostic_report_direct.py
 │   ├── test_directory_dependency_expansion.py
@@ -256,6 +270,7 @@
 ├── __init__.py
 ├── AGENTS.md
 ├── CLAUDE.md
+├── conftest.py
 ├── constants.py
 ├── deploy.py
 ├── dev_config.example.json

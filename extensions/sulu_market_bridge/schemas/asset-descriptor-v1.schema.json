@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.superlumin.al/schemas/sulu-market-asset-descriptor-v1.json",
+  "title": "Sulu Market asset descriptor v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "api_origin", "ticket"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "api_origin": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 2048,
+      "description": "HTTPS origin only; no path, query, fragment, or userinfo. Loopback HTTP is a bridge-local explicit development exception."
+    },
+    "ticket": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 4096,
+      "pattern": "^[A-Za-z0-9._~-]+$"
+    },
+    "display": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 255},
+        "id_type": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[A-Z][A-Z0-9_]{1,31}$"
+        }
+      }
+    }
+  }
+}

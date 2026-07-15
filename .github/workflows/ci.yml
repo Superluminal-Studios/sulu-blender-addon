@@ -29,8 +29,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r tests/requirements-test.txt
+          python -m pip install "ruff>=0.12,<1"
 
       - name: Run focused addon tests
         run: |
           python -m unittest tests.test_project_context tests.test_project_identity_guards
           python -m unittest tests.test_upload_logging
+          python -m unittest tests.test_deploy_extension_exclusion
+
+      - name: Run Sulu Market Bridge pure gates
+        working-directory: extensions/sulu_market_bridge
+        run: |
+          python -m compileall -q .
+          python -m ruff check .
+          python -m unittest discover -v
