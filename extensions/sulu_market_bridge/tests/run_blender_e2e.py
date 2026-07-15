@@ -154,11 +154,17 @@ def main() -> None:
         if not archive.is_file():
             raise RuntimeError("Blender did not build the expected versioned Bridge archive")
         with zipfile.ZipFile(archive) as built_extension:
-            shipped_scripts = [
-                name for name in built_extension.namelist() if "scripts" in Path(name).parts
+            development_inventory = {".git", ".pytest_cache", ".ruff_cache", "__pycache__", "docs", "schemas", "scripts", "tests"}
+            leaked_inventory = [
+                name
+                for name in built_extension.namelist()
+                if development_inventory.intersection(Path(name).parts)
+                or Path(name).suffix in {".pyc", ".pyo"}
             ]
-        if shipped_scripts:
-            raise RuntimeError("Seller processing scripts leaked into the extension ZIP")
+        if leaked_inventory:
+            raise RuntimeError(
+                f"Development inventory leaked into the extension ZIP: {leaked_inventory}"
+            )
         validate_with_backend(
             archive,
             options.backend_pocketbase.resolve(),
