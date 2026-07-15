@@ -12,6 +12,8 @@ ADDON_NAME = "SuperluminalRender"
 EXCLUDE = {
     # directories
     "__pycache__", ".pytest_cache", ".venv", ".git", ".github", ".claude", "tests", "reports", "releases", "rclone",
+    # Separate Blender extension source trees are never part of the render-farm add-on.
+    "extensions",
     # files
     ".gitignore", ".gitkeep", ".gitattributes",
     "README.md", "CLAUDE.md",

@@ -6,8 +6,13 @@
 |---|---|
 | Primary role | Blender-side client for auth, project selection, render submission, and output download |
 | Owns | Blender UI panels/operators, local session cache, project-context resolution, submit/download worker handoff |
-| Does not own | Backend auth/org truth, farm scheduling, render execution, storage persistence beyond temporary credentials |
+| Does not own | Backend auth/org truth, farm scheduling, render execution, storage persistence beyond temporary credentials, or marketplace asset/extension delivery |
 | Primary runtime location | Artist workstations running Blender |
+
+Marketplace assets use Blender's native online asset libraries, and marketplace
+extensions use Blender's native extension repositories. This render-farm add-on
+does not register marketplace file handlers, redeem asset tickets, or install
+marketplace assets or extensions.
 
 Atlas: <https://github.com/Superluminal-Studios/sulu-super-repo/blob/main/docs/atlas/README.md>
 Long-form add-on docs: <https://github.com/Superluminal-Studios/sulu-super-repo/tree/main/docs/repos/sulu-blender-addon/>
