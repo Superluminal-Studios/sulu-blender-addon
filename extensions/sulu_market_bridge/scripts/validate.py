@@ -17,3 +17,8 @@ subprocess.run(
     cwd=root,
     check=True,
 )
+subprocess.run(
+    [sys.executable, "-m", "tests.run_asset_processor_e2e", *sys.argv[1:]],
+    cwd=root,
+    check=True,
+)

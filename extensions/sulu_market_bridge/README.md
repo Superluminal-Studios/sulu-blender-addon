@@ -90,11 +90,54 @@ python3 scripts/validate.py
 All Blender user config, extensions, scripts, and data files used by the E2E
 are temporary and isolated from the developer's normal Blender profile.
 
+## Seller asset processing
+
+The server-side Blender 5.2 `OBJECT` processor is independent tooling under
+[`scripts/`](scripts/) and is deliberately excluded from the installable
+extension ZIP. It converts a hostile seller `.blend` upload into one verified,
+dependency-complete `.blend` artifact per marked object and a strict normalized
+manifest. It never opens the upload as Blender's active main file and never
+accepts a seller-provided immutable ID or output path.
+
+Run the documented wrapper inside a disposable operating-system sandbox:
+
+```bash
+python3 scripts/process_assets.py \
+  --blender /opt/blender-5.2/blender \
+  --input /input/upload.blend \
+  --output /output/processed \
+  --mappings /server/immutable-id-mappings.json \
+  --expected-blender-build-hash <audited-official-build-hash>
+```
+
+The wrapper invokes official Blender with `--background --factory-startup
+--disable-autoexec --offline-mode --python-exit-code 1`. Production must still
+apply the OS isolation, network denial, CPU/time/memory/process/file limits, and
+mount policy in
+[`docs/seller-asset-processing-v1.md`](docs/seller-asset-processing-v1.md).
+Blender's native parser is not a security boundary.
+
+Processor-only official Blender E2E:
+
+```bash
+python3 -m tests.run_asset_processor_e2e \
+  --blender /Volumes/Blender/Blender.app/Contents/MacOS/Blender
+```
+
+The E2E creates two marked assets, proves immutable identity stability across a
+server-mapped reprocess, exercises rejection and resource limits, runs Blender's
+native `asset_listing generate`, serves the result over local HTTP, verifies the
+listing/download hashes, and appends the downloaded object in a fresh Blender
+process.
+
 ## Current boundary
 
 - Supported Blender: 5.2.0 or newer.
 - Supported asset ID type: `OBJECT` only.
 - Supported import method: `APPEND` only.
+- Seller processing is pinned to Blender 5.2.x. Production callers should also
+  require one exact audited build hash; the processor records that hash in every
+  normalized manifest.
 - Browser drag relies on the operating system delivering the downloaded
   `.suluasset` file to Blender's registered `FileHandler`; the explicit
   download/open path uses the same operator and contract.

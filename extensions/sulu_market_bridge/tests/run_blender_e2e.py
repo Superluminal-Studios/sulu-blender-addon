@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import zipfile
 from pathlib import Path
 
 from tests.mock_market import VALID_TICKET, MockMarketServer, descriptor_bytes
@@ -81,6 +82,12 @@ def main() -> None:
             env=env,
         )
         archive = build_dir / "sulu_market_bridge-0.1.0.zip"
+        with zipfile.ZipFile(archive) as built_extension:
+            shipped_scripts = [
+                name for name in built_extension.namelist() if "scripts" in Path(name).parts
+            ]
+        if shipped_scripts:
+            raise RuntimeError("Seller processing scripts leaked into the extension ZIP")
         run(
             [
                 str(blender),
