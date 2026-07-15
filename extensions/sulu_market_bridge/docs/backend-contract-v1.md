@@ -12,6 +12,21 @@ method, and intended API origin. The downloaded file uses a safe
 `Content-Disposition` filename ending in `.suluasset` and the JSON schema at
 [`../schemas/asset-descriptor-v1.schema.json`](../schemas/asset-descriptor-v1.schema.json).
 
+The authenticated library client sends the exact grant returned by its
+entitlement-scoped asset listing:
+
+```json
+{
+  "entitlement_id": "exact entitlement record id",
+  "asset_id": "asset:sm_opaque-id",
+  "buyer_subject": {"kind": "personal"}
+}
+```
+
+Organization grants use `{"kind": "organization", "org_id": "..."}`. The
+backend binds that exact grant and tier to the ticket; it never chooses one of
+several active product-tier grants.
+
 The backend must never include entitlement, repository, device, account, or
 refresh tokens. `display` is optional and non-authoritative.
 

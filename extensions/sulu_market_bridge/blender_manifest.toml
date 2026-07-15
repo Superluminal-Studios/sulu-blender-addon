@@ -8,6 +8,7 @@ maintainer = "Sulu <support@superlumin.al>"
 type = "add-on"
 tags = ["Import-Export", "3D View"]
 blender_version_min = "5.2.0"
+blender_version_max = "5.3.0"
 website = "https://superlumin.al"
 license = [
   "SPDX:GPL-3.0-or-later",

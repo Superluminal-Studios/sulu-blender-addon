@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -56,6 +57,8 @@ def validate_with_backend(
     backend_pocketbase: Path,
     *,
     env: dict[str, str],
+    extension_id: str,
+    extension_version: str,
 ) -> None:
     if not (backend_pocketbase / "market_extension_archive_security.go").is_file():
         raise RuntimeError(
@@ -66,8 +69,8 @@ def validate_with_backend(
     validation_env.update(
         {
             "SULU_EXTENSION_ARCHIVE_FIXTURE": str(archive),
-            "SULU_EXTENSION_EXPECTED_ID": "sulu_market_bridge",
-            "SULU_EXTENSION_EXPECTED_VERSION": "0.1.0",
+            "SULU_EXTENSION_EXPECTED_ID": extension_id,
+            "SULU_EXTENSION_EXPECTED_VERSION": extension_version,
         }
     )
     completed = run(
@@ -83,7 +86,9 @@ def validate_with_backend(
         env=validation_env,
         cwd=backend_pocketbase,
     )
-    marker = "SULU_EXTENSION_ARCHIVE_VALIDATED id=sulu_market_bridge version=0.1.0"
+    marker = (
+        f"SULU_EXTENSION_ARCHIVE_VALIDATED id={extension_id} version={extension_version}"
+    )
     if marker not in completed.stdout:
         raise RuntimeError("Backend extension validator did not emit its success marker")
 
@@ -120,6 +125,9 @@ def main() -> None:
     blender = options.blender.resolve()
     if not blender.is_file():
         raise SystemExit(f"Official Blender binary not found: {blender}")
+    manifest = tomllib.loads((REPO_ROOT / "blender_manifest.toml").read_text(encoding="utf-8"))
+    extension_id = manifest["id"]
+    extension_version = manifest["version"]
 
     workdir = Path(tempfile.mkdtemp(prefix="sulu-market-bridge-e2e-"))
     try:
@@ -142,7 +150,7 @@ def main() -> None:
             ],
             env=env,
         )
-        archive = build_dir / "sulu_market_bridge-0.1.0.zip"
+        archive = build_dir / f"{extension_id}-{extension_version}.zip"
         if not archive.is_file():
             raise RuntimeError("Blender did not build the expected versioned Bridge archive")
         with zipfile.ZipFile(archive) as built_extension:
@@ -151,7 +159,13 @@ def main() -> None:
             ]
         if shipped_scripts:
             raise RuntimeError("Seller processing scripts leaked into the extension ZIP")
-        validate_with_backend(archive, options.backend_pocketbase.resolve(), env=env)
+        validate_with_backend(
+            archive,
+            options.backend_pocketbase.resolve(),
+            env=env,
+            extension_id=extension_id,
+            extension_version=extension_version,
+        )
         publication = json.loads(
             (REPO_ROOT / "tests" / "fixtures" / "sulu_bridge_market_publication.json").read_text(
                 encoding="utf-8"

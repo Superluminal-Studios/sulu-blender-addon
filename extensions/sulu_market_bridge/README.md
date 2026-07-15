@@ -112,6 +112,22 @@ Run both layers with:
 python3 scripts/validate.py
 ```
 
+For a release, use the executable gate. It reruns both E2E layers, validates
+the exact final ZIP with the backend's production extension validator, refuses
+dirty Bridge/backend worktrees or an existing immutable version, and writes a
+SHA-256 release receipt with both commits and the official Blender build hash
+beside the archive:
+
+```bash
+./scripts/release.py \
+  --blender /Volumes/Blender/Blender.app/Contents/MacOS/Blender \
+  --backend-pocketbase /path/to/sulu-backend/pocketbase \
+  --output-dir /secure/release/staging
+```
+
+Publish only the archive named in the receipt, and require its `archive_hash`
+and `archive_size` to equal the canonical Market file record.
+
 All Blender user config, extensions, scripts, and data files used by the E2E
 are temporary and isolated from the developer's normal Blender profile.
 

@@ -42,8 +42,22 @@ For every Bridge release:
 
 1. Change `version` in `blender_manifest.toml` and create a new immutable Market
    version; never replace the archive behind an existing version/hash.
-2. Run Blender's `extension validate` and `extension build` commands. The
-   canonical output is `sulu_market_bridge-<version>.zip`.
+2. Run the executable release gate below. It checks the reserved product,
+   manifest, and fixture identity; runs the pure and official-Blender E2E
+   gates; builds the final ZIP; submits those exact bytes to the backend's
+   production validator; and writes a SHA-256/size receipt bound to both clean
+   git commits and the official Blender build hash. It refuses dirty worktrees
+   or an existing version.
+
+   ```bash
+   ./scripts/release.py \
+     --blender /path/to/official/blender-5.2 \
+     --backend-pocketbase /path/to/sulu-backend/pocketbase \
+     --output-dir /secure/release/staging
+   ```
+
+   The canonical output is `sulu_market_bridge-<version>.zip` plus
+   `sulu_market_bridge-<version>.release.json`. Preserve both together.
 3. Create or reuse the published, zero-price product whose `delivery_kind` is
    `blender_extension`. Initialize the upload through
    `POST /api/storage/files/upload/init` using `application/zip`, upload with
