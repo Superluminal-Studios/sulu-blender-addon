@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import threading
+import tomllib
+import zipfile
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.parse import urlsplit
 
 VALID_TICKET = "valid-ticket-1234567890"
 EXPIRED_TICKET = "expired-ticket-12345678"
@@ -17,18 +21,32 @@ BAD_HASH_TICKET = "bad-hash-ticket-1234567"
 REDIRECT_TICKET = "redirect-ticket-1234567"
 DOWNLOAD_REDIRECT_TICKET = "download-redirect-ticket-1234"
 WRONG_CONTENT_TYPE_TICKET = "wrong-content-type-ticket-1234"
+INCOMPATIBLE_TICKET = "incompatible-ticket-1234567"
+SLOW_TICKET = "slow-ticket-123456789012"
 DOWNLOAD_TOKEN = "download-token-1234567890"
 CLAIM_ID = "claim-1234567890"
+COMPATIBILITY = {
+    "protocol_version": 1,
+    "bridge_min_version": "0.1.0",
+    "bridge_max_version_exclusive": "0.2.0",
+    "blender_min_version": "5.2.0",
+    "blender_max_version_exclusive": "5.3.0",
+}
 
 
 @dataclass
 class MockState:
     artifact: bytes
     asset_name: str = "SuluFixtureObject"
+    extension_archive: bytes | None = None
+    extension_publication: dict[str, Any] | None = None
     used_tickets: set[str] = field(default_factory=set)
     requests: list[tuple[str, str]] = field(default_factory=list)
     redeem_bodies: list[dict[str, Any]] = field(default_factory=list)
+    extension_requests: list[tuple[str, bool]] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
+    slow_download_started: threading.Event = field(default_factory=threading.Event)
+    release_slow_download: threading.Event = field(default_factory=threading.Event)
 
     @property
     def sha256(self) -> str:
@@ -36,8 +54,22 @@ class MockState:
 
 
 class MockMarketServer:
-    def __init__(self, artifact: bytes, *, asset_name: str = "SuluFixtureObject") -> None:
-        self.state = MockState(artifact=artifact, asset_name=asset_name)
+    def __init__(
+        self,
+        artifact: bytes,
+        *,
+        asset_name: str = "SuluFixtureObject",
+        extension_archive: bytes | None = None,
+        extension_publication: dict[str, Any] | None = None,
+    ) -> None:
+        if (extension_archive is None) != (extension_publication is None):
+            raise ValueError("extension archive and publication fixture must be supplied together")
+        self.state = MockState(
+            artifact=artifact,
+            asset_name=asset_name,
+            extension_archive=extension_archive,
+            extension_publication=extension_publication,
+        )
         state = self.state
 
         class Handler(BaseHTTPRequestHandler):
@@ -71,6 +103,8 @@ class MockMarketServer:
                     "claim_id": claim_id,
                     "download_path": f"/api/market/assets/download/{claim_id}",
                     "download_token": DOWNLOAD_TOKEN,
+                    "compatibility": COMPATIBILITY,
+                    "limits": {"max_artifact_bytes": 4 * 1024**3},
                     "artifact": {"sha256": sha256, "size": size},
                     "asset": {
                         "immutable_id": "asset:sulu-fixture:v1",
@@ -97,6 +131,9 @@ class MockMarketServer:
 
                 if ticket == REDIRECT_TICKET:
                     self._empty(307, location="http://127.0.0.1:1/stolen")
+                    return
+                if ticket == INCOMPATIBLE_TICKET:
+                    self._empty(426)
                     return
                 if ticket == EXPIRED_TICKET:
                     self._empty(410)
@@ -137,6 +174,16 @@ class MockMarketServer:
                         ),
                     )
                     return
+                if ticket == SLOW_TICKET:
+                    self._json(
+                        200,
+                        self._grant(
+                            sha256=state.sha256,
+                            size=len(state.artifact),
+                            claim_id="claim-slow-download-123",
+                        ),
+                    )
+                    return
                 if ticket != VALID_TICKET:
                     self._empty(401)
                     return
@@ -150,6 +197,47 @@ class MockMarketServer:
 
             def do_GET(self) -> None:  # noqa: N802
                 self._record()
+                request_path = urlsplit(self.path).path
+                publication = state.extension_publication
+                if publication is not None:
+                    org_id = publication["organization"]["id"]
+                    product_id = publication["product"]["id"]
+                    version_id = publication["version"]["id"]
+                    repo_path = f"/api/market/extensions/repo/v1/org/{org_id}/index.json"
+                    archive_path = (
+                        f"/api/market/extensions/archive/org/{org_id}/product/"
+                        f"{product_id}/version/{version_id}.zip"
+                    )
+                    if request_path in {repo_path, archive_path}:
+                        expected_auth = f"Bearer {publication['repository']['access_token']}"
+                        authorized = self.headers.get("Authorization") == expected_auth
+                        with state.lock:
+                            state.extension_requests.append((request_path, authorized))
+                        if not authorized:
+                            self._empty(401)
+                            return
+                        if request_path == repo_path:
+                            host, port = self.server.server_address
+                            origin = f"http://{host}:{port}"
+                            self._json(
+                                200,
+                                extension_repository_index(
+                                    origin,
+                                    publication,
+                                    state.extension_archive or b"",
+                                ),
+                            )
+                            return
+                        archive = state.extension_archive or b""
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/zip")
+                        self.send_header("Content-Length", str(len(archive)))
+                        self.send_header(
+                            "ETag", f'"{hashlib.sha256(archive).hexdigest()}"'
+                        )
+                        self.end_headers()
+                        self.wfile.write(archive)
+                        return
                 if self.path == "/api/market/assets/download/claim-redirect-123":
                     self._empty(302, location="http://127.0.0.1:1/stolen")
                     return
@@ -162,6 +250,24 @@ class MockMarketServer:
                     self.send_header("Content-Length", str(len(state.artifact)))
                     self.end_headers()
                     self.wfile.write(state.artifact)
+                    return
+                if self.path == "/api/market/assets/download/claim-slow-download-123":
+                    if self.headers.get("Authorization") != f"Bearer {DOWNLOAD_TOKEN}":
+                        self._empty(401)
+                        return
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Content-Length", str(len(state.artifact)))
+                    self.end_headers()
+                    first_chunk = state.artifact[: 1024 * 1024]
+                    self.wfile.write(first_chunk)
+                    self.wfile.flush()
+                    state.slow_download_started.set()
+                    state.release_slow_download.wait(timeout=10)
+                    try:
+                        self.wfile.write(state.artifact[len(first_chunk) :])
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
                     return
                 if self.path not in {
                     f"/api/market/assets/download/{CLAIM_ID}",
@@ -179,6 +285,7 @@ class MockMarketServer:
                 self.wfile.write(state.artifact)
 
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._server.daemon_threads = True
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
 
     @property
@@ -186,12 +293,23 @@ class MockMarketServer:
         host, port = self._server.server_address
         return f"http://{host}:{port}"
 
+    @property
+    def extension_repository_url(self) -> str:
+        publication = self.state.extension_publication
+        if publication is None:
+            raise RuntimeError("extension publication fixture is not configured")
+        return (
+            f"{self.origin}/api/market/extensions/repo/v1/org/"
+            f"{publication['organization']['id']}/index.json"
+        )
+
     def __enter__(self) -> MockMarketServer:
         self._thread.start()
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:  # noqa: ANN001
         del exc_type, exc, traceback
+        self.state.release_slow_download.set()
         self._server.shutdown()
         self._server.server_close()
         self._thread.join(timeout=5)
@@ -203,7 +321,95 @@ def descriptor_bytes(origin: str, ticket: str = VALID_TICKET) -> bytes:
             "schema_version": 1,
             "api_origin": origin,
             "ticket": ticket,
+            "compatibility": COMPATIBILITY,
             "display": {"name": "Sulu Fixture", "id_type": "OBJECT"},
         },
         separators=(",", ":"),
     ).encode("utf-8")
+
+
+def extension_repository_index(
+    origin: str,
+    publication: dict[str, Any],
+    archive: bytes,
+) -> dict[str, Any]:
+    """Build the backend's entitled Blender repository response for one fixture."""
+
+    product = publication["product"]
+    version = publication["version"]
+    file_record = publication["file"]
+    entitlement = publication["entitlement"]
+    organization = publication["organization"]
+    if publication.get("schema_version") != 1:
+        raise ValueError("publication fixture schema_version must be 1")
+    if (
+        product.get("status") != "published"
+        or product.get("delivery_kind") != "blender_extension"
+        or product.get("min_price_cents") != 0
+        or product.get("seller_public_eligible") is not True
+    ):
+        raise ValueError("Bridge product is not a public free Blender extension")
+    if not version.get("is_latest"):
+        raise ValueError("Bridge publication must point at the latest version")
+    if (
+        file_record.get("file_type") != "main"
+        or file_record.get("asset_status") != "ready"
+        or file_record.get("distribution_kind") != "blender_extension"
+    ):
+        raise ValueError("Bridge archive is not an installable main extension file")
+    if (
+        entitlement.get("status") != "active"
+        or entitlement.get("subject_type") != "org"
+        or entitlement.get("organization_id") != organization.get("id")
+        or entitlement.get("product_id") != product.get("id")
+        or entitlement.get("source") != "free_market_product"
+    ):
+        raise ValueError("Bridge repository fixture has no active free-product entitlement")
+
+    with zipfile.ZipFile(io.BytesIO(archive)) as extension_zip:
+        manifest_paths = [
+            name
+            for name in extension_zip.namelist()
+            if name.rsplit("/", 1)[-1].lower() == "blender_manifest.toml"
+        ]
+        if len(manifest_paths) != 1:
+            raise ValueError("Bridge archive must contain exactly one blender_manifest.toml")
+        manifest = tomllib.loads(extension_zip.read(manifest_paths[0]).decode("utf-8"))
+    if manifest.get("id") != version.get("extension_id"):
+        raise ValueError("Bridge manifest id does not match the published extension id")
+    if manifest.get("version") != version.get("version"):
+        raise ValueError("Bridge manifest version does not match the published version")
+
+    archive_hash = hashlib.sha256(archive).hexdigest()
+    archive_url = (
+        f"{origin}/api/market/extensions/archive/org/{organization['id']}/product/"
+        f"{product['id']}/version/{version['id']}.zip"
+    )
+    item: dict[str, Any] = {
+        "schema_version": "1.0.0",
+        "id": manifest["id"],
+        "name": manifest["name"],
+        "tagline": manifest["tagline"],
+        "version": manifest["version"],
+        "type": manifest["type"],
+        "maintainer": manifest["maintainer"],
+        "license": manifest["license"],
+        "website": manifest.get("website", ""),
+        "tags": manifest.get("tags", []),
+        "permissions": manifest.get("permissions", {}),
+        "blender_version_min": version["compatibility_blender_min"],
+        "archive_url": archive_url,
+        "archive_hash": f"sha256:{archive_hash}",
+        "archive_size": len(archive),
+    }
+    blender_max = version.get("compatibility_blender_max", "")
+    if blender_max:
+        item["blender_version_max"] = blender_max
+    platforms = [
+        value.strip()
+        for value in version.get("extension_platforms", "").split(",")
+        if value.strip()
+    ]
+    if platforms:
+        item["platforms"] = platforms
+    return {"version": "v1", "blocklist": [], "data": [item]}

@@ -1,17 +1,27 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
-from sulu_bridge import CacheError, ContractError, TransportError, redeem_descriptor
+from sulu_bridge import (
+    CacheError,
+    CancellationToken,
+    CancelledError,
+    ContractError,
+    TransportError,
+    redeem_descriptor,
+)
 
 from .mock_market import (
     BAD_HASH_TICKET,
     DOWNLOAD_REDIRECT_TICKET,
     EXPIRED_TICKET,
+    INCOMPATIBLE_TICKET,
     OVERSIZE_TICKET,
     REDIRECT_TICKET,
+    SLOW_TICKET,
     TAMPERED_TICKET,
     VALID_TICKET,
     WRONG_CONTENT_TYPE_TICKET,
@@ -113,6 +123,46 @@ class MarketTransportTests(unittest.TestCase):
                     allow_insecure_localhost=True,
                 )
             self.assertEqual(server.state.requests, [])
+
+    def test_http_426_has_actionable_upgrade_error(self) -> None:
+        with MockMarketServer(b"fixture") as server, tempfile.TemporaryDirectory() as directory:
+            descriptor = self._descriptor(directory, server.origin, INCOMPATIBLE_TICKET)
+            with self.assertRaisesRegex(TransportError, "Update the Sulu Market Bridge"):
+                redeem_descriptor(
+                    descriptor,
+                    cache_root=Path(directory, "cache"),
+                    configured_origin=server.origin,
+                    allow_insecure_localhost=True,
+                )
+
+    def test_cancelled_download_removes_partial_cache_file(self) -> None:
+        artifact = b"x" * (2 * 1024 * 1024)
+        with MockMarketServer(artifact) as server, tempfile.TemporaryDirectory() as directory:
+            descriptor = self._descriptor(directory, server.origin, SLOW_TICKET)
+            cancellation = CancellationToken()
+            result: list[BaseException] = []
+
+            def run() -> None:
+                try:
+                    redeem_descriptor(
+                        descriptor,
+                        cache_root=Path(directory, "cache"),
+                        configured_origin=server.origin,
+                        allow_insecure_localhost=True,
+                        cancellation=cancellation,
+                    )
+                except BaseException as error:
+                    result.append(error)
+
+            worker = threading.Thread(target=run)
+            worker.start()
+            self.assertTrue(server.state.slow_download_started.wait(timeout=5))
+            cancellation.cancel()
+            worker.join(timeout=2)
+            self.assertFalse(worker.is_alive(), "cancel did not close the active response promptly")
+            self.assertTrue(result)
+            self.assertIsInstance(result[0], CancelledError)
+            self.assertEqual(list(Path(directory, "cache").rglob("*.partial")), [])
 
 
 if __name__ == "__main__":

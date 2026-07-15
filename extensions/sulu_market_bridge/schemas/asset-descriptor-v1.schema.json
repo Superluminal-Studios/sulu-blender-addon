@@ -4,7 +4,7 @@
   "title": "Sulu Market asset descriptor v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "api_origin", "ticket"],
+  "required": ["schema_version", "api_origin", "ticket", "compatibility"],
   "properties": {
     "schema_version": {"const": 1},
     "api_origin": {
@@ -18,6 +18,24 @@
       "minLength": 16,
       "maxLength": 4096,
       "pattern": "^[A-Za-z0-9._~-]+$"
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol_version",
+        "bridge_min_version",
+        "bridge_max_version_exclusive",
+        "blender_min_version",
+        "blender_max_version_exclusive"
+      ],
+      "properties": {
+        "protocol_version": {"const": 1},
+        "bridge_min_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "bridge_max_version_exclusive": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "blender_min_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "blender_max_version_exclusive": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"}
+      }
     },
     "display": {
       "type": "object",

@@ -2,7 +2,7 @@
 
 This document defines the seller-side Blender processing boundary for Sulu
 Market asset libraries. Version 1 accepts marked Blender `OBJECT` assets only.
-It produces the canonical `.blend` artifacts that the backend may publish
+It produces canonical `.blend` artifacts and processor-owned PNG previews that the backend may publish
 through Blender's native online asset-library listing and through the Sulu
 Market Bridge purchase/redemption flow.
 
@@ -19,18 +19,22 @@ python3 scripts/process_assets.py \
   --input /input/upload.blend \
   --output /output/processed \
   --mappings /server/immutable-id-mappings.json \
+  --trusted-metadata /server/trusted-legal-metadata.json \
+  --sandbox-runner scripts/linux_bwrap_runner.py \
   --expected-blender-build-hash <audited-official-build-hash> \
-  --max-input-bytes 2147483648 \
+  --max-input-bytes 4294967296 \
   --max-assets 100 \
-  --max-artifact-bytes 2147483648 \
-  --max-total-output-bytes 8589934592 \
+  --max-artifact-bytes 4294967296 \
+  --max-total-output-bytes 17179869184 \
   --timeout-seconds 900
 ```
 
 `--mappings` is optional on the first process and must come from server-owned
-state, never from the seller upload. `--expected-blender-build-hash` should be
-required by the production job definition. The processor itself rejects every
-Blender major/minor except 5.2 and records exact build provenance.
+state, never from the seller upload. `--trusted-metadata` is required and
+contains the server-owned seller organization ID, canonical author, and exact
+product license. `--expected-blender-build-hash` is required by the production
+job definition. The processor itself rejects every Blender major/minor except
+5.2 and records exact build provenance.
 
 The wrapper invokes this exact class of Blender command without a shell:
 
@@ -82,6 +86,13 @@ backend or object-store credentials available merely because Blender is running
 offline. Publication happens after the sandbox exits and the host validates the
 manifest and hashes again.
 
+The production implementation is not left to each deployment to improvise:
+[`sandbox-runner-contract-v1.md`](sandbox-runner-contract-v1.md) defines the
+Linux cgroup v2, Bubblewrap, tmpfs result channel, namespace, mount, UID/GID,
+seccomp, timeout, and extraction policy. `process_assets.py` refuses direct
+production execution. The official macOS fixture uses `--allow-unsafe-direct`
+only because it validates Blender normalization, not Linux isolation.
+
 ## Input and execution rules
 
 The processor rejects symlinks, non-regular files, non-`.blend` names, unknown
@@ -104,11 +115,19 @@ exact discovered name with `assets_only=True`. The processor rejects:
 - embedded Text datablocks, scripted drivers, and OSL script nodes;
 - unpacked external images, fonts, sounds, movie clips, caches, and volumes;
 - invalid or excessive normalized metadata; and
-- artifacts or aggregate output beyond the caller-selected caps.
+- object types outside the deterministic preview renderer's `MESH`, `CURVE`,
+  `SURFACE`, `META`, and `FONT` boundary; and
+- artifacts, previews, or aggregate output beyond the caller-selected caps.
 
 Packed resources are part of the `.blend`; unpacked seller paths are never
 followed or copied. Automatic Python execution remains disabled throughout all
 factory resets. This does not remove the need for the OS sandbox above.
+
+Seller-authored `asset_data.author` and `asset_data.license` are read only as
+untrusted input and then overwritten. The processor stamps the server-owned
+author/license into the asset before writing, reloads the artifact, verifies
+those exact values, and emits them in the manifest. The backend rejects any
+manifest whose legal values differ from the immutable job snapshot.
 
 ## Immutable identity
 
@@ -138,7 +157,7 @@ Renaming an object intentionally creates a new v1 source key. A future product
 workflow that supports rename continuity must make that an explicit server-side
 identity operation; it must not trust an ID embedded by the seller.
 
-## Canonical artifact and verification
+## Canonical artifact, preview, and verification
 
 For each object, the processor stamps the exact `sulu_market_asset_id` and calls
 `bpy.data.libraries.write` with only that object, `link=False` source data,
@@ -154,6 +173,16 @@ size and SHA-256. The source upload SHA-256 covers the complete file from byte
 zero. The final host should repeat all file and manifest hashes before
 publication.
 
+Seller-provided embedded previews are not publication media. The processor
+clears every loaded object preview and uses the pinned Blender 5.2 object
+preview renderer offline to create a fresh 128x128 preview. Those exact pixels
+are embedded in the canonical `.blend` and exported as an 8-bit, non-interlaced
+RGBA PNG at `previews/<sha256(immutable-id)>.png`. The PNG parser verifies the
+complete bounded file: signature, chunk envelope, CRC of every chunk, canonical
+IHDR, compressed scanline length/filter bytes, IEND, byte size, and SHA-256.
+Every asset is required to have one preview; publication cannot silently fall
+back to seller media or omit it.
+
 ## Normalized manifest
 
 `manifest.json` is strict UTF-8 JSON with sorted keys, sorted assets, no unknown
@@ -163,7 +192,9 @@ fields, and a trailing newline. Each entry contains:
   identity was `generated` or `existing`;
 - catalog UUID/name plus description, author, license, copyright, and tags;
 - minimum, source, and processed Blender compatibility;
-- a server-relative opaque artifact path, lowercase SHA-256, and byte size; and
+- a server-relative opaque artifact path, lowercase SHA-256, and byte size;
+- `preview_policy: deterministic_png_v1` plus one canonical PNG path, hash,
+  size, dimensions, and media type per asset; and
 - processor name/version plus exact Blender 5.2 version and build hash.
 
 The manifest deliberately contains no seller upload path, filesystem path,
@@ -184,12 +215,37 @@ blender \
 
 This writes `_asset-library-meta.json`, `_v1/asset-index.json`, paginated asset
 metadata, and file hash/size records. Publication code must compare the native
-listing's path, size, and SHA-256 for every file with `manifest.json` before
-upload. The official Blender E2E does exactly that, serves the repository over
-HTTP, downloads a listed artifact, verifies its bytes, and appends its exact
-object and immutable marker in a new factory-startup Blender process.
+listing's path, size, SHA-256, and processor-generated thumbnail for every file
+with `manifest.json` before upload. The official Blender E2E does exactly that,
+serves the repository over HTTP, drives Blender's stock multiprocessing listing
+and asset downloaders, downloads and hash-verifies the generated WebP preview
+and listed `.blend`, and appends its exact object and immutable marker in a new
+factory-startup Blender process.
 
 The Sulu backend still owns seller authorization, moderation/quarantine,
 product-to-asset association, entitlement checks, publication atomics, ticket
 redemption, and audit retention. Processing success alone never publishes an
 asset or grants access.
+
+## Worker orchestration
+
+`scripts/market_asset_worker.py` is the production client for the backend job
+protocol. It:
+
+1. claims with exact processor, Blender build, and `linux-bwrap-v1` pins;
+2. downloads the staged source with every signed header including `If-Match`,
+   streams it once to a private file, and verifies size and SHA-256;
+3. heartbeats throughout processing and fails if lease renewal stops;
+4. writes strict private mappings/trusted-metadata inputs and launches only the
+   production sandbox runner;
+5. posts the exact manifest bytes to `prepare-result`;
+6. fully validates every canonical PNG, matches every artifact and preview
+   upload capability to manifest path/hash/size, and uploads with every signed
+   header verbatim;
+7. completes idempotently or reports a stable non-secret failure code; and
+8. removes the entire private job directory on every exit path.
+
+The service bearer is read from `MARKET_ASSET_WORKER_TOKEN` and is used only for
+claim. Each job's in-memory lease bearer authorizes heartbeat, prepare,
+complete, and fail. Neither bearer, signed URL, storage header, source content,
+nor manifest body is logged or passed into Blender.

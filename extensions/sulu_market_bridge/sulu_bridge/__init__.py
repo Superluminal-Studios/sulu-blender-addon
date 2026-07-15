@@ -1,13 +1,17 @@
 """Pure-Python Sulu Market Bridge contract and transport code."""
 
 from .cache import ArtifactCache, CacheResult
+from .cancellation import CancellationToken
 from .contract import (
+    BRIDGE_PROTOCOL_VERSION,
+    BRIDGE_VERSION,
     DEFAULT_API_ORIGIN,
     DEFAULT_MAX_ARTIFACT_BYTES,
     DESCRIPTOR_MAX_BYTES,
     REDEEM_RESPONSE_MAX_BYTES,
     ArtifactSpec,
     AssetIdentity,
+    BridgeCompatibility,
     Descriptor,
     DisplayHints,
     RedeemGrant,
@@ -15,8 +19,16 @@ from .contract import (
     parse_descriptor_bytes,
     parse_descriptor_file,
     parse_redeem_response,
+    validate_runtime_compatibility,
 )
-from .errors import BridgeError, CacheError, ContractError, ImportAssetError, TransportError
+from .errors import (
+    BridgeError,
+    CacheError,
+    CancelledError,
+    ContractError,
+    ImportAssetError,
+    TransportError,
+)
 from .transport import MarketClient
 from .workflow import PreparedAsset, redeem_descriptor
 
@@ -24,9 +36,14 @@ __all__ = [
     "ArtifactCache",
     "ArtifactSpec",
     "AssetIdentity",
+    "BRIDGE_PROTOCOL_VERSION",
+    "BRIDGE_VERSION",
     "BridgeError",
+    "BridgeCompatibility",
     "CacheError",
     "CacheResult",
+    "CancellationToken",
+    "CancelledError",
     "ContractError",
     "DEFAULT_API_ORIGIN",
     "DEFAULT_MAX_ARTIFACT_BYTES",
@@ -44,4 +61,5 @@ __all__ = [
     "parse_descriptor_file",
     "parse_redeem_response",
     "redeem_descriptor",
+    "validate_runtime_compatibility",
 ]

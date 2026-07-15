@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
@@ -24,7 +26,9 @@ REDEEM_PATH = "/api/market/assets/redeem"
 DOWNLOAD_PATH_PREFIX = "/api/market/assets/download/"
 DESCRIPTOR_MAX_BYTES = 16 * 1024
 REDEEM_RESPONSE_MAX_BYTES = 64 * 1024
-DEFAULT_MAX_ARTIFACT_BYTES = 2 * 1024 * 1024 * 1024
+DEFAULT_MAX_ARTIFACT_BYTES = 4 * 1024 * 1024 * 1024
+BRIDGE_PROTOCOL_VERSION = 1
+BRIDGE_VERSION = "0.1.0"
 
 _OPAQUE_RE = re.compile(r"^[A-Za-z0-9._~-]+$")
 _CLAIM_ID_RE = re.compile(r"^[A-Za-z0-9._~-]{8,256}$")
@@ -32,6 +36,7 @@ _DOWNLOAD_PATH_RE = re.compile(r"^/api/market/assets/download/[A-Za-z0-9._~-]{8,
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ID_TYPE_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,31}$")
 _IMMUTABLE_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,256}$")
+_SEMVER_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +50,17 @@ class Descriptor:
     schema_version: int
     api_origin: str
     ticket: str
+    compatibility: BridgeCompatibility
     display: DisplayHints
+
+
+@dataclass(frozen=True, slots=True)
+class BridgeCompatibility:
+    protocol_version: int
+    bridge_min_version: str
+    bridge_max_version_exclusive: str
+    blender_min_version: str
+    blender_max_version_exclusive: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +85,8 @@ class RedeemGrant:
     download_token: str
     artifact: ArtifactSpec
     asset: AssetIdentity
+    compatibility: BridgeCompatibility
+    server_max_artifact_bytes: int
 
 
 def _reject_json_constant(value: str) -> NoReturn:
@@ -130,6 +147,104 @@ def _require_version(value: Any, *, label: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value != SCHEMA_VERSION:
         raise ContractError(f"{label} uses an unsupported schema version")
     return value
+
+
+def _parse_semver(value: Any, *, label: str) -> tuple[int, int, int]:
+    value = _require_string(value, label=label, maximum=32)
+    match = _SEMVER_RE.fullmatch(value)
+    if match is None:
+        raise ContractError(f"{label} must be a three-part numeric version")
+    return tuple(int(part) for part in match.groups())
+
+
+def _parse_compatibility(value: Any, *, label: str) -> BridgeCompatibility:
+    if not isinstance(value, dict):
+        raise ContractError(f"{label} must be an object")
+    _require_exact_keys(
+        value,
+        required={
+            "protocol_version",
+            "bridge_min_version",
+            "bridge_max_version_exclusive",
+            "blender_min_version",
+            "blender_max_version_exclusive",
+        },
+        label=label,
+    )
+    protocol = value["protocol_version"]
+    if isinstance(protocol, bool) or not isinstance(protocol, int):
+        raise ContractError(f"{label} protocol version is invalid")
+    if protocol != BRIDGE_PROTOCOL_VERSION:
+        raise ContractError(
+            f"This asset requires protocol {protocol}; update the Sulu Market Bridge"
+        )
+    bridge_min = _require_string(
+        value["bridge_min_version"], label=f"{label} bridge minimum", maximum=32
+    )
+    bridge_max = _require_string(
+        value["bridge_max_version_exclusive"],
+        label=f"{label} bridge maximum",
+        maximum=32,
+    )
+    blender_min = _require_string(
+        value["blender_min_version"], label=f"{label} Blender minimum", maximum=32
+    )
+    blender_max = _require_string(
+        value["blender_max_version_exclusive"],
+        label=f"{label} Blender maximum",
+        maximum=32,
+    )
+    if _parse_semver(bridge_min, label=f"{label} bridge minimum") >= _parse_semver(
+        bridge_max, label=f"{label} bridge maximum"
+    ):
+        raise ContractError(f"{label} Bridge version range is empty")
+    if _parse_semver(blender_min, label=f"{label} Blender minimum") >= _parse_semver(
+        blender_max, label=f"{label} Blender maximum"
+    ):
+        raise ContractError(f"{label} Blender version range is empty")
+    return BridgeCompatibility(
+        protocol_version=protocol,
+        bridge_min_version=bridge_min,
+        bridge_max_version_exclusive=bridge_max,
+        blender_min_version=blender_min,
+        blender_max_version_exclusive=blender_max,
+    )
+
+
+def validate_runtime_compatibility(
+    compatibility: BridgeCompatibility,
+    *,
+    bridge_version: str = BRIDGE_VERSION,
+    blender_version: str,
+) -> None:
+    """Fail before ticket redemption when the installed runtime is unsupported."""
+
+    bridge = _parse_semver(bridge_version, label="Installed Bridge version")
+    blender = _parse_semver(blender_version, label="Installed Blender version")
+    bridge_min = _parse_semver(
+        compatibility.bridge_min_version, label="Required Bridge minimum"
+    )
+    bridge_max = _parse_semver(
+        compatibility.bridge_max_version_exclusive, label="Required Bridge maximum"
+    )
+    blender_min = _parse_semver(
+        compatibility.blender_min_version, label="Required Blender minimum"
+    )
+    blender_max = _parse_semver(
+        compatibility.blender_max_version_exclusive, label="Required Blender maximum"
+    )
+    if not bridge_min <= bridge < bridge_max:
+        raise ContractError(
+            "Update the Sulu Market Bridge; this asset requires Bridge "
+            f">={compatibility.bridge_min_version} and "
+            f"<{compatibility.bridge_max_version_exclusive}"
+        )
+    if not blender_min <= blender < blender_max:
+        raise ContractError(
+            "Use a compatible Blender version; this asset requires Blender "
+            f">={compatibility.blender_min_version} and "
+            f"<{compatibility.blender_max_version_exclusive}"
+        )
 
 
 def _require_string(
@@ -212,7 +327,7 @@ def parse_descriptor_bytes(
     payload = _decode_json(raw, label="Asset descriptor", max_bytes=DESCRIPTOR_MAX_BYTES)
     _require_exact_keys(
         payload,
-        required={"schema_version", "api_origin", "ticket"},
+        required={"schema_version", "api_origin", "ticket", "compatibility"},
         optional={"display"},
         label="Asset descriptor",
     )
@@ -226,6 +341,9 @@ def parse_descriptor_bytes(
     if api_origin != approved:
         raise ContractError("Asset descriptor API origin is not the configured Sulu origin")
     ticket = _parse_opaque(payload["ticket"], label="Asset descriptor ticket")
+    compatibility = _parse_compatibility(
+        payload["compatibility"], label="Asset descriptor compatibility"
+    )
 
     display_value = payload.get("display", {})
     if not isinstance(display_value, dict):
@@ -249,6 +367,7 @@ def parse_descriptor_bytes(
         schema_version=schema_version,
         api_origin=api_origin,
         ticket=ticket,
+        compatibility=compatibility,
         display=DisplayHints(name=name, id_type=id_type),
     )
 
@@ -262,15 +381,33 @@ def parse_descriptor_file(
     descriptor_path = Path(path)
     if descriptor_path.suffix.lower() != ".suluasset":
         raise ContractError("Asset descriptor must use the .suluasset extension")
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NONBLOCK"):
+        flags |= os.O_NONBLOCK
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    file_descriptor = -1
     try:
-        size = descriptor_path.stat().st_size
-        if size > DESCRIPTOR_MAX_BYTES:
+        if not hasattr(os, "O_NOFOLLOW") and descriptor_path.is_symlink():
+            raise ContractError("Asset descriptor must be a non-symlink regular file")
+        file_descriptor = os.open(descriptor_path, flags)
+        file_stat = os.fstat(file_descriptor)
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise ContractError("Asset descriptor must be a regular file")
+        with os.fdopen(file_descriptor, "rb", closefd=True) as handle:
+            file_descriptor = -1
+            raw = handle.read(DESCRIPTOR_MAX_BYTES + 1)
+        if len(raw) > DESCRIPTOR_MAX_BYTES:
             raise ContractError(f"Asset descriptor exceeds the {DESCRIPTOR_MAX_BYTES}-byte limit")
-        raw = descriptor_path.read_bytes()
     except ContractError:
         raise
     except OSError as exc:
         raise ContractError("Asset descriptor could not be read") from exc
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
     return parse_descriptor_bytes(
         raw,
         configured_origin=configured_origin,
@@ -309,6 +446,8 @@ def parse_redeem_response(
             "download_token",
             "artifact",
             "asset",
+            "compatibility",
+            "limits",
         },
         label="Redemption response",
     )
@@ -321,6 +460,26 @@ def parse_redeem_response(
     if download_path != DOWNLOAD_PATH_PREFIX + claim_id:
         raise ContractError("Download path does not match the redeemed claim ID")
     download_token = _parse_opaque(payload["download_token"], label="Download token")
+    compatibility = _parse_compatibility(
+        payload["compatibility"], label="Redemption compatibility"
+    )
+
+    limits = payload["limits"]
+    if not isinstance(limits, dict):
+        raise ContractError("Redemption limits must be an object")
+    _require_exact_keys(
+        limits,
+        required={"max_artifact_bytes"},
+        label="Redemption limits",
+    )
+    server_max_artifact_bytes = limits["max_artifact_bytes"]
+    if (
+        isinstance(server_max_artifact_bytes, bool)
+        or not isinstance(server_max_artifact_bytes, int)
+        or server_max_artifact_bytes < 1
+        or server_max_artifact_bytes > DEFAULT_MAX_ARTIFACT_BYTES
+    ):
+        raise ContractError("Server artifact limit is invalid")
 
     artifact = payload["artifact"]
     if not isinstance(artifact, dict):
@@ -336,7 +495,7 @@ def parse_redeem_response(
     size = artifact["size"]
     if isinstance(size, bool) or not isinstance(size, int) or size < 1:
         raise ContractError("Artifact size is invalid")
-    if size > max_artifact_bytes:
+    if size > min(max_artifact_bytes, server_max_artifact_bytes):
         raise ContractError("Artifact exceeds the configured download limit")
 
     asset = payload["asset"]
@@ -370,4 +529,6 @@ def parse_redeem_response(
             name=name,
             import_method=import_method,
         ),
+        compatibility=compatibility,
+        server_max_artifact_bytes=server_max_artifact_bytes,
     )

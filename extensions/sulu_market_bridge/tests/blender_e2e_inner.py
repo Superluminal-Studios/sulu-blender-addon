@@ -92,17 +92,32 @@ wrong_grant = bridge.RedeemGrant(
         name="SuluFixtureObject",
         import_method="APPEND",
     ),
+    compatibility=bridge.BridgeCompatibility(
+        protocol_version=1,
+        bridge_min_version="0.1.0",
+        bridge_max_version_exclusive="0.2.0",
+        blender_min_version="5.2.0",
+        blender_max_version_exclusive="5.3.0",
+    ),
+    server_max_artifact_bytes=4 * 1024**3,
 )
 wrong_prepared = bridge.PreparedAsset(
     descriptor=bridge.Descriptor(
         schema_version=1,
         api_origin=origin,
         ticket="unused-ticket-123456789",
+        compatibility=wrong_grant.compatibility,
         display=bridge.DisplayHints(),
     ),
     grant=wrong_grant,
     cache=bridge.CacheResult(path=cached, reused=True),
 )
+counts_before_failed_import = {
+    "objects": len(bpy.data.objects),
+    "meshes": len(bpy.data.meshes),
+    "materials": len(bpy.data.materials),
+    "images": len(bpy.data.images),
+}
 try:
     addon.import_prepared_asset(bpy.context, wrong_prepared)
 except bridge.ImportAssetError as exc:
@@ -112,6 +127,17 @@ else:
     raise RuntimeError("Wrong immutable asset identity was accepted")
 if any(obj.get("sulu_market_asset_id") == "asset:wrong-identity:v1" for obj in bpy.data.objects):
     raise RuntimeError("Wrong immutable object survived failed import")
+counts_after_failed_import = {
+    "objects": len(bpy.data.objects),
+    "meshes": len(bpy.data.meshes),
+    "materials": len(bpy.data.materials),
+    "images": len(bpy.data.images),
+}
+if counts_after_failed_import != counts_before_failed_import:
+    raise RuntimeError(
+        "Failed entitlement import leaked appended Blender dependencies: "
+        f"before={counts_before_failed_import}, after={counts_after_failed_import}"
+    )
 
 # V1 is deliberately narrow: non-OBJECT ID types fail explicitly instead of
 # guessing a target or mutating arbitrary selected datablocks.
@@ -127,6 +153,8 @@ unsupported_grant = bridge.RedeemGrant(
         name="SuluFixtureObject",
         import_method="APPEND",
     ),
+    compatibility=wrong_grant.compatibility,
+    server_max_artifact_bytes=wrong_grant.server_max_artifact_bytes,
 )
 unsupported_prepared = bridge.PreparedAsset(
     descriptor=wrong_prepared.descriptor,

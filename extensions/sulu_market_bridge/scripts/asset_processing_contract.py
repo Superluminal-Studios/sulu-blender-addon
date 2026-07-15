@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import secrets
+import stat
+import struct
 import unicodedata
 import uuid
+import zlib
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -18,19 +22,28 @@ SUPPORTED_ID_TYPE = "OBJECT"
 IMMUTABLE_ID_PROPERTY = "sulu_market_asset_id"
 
 MAPPING_MAX_BYTES = 1024 * 1024
-DEFAULT_MAX_INPUT_BYTES = 2 * 1024**3
+TRUSTED_METADATA_MAX_BYTES = 16 * 1024
+DEFAULT_MAX_INPUT_BYTES = 4 * 1024**3
 HARD_MAX_INPUT_BYTES = 4 * 1024**3
 DEFAULT_MAX_ASSETS = 100
 HARD_MAX_ASSETS = 500
-DEFAULT_MAX_ARTIFACT_BYTES = 2 * 1024**3
+DEFAULT_MAX_ARTIFACT_BYTES = 4 * 1024**3
 HARD_MAX_ARTIFACT_BYTES = 4 * 1024**3
-DEFAULT_MAX_TOTAL_OUTPUT_BYTES = 8 * 1024**3
+DEFAULT_MAX_TOTAL_OUTPUT_BYTES = 16 * 1024**3
 HARD_MAX_TOTAL_OUTPUT_BYTES = 16 * 1024**3
+MAX_PREVIEW_BYTES = 16 * 1024 * 1024
+PREVIEW_WIDTH = 128
+PREVIEW_HEIGHT = 128
+PREVIEW_MEDIA_TYPE = "image/png"
+PREVIEW_POLICY = "deterministic_png_v1"
+
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 _IMMUTABLE_ID_RE = re.compile(r"asset:sm_[A-Za-z0-9_-]{22,128}\Z")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 _BUILD_HASH_RE = re.compile(r"[0-9a-f]{7,64}\Z")
 _VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+\Z")
+_SELLER_ORG_ID_RE = re.compile(r"[A-Za-z0-9_-]{8,64}\Z")
 
 
 class ContractError(ValueError):
@@ -97,19 +110,67 @@ def _expect_text(
 def read_strict_json(path: Path, *, maximum_bytes: int) -> dict[str, Any]:
     """Read a bounded UTF-8 JSON object and reject duplicate object fields."""
 
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NONBLOCK"):
+        flags |= os.O_NONBLOCK
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = -1
     try:
-        size = path.stat().st_size
-    except OSError as error:
-        raise ContractError("JSON input is not readable") from error
-    if size > maximum_bytes:
-        raise ContractError(f"JSON input exceeds {maximum_bytes} bytes")
-    try:
-        raw = path.read_bytes()
+        if not hasattr(os, "O_NOFOLLOW") and path.is_symlink():
+            raise ContractError("JSON input must be a non-symlink regular file")
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            raise ContractError("JSON input must be a regular file")
+        with os.fdopen(descriptor, "rb", closefd=True) as handle:
+            descriptor = -1
+            raw = handle.read(maximum_bytes + 1)
+        if len(raw) > maximum_bytes:
+            raise ContractError(f"JSON input exceeds {maximum_bytes} bytes")
         text = raw.decode("utf-8", errors="strict")
-        value = json.loads(text, object_pairs_hook=_strict_object)
+        value = json.loads(
+            text,
+            object_pairs_hook=_strict_object,
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ContractError(f"unsupported JSON constant: {value}")
+            ),
+        )
+    except ContractError:
+        raise
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ContractError("JSON input is not valid strict UTF-8 JSON") from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
     return _expect_object(value, "JSON input")
+
+
+def load_trusted_metadata(path: Path) -> dict[str, str]:
+    """Load server-owned legal identity that overrides seller-authored fields."""
+
+    document = read_strict_json(path, maximum_bytes=TRUSTED_METADATA_MAX_BYTES)
+    _expect_exact_fields(
+        document,
+        {"seller_org_id", "author", "license"},
+        "trusted metadata",
+    )
+    seller_org_id = _expect_text(
+        document["seller_org_id"], "trusted metadata seller_org_id", maximum=64
+    )
+    if not _SELLER_ORG_ID_RE.fullmatch(seller_org_id):
+        raise ContractError("trusted metadata seller_org_id is malformed")
+    author = _expect_text(document["author"], "trusted metadata author", maximum=255)
+    license_name = _expect_text(
+        document["license"], "trusted metadata license", maximum=64
+    )
+    return {
+        "seller_org_id": seller_org_id,
+        "author": author,
+        "license": license_name,
+    }
 
 
 def validated_limit(value: int, *, label: str, hard_maximum: int) -> int:
@@ -160,6 +221,93 @@ def artifact_relative_path(immutable_id: str) -> str:
     immutable_id = validate_immutable_id(immutable_id)
     digest = hashlib.sha256(immutable_id.encode("utf-8")).hexdigest()
     return f"artifacts/{digest}.blend"
+
+
+def preview_relative_path(immutable_id: str) -> str:
+    immutable_id = validate_immutable_id(immutable_id)
+    digest = hashlib.sha256(immutable_id.encode("utf-8")).hexdigest()
+    return f"previews/{digest}.png"
+
+
+def validate_preview_png(path: Path) -> tuple[str, int]:
+    """Validate the complete bounded canonical RGBA preview and return hash/size."""
+
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = -1
+    try:
+        if not hasattr(os, "O_NOFOLLOW") and path.is_symlink():
+            raise ContractError("preview must be a non-symlink regular file")
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            raise ContractError("preview must be a regular file")
+        if opened.st_size < 57 or opened.st_size > MAX_PREVIEW_BYTES:
+            raise ContractError("preview byte size is outside the canonical bounds")
+        with os.fdopen(descriptor, "rb", closefd=True) as handle:
+            descriptor = -1
+            raw = handle.read(MAX_PREVIEW_BYTES + 1)
+    except ContractError:
+        raise
+    except OSError as error:
+        raise ContractError("preview cannot be read safely") from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+    if len(raw) > MAX_PREVIEW_BYTES or not raw.startswith(_PNG_SIGNATURE):
+        raise ContractError("preview is not a bounded canonical PNG")
+    offset = len(_PNG_SIGNATURE)
+    chunks: list[tuple[bytes, bytes]] = []
+    while offset < len(raw):
+        if offset + 12 > len(raw):
+            raise ContractError("preview PNG contains a truncated chunk")
+        length = struct.unpack(">I", raw[offset : offset + 4])[0]
+        chunk_end = offset + 12 + length
+        if chunk_end > len(raw):
+            raise ContractError("preview PNG contains an oversized chunk")
+        chunk_type = raw[offset + 4 : offset + 8]
+        payload = raw[offset + 8 : offset + 8 + length]
+        expected_crc = struct.unpack(">I", raw[offset + 8 + length : chunk_end])[0]
+        if zlib.crc32(chunk_type + payload) & 0xFFFFFFFF != expected_crc:
+            raise ContractError("preview PNG contains a corrupt chunk")
+        chunks.append((chunk_type, payload))
+        offset = chunk_end
+        if chunk_type == b"IEND":
+            break
+    if offset != len(raw) or not chunks or chunks[0][0] != b"IHDR" or chunks[-1][0] != b"IEND":
+        raise ContractError("preview PNG has an invalid chunk envelope")
+    if len(chunks[0][1]) != 13 or chunks[-1][1]:
+        raise ContractError("preview PNG has invalid structural chunks")
+    width, height, bit_depth, color_type, compression, filter_method, interlace = struct.unpack(
+        ">IIBBBBB", chunks[0][1]
+    )
+    if (
+        width != PREVIEW_WIDTH
+        or height != PREVIEW_HEIGHT
+        or bit_depth != 8
+        or color_type != 6
+        or compression != 0
+        or filter_method != 0
+        or interlace != 0
+    ):
+        raise ContractError("preview PNG does not use the canonical 128x128 RGBA format")
+    idat = b"".join(payload for kind, payload in chunks if kind == b"IDAT")
+    if not idat:
+        raise ContractError("preview PNG contains no image data")
+    try:
+        pixels = zlib.decompress(idat)
+    except zlib.error as error:
+        raise ContractError("preview PNG image data is invalid") from error
+    row_size = 1 + PREVIEW_WIDTH * 4
+    if len(pixels) != PREVIEW_HEIGHT * row_size or any(
+        pixels[offset] > 4 for offset in range(0, len(pixels), row_size)
+    ):
+        raise ContractError("preview PNG scanlines are invalid")
+    return hashlib.sha256(raw).hexdigest(), len(raw)
 
 
 def load_identity_mappings(path: Path | None) -> dict[str, str]:
@@ -270,9 +418,15 @@ def validate_processing_manifest(manifest: Any) -> dict[str, Any]:
     """Strictly validate the normalized processing manifest, including unknown fields."""
 
     root = _expect_object(manifest, "manifest")
-    _expect_exact_fields(root, {"schema_version", "processor", "source", "assets"}, "manifest")
+    _expect_exact_fields(
+        root,
+        {"schema_version", "preview_policy", "processor", "source", "assets"},
+        "manifest",
+    )
     if root["schema_version"] != SCHEMA_VERSION:
         raise ContractError("unsupported manifest schema_version")
+    if root["preview_policy"] != PREVIEW_POLICY:
+        raise ContractError("unsupported manifest preview_policy")
 
     processor = _expect_object(root["processor"], "processor")
     _expect_exact_fields(
@@ -312,6 +466,7 @@ def validate_processing_manifest(manifest: Any) -> dict[str, Any]:
                 "metadata",
                 "blender",
                 "artifact",
+                "preview",
             },
             label,
         )
@@ -347,15 +502,42 @@ def validate_processing_manifest(manifest: Any) -> dict[str, Any]:
         _validate_sha256(artifact["sha256"], f"{label}.artifact.sha256")
         _expect_int(artifact["size"], f"{label}.artifact.size", minimum=1)
 
+        preview = _expect_object(asset["preview"], f"{label}.preview")
+        _expect_exact_fields(
+            preview,
+            {"path", "sha256", "size", "width", "height", "media_type"},
+            f"{label}.preview",
+        )
+        preview_path = _expect_text(preview["path"], f"{label}.preview.path", maximum=256)
+        preview_posix = PurePosixPath(preview_path)
+        if (
+            preview_posix.is_absolute()
+            or ".." in preview_posix.parts
+            or preview_path != preview_relative_path(immutable_id)
+        ):
+            raise ContractError(f"{label}.preview.path is not canonical")
+        _validate_sha256(preview["sha256"], f"{label}.preview.sha256")
+        preview_size = _expect_int(preview["size"], f"{label}.preview.size", minimum=1)
+        if preview_size > MAX_PREVIEW_BYTES:
+            raise ContractError(f"{label}.preview.size exceeds the hard maximum")
+        if (
+            preview["width"] != PREVIEW_WIDTH
+            or preview["height"] != PREVIEW_HEIGHT
+            or preview["media_type"] != PREVIEW_MEDIA_TYPE
+        ):
+            raise ContractError(f"{label}.preview format is not canonical")
+
         if (
             source_key in seen_source_keys
             or immutable_id in seen_ids
             or artifact_path in seen_paths
+            or preview_path in seen_paths
         ):
             raise ContractError("manifest asset identities and paths must be unique")
         seen_source_keys.add(source_key)
         seen_ids.add(immutable_id)
         seen_paths.add(artifact_path)
+        seen_paths.add(preview_path)
 
     if [asset["source_key"] for asset in assets] != sorted(seen_source_keys):
         raise ContractError("manifest assets must be sorted by source_key")

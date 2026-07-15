@@ -40,16 +40,23 @@ from scripts.asset_processing_contract import (  # noqa: E402
     IMMUTABLE_ID_PROPERTY,
     PROCESSOR_NAME,
     PROCESSOR_VERSION,
+    PREVIEW_HEIGHT,
+    PREVIEW_MEDIA_TYPE,
+    PREVIEW_POLICY,
+    PREVIEW_WIDTH,
     SCHEMA_VERSION,
     SUPPORTED_ID_TYPE,
     ContractError,
     artifact_relative_path,
     load_identity_mappings,
+    load_trusted_metadata,
     new_immutable_id,
+    preview_relative_path,
     source_key_for,
     validate_asset_name,
     validate_blender_build_hash,
     validate_processing_manifest,
+    validate_preview_png,
     validated_limit,
 )
 
@@ -58,6 +65,7 @@ MINIMUM_BLENDER_VERSION_TEXT = "5.2.0"
 MANIFEST_MAX_BYTES = 1024 * 1024
 ACCEPTED_BLEND_PREFIXES = (b"BLENDER", b"\x28\xb5\x2f\xfd", b"\x1f\x8b")
 _NIL_UUID = uuid.UUID(int=0)
+_RENDERABLE_PREVIEW_OBJECT_TYPES = {"MESH", "CURVE", "SURFACE", "META", "FONT"}
 
 
 class ProcessingError(RuntimeError):
@@ -70,6 +78,7 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--mappings", type=Path)
+    parser.add_argument("--trusted-metadata", required=True, type=Path)
     parser.add_argument("--max-input-bytes", type=int, default=DEFAULT_MAX_INPUT_BYTES)
     parser.add_argument("--max-assets", type=int, default=DEFAULT_MAX_ASSETS)
     parser.add_argument("--max-artifact-bytes", type=int, default=DEFAULT_MAX_ARTIFACT_BYTES)
@@ -376,7 +385,61 @@ def _write_artifact(obj: Any, artifact_path: Path) -> None:
         raise ProcessingError("Blender could not write a canonical asset artifact") from error
 
 
-def _verify_artifact(path: Path, expected_name: str, immutable_id: str) -> None:
+def _generate_preview(obj: Any, preview_path: Path) -> tuple[str, int]:
+    """Generate the pinned Blender 5.2 object preview and export canonical PNG bytes."""
+
+    if obj.type not in _RENDERABLE_PREVIEW_OBJECT_TYPES:
+        raise ProcessingError("OBJECT asset type cannot produce the required deterministic preview")
+    if bpy.data.filepath:
+        raise ProcessingError("preview generation requires an unsaved isolated Blender state")
+    try:
+        # Seller-provided previews are untrusted publication media. Clear every
+        # loaded object preview before generating a fresh one in the pinned
+        # offline processor.
+        for candidate in bpy.data.objects:
+            if candidate.preview is not None:
+                candidate.preview.image_size = (0, 0)
+        from _bl_previews_utils.bl_previews_render import do_previews
+
+        do_previews(
+            do_objects=True,
+            do_collections=False,
+            do_scenes=False,
+            do_data_intern=False,
+        )
+        if bpy.data.filepath:
+            raise ProcessingError("preview generation changed the isolated Blender filepath")
+        preview = obj.preview
+        if preview is None or tuple(preview.image_size) != (PREVIEW_WIDTH, PREVIEW_HEIGHT):
+            raise ProcessingError("Blender did not generate the canonical object preview")
+        image = bpy.data.images.new(
+            "SuluCanonicalAssetPreview",
+            PREVIEW_WIDTH,
+            PREVIEW_HEIGHT,
+            alpha=True,
+        )
+        try:
+            image.pixels[:] = preview.image_pixels_float
+            image.file_format = "PNG"
+            image.save(filepath=str(preview_path), quality=100)
+        finally:
+            bpy.data.images.remove(image)
+    except ProcessingError:
+        raise
+    except Exception as error:
+        raise ProcessingError("Blender could not generate the canonical object preview") from error
+    try:
+        return validate_preview_png(preview_path)
+    except ContractError as error:
+        raise ProcessingError(f"generated preview validation failed: {error}") from error
+
+
+def _verify_artifact(
+    path: Path,
+    expected_name: str,
+    immutable_id: str,
+    trusted_metadata: dict[str, str],
+) -> None:
     _factory_empty()
     object_names, _ = _discover_assets(path)
     if object_names != [expected_name]:
@@ -384,6 +447,16 @@ def _verify_artifact(path: Path, expected_name: str, immutable_id: str) -> None:
     loaded = _load_object(path, expected_name)
     if loaded.get(IMMUTABLE_ID_PROPERTY) != immutable_id:
         raise ProcessingError("generated artifact failed immutable identity verification")
+    if loaded.preview is None or tuple(loaded.preview.image_size) != (
+        PREVIEW_WIDTH,
+        PREVIEW_HEIGHT,
+    ):
+        raise ProcessingError("generated artifact failed embedded preview verification")
+    if (
+        loaded.asset_data.author != trusted_metadata["author"]
+        or loaded.asset_data.license != trusted_metadata["license"]
+    ):
+        raise ProcessingError("generated artifact failed trusted legal metadata verification")
     _reject_unsafe_loaded_data(expected_immutable_id=immutable_id)
 
 
@@ -397,6 +470,7 @@ def _process_one(
     source_version: str,
     processed_version: str,
     max_artifact_bytes: int,
+    trusted_metadata: dict[str, str],
 ) -> dict[str, Any]:
     _factory_empty()
     obj = _load_object(source_path, name)
@@ -404,11 +478,21 @@ def _process_one(
         raise ProcessingError("seller asset contains the reserved immutable-ID property")
     _reject_unsafe_loaded_data()
     catalog, metadata = _asset_metadata(obj)
+    # Legal identity is server-owned. Seller-authored values are never emitted
+    # into a canonical artifact or normalized manifest.
+    obj.asset_data.author = trusted_metadata["author"]
+    obj.asset_data.license = trusted_metadata["license"]
+    metadata["author"] = trusted_metadata["author"]
+    metadata["license"] = trusted_metadata["license"]
     obj[IMMUTABLE_ID_PROPERTY] = immutable_id
 
     relative_path = artifact_relative_path(immutable_id)
     artifact_path = output_root / relative_path
     artifact_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    preview_relative = preview_relative_path(immutable_id)
+    preview_path = output_root / preview_relative
+    preview_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    preview_sha256, preview_size = _generate_preview(obj, preview_path)
     _write_artifact(obj, artifact_path)
     try:
         size = artifact_path.stat().st_size
@@ -417,7 +501,7 @@ def _process_one(
     if size < 1 or size > max_artifact_bytes:
         raise ProcessingError("generated artifact exceeds the configured byte limit")
     digest = _sha256(artifact_path)
-    _verify_artifact(artifact_path, name, immutable_id)
+    _verify_artifact(artifact_path, name, immutable_id, trusted_metadata)
 
     return {
         "source_key": source_key_for(name),
@@ -433,6 +517,14 @@ def _process_one(
             "processed_version": processed_version,
         },
         "artifact": {"path": relative_path, "sha256": digest, "size": size},
+        "preview": {
+            "path": preview_relative,
+            "sha256": preview_sha256,
+            "size": preview_size,
+            "width": PREVIEW_WIDTH,
+            "height": PREVIEW_HEIGHT,
+            "media_type": PREVIEW_MEDIA_TYPE,
+        },
     }
 
 
@@ -471,6 +563,7 @@ def _run(arguments: argparse.Namespace) -> int:
             hard_maximum=HARD_MAX_TOTAL_OUTPUT_BYTES,
         )
         mappings = load_identity_mappings(arguments.mappings)
+        trusted_metadata = load_trusted_metadata(arguments.trusted_metadata)
     except ContractError as error:
         raise ProcessingError(f"server processing request is invalid: {error}") from error
 
@@ -512,14 +605,16 @@ def _run(arguments: argparse.Namespace) -> int:
                 source_version=source_version,
                 processed_version=processed_version,
                 max_artifact_bytes=max_artifact_bytes,
+                trusted_metadata=trusted_metadata,
             )
             assets.append(asset)
-            artifact_total += asset["artifact"]["size"]
+            artifact_total += asset["artifact"]["size"] + asset["preview"]["size"]
             if artifact_total > max_total_output_bytes:
                 raise ProcessingError("generated artifacts exceed the total output byte limit")
 
         manifest = {
             "schema_version": SCHEMA_VERSION,
+            "preview_policy": PREVIEW_POLICY,
             "processor": {
                 "name": PROCESSOR_NAME,
                 "version": PROCESSOR_VERSION,

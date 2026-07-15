@@ -1,19 +1,25 @@
 from __future__ import annotations
 
 import json
+import struct
 import tempfile
 import unittest
+import zlib
 from pathlib import Path
 
 from scripts.asset_processing_contract import (
     HARD_MAX_ASSETS,
+    MAX_PREVIEW_BYTES,
     ContractError,
     artifact_relative_path,
     load_identity_mappings,
+    load_trusted_metadata,
     mappings_document_from_manifest,
     new_immutable_id,
+    preview_relative_path,
     source_key_for,
     validate_processing_manifest,
+    validate_preview_png,
     validated_limit,
 )
 
@@ -23,6 +29,7 @@ IMMUTABLE_ID = "asset:sm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 def valid_manifest() -> dict[str, object]:
     return {
         "schema_version": 1,
+        "preview_policy": "deterministic_png_v1",
         "processor": {
             "name": "sulu-market-asset-processor",
             "version": "0.1.0",
@@ -58,6 +65,14 @@ def valid_manifest() -> dict[str, object]:
                     "path": artifact_relative_path(IMMUTABLE_ID),
                     "sha256": "b" * 64,
                     "size": 456,
+                },
+                "preview": {
+                    "path": preview_relative_path(IMMUTABLE_ID),
+                    "sha256": "c" * 64,
+                    "size": 789,
+                    "width": 128,
+                    "height": 128,
+                    "media_type": "image/png",
                 },
             }
         ],
@@ -137,6 +152,26 @@ class IdentityMappingTests(unittest.TestCase):
         self.assertEqual(artifact_relative_path(first).split("/")[0], "artifacts")
         self.assertNotIn(first, artifact_relative_path(first))
 
+    def test_trusted_metadata_is_strict_and_symlink_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "trusted.json"
+            expected = {
+                "seller_org_id": "sellerOrg123456",
+                "author": "Canonical Seller",
+                "license": "CC-BY",
+            }
+            path.write_text(json.dumps(expected), encoding="utf-8")
+            self.assertEqual(load_trusted_metadata(path), expected)
+
+            link = Path(temporary) / "linked.json"
+            link.symlink_to(path)
+            with self.assertRaisesRegex(ContractError, "non-symlink|strict UTF-8"):
+                load_trusted_metadata(link)
+
+            path.write_text(json.dumps({**expected, "future": True}), encoding="utf-8")
+            with self.assertRaisesRegex(ContractError, "unknown"):
+                load_trusted_metadata(path)
+
 
 class ManifestValidationTests(unittest.TestCase):
     def test_normalized_manifest_and_reprocess_mapping(self) -> None:
@@ -187,6 +222,45 @@ class ManifestValidationTests(unittest.TestCase):
             )
         with self.assertRaises(ContractError):
             validated_limit(True, label="max assets", hard_maximum=HARD_MAX_ASSETS)
+
+    def test_preview_png_is_fully_validated_and_symlink_safe(self) -> None:
+        def chunk(kind: bytes, payload: bytes) -> bytes:
+            return (
+                struct.pack(">I", len(payload))
+                + kind
+                + payload
+                + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+            )
+
+        rows = b"".join(b"\x00" + bytes([row % 256, 64, 192, 255]) * 128 for row in range(128))
+        payload = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", 128, 128, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows, level=9))
+            + chunk(b"IEND", b"")
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preview.png"
+            path.write_bytes(payload)
+            digest, size = validate_preview_png(path)
+            self.assertEqual(size, len(payload))
+            self.assertEqual(len(digest), 64)
+
+            corrupt = Path(temporary) / "corrupt.png"
+            corrupt.write_bytes(payload[:-1] + bytes([payload[-1] ^ 1]))
+            with self.assertRaisesRegex(ContractError, "corrupt"):
+                validate_preview_png(corrupt)
+
+            oversized = Path(temporary) / "oversized.png"
+            with oversized.open("wb") as output:
+                output.truncate(MAX_PREVIEW_BYTES + 1)
+            with self.assertRaisesRegex(ContractError, "bounds"):
+                validate_preview_png(oversized)
+
+            hostile = Path(temporary) / "hostile.png"
+            hostile.symlink_to(path)
+            with self.assertRaisesRegex(ContractError, "symlink|safely"):
+                validate_preview_png(hostile)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -16,10 +17,23 @@ from tests.mock_market import VALID_TICKET, MockMarketServer, descriptor_bytes
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def run(command: list[str], *, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def assert_hash_reference(path: Path, reference: str) -> None:
+    algorithm, separator, expected = reference.partition(":")
+    if algorithm != "SHA256" or separator != ":":
+        raise RuntimeError("stock asset listing used an unsupported hash reference")
+    if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+        raise RuntimeError("stock asset listing hash does not match its document")
+
+
+def run(
+    command: list[str],
+    *,
+    env: dict[str, str],
+    cwd: Path = REPO_ROOT,
+) -> subprocess.CompletedProcess[str]:
     completed = subprocess.run(
         command,
-        cwd=REPO_ROOT,
+        cwd=cwd,
         env=env,
         check=False,
         text=True,
@@ -31,6 +45,47 @@ def run(command: list[str], *, env: dict[str, str]) -> subprocess.CompletedProce
     if completed.returncode:
         raise RuntimeError(f"Command failed with exit code {completed.returncode}: {command[0]}")
     return completed
+
+
+def default_backend_pocketbase() -> Path:
+    return REPO_ROOT.parents[1].parent / "sulu-backend" / "pocketbase"
+
+
+def validate_with_backend(
+    archive: Path,
+    backend_pocketbase: Path,
+    *,
+    env: dict[str, str],
+) -> None:
+    if not (backend_pocketbase / "market_extension_archive_security.go").is_file():
+        raise RuntimeError(
+            "Sulu backend PocketBase source was not found; pass --backend-pocketbase so the "
+            "exact Bridge archive can be checked by the production extension validator"
+        )
+    validation_env = env.copy()
+    validation_env.update(
+        {
+            "SULU_EXTENSION_ARCHIVE_FIXTURE": str(archive),
+            "SULU_EXTENSION_EXPECTED_ID": "sulu_market_bridge",
+            "SULU_EXTENSION_EXPECTED_VERSION": "0.1.0",
+        }
+    )
+    completed = run(
+        [
+            "go",
+            "test",
+            "-count=1",
+            "-run",
+            "^TestValidateExternalMarketExtensionFixture$",
+            "-v",
+            ".",
+        ],
+        env=validation_env,
+        cwd=backend_pocketbase,
+    )
+    marker = "SULU_EXTENSION_ARCHIVE_VALIDATED id=sulu_market_bridge version=0.1.0"
+    if marker not in completed.stdout:
+        raise RuntimeError("Backend extension validator did not emit its success marker")
 
 
 def isolated_environment(root: Path) -> dict[str, str]:
@@ -53,6 +108,12 @@ def main() -> None:
         "--blender",
         type=Path,
         default=Path("/Volumes/Blender/Blender.app/Contents/MacOS/Blender"),
+    )
+    parser.add_argument(
+        "--backend-pocketbase",
+        type=Path,
+        default=default_backend_pocketbase(),
+        help="Path to sulu-backend/pocketbase for the production archive-validator gate",
     )
     parser.add_argument("--keep-workdir", action="store_true")
     options = parser.parse_args()
@@ -82,43 +143,20 @@ def main() -> None:
             env=env,
         )
         archive = build_dir / "sulu_market_bridge-0.1.0.zip"
+        if not archive.is_file():
+            raise RuntimeError("Blender did not build the expected versioned Bridge archive")
         with zipfile.ZipFile(archive) as built_extension:
             shipped_scripts = [
                 name for name in built_extension.namelist() if "scripts" in Path(name).parts
             ]
         if shipped_scripts:
             raise RuntimeError("Seller processing scripts leaked into the extension ZIP")
-        run(
-            [
-                str(blender),
-                "--command",
-                "extension",
-                "repo-add",
-                "--clear-all",
-                "--name",
-                "Sulu Bridge E2E",
-                "--directory",
-                str(workdir / "user" / "extensions" / "user_default"),
-                "user_default",
-            ],
-            env=env,
+        validate_with_backend(archive, options.backend_pocketbase.resolve(), env=env)
+        publication = json.loads(
+            (REPO_ROOT / "tests" / "fixtures" / "sulu_bridge_market_publication.json").read_text(
+                encoding="utf-8"
+            )
         )
-        run(
-            [
-                str(blender),
-                "--command",
-                "extension",
-                "install-file",
-                "-r",
-                "user_default",
-                "-e",
-                str(archive),
-            ],
-            env=env,
-        )
-        listed = run([str(blender), "--command", "extension", "list"], env=env)
-        if "sulu_market_bridge [installed]" not in listed.stdout:
-            raise RuntimeError("Packaged bridge was not listed as installed")
 
         run(
             [
@@ -135,7 +173,52 @@ def main() -> None:
         artifact = fixture_path.read_bytes()
         expected_sha256 = hashlib.sha256(artifact).hexdigest()
 
-        with MockMarketServer(artifact) as server:
+        with MockMarketServer(
+            artifact,
+            extension_archive=archive.read_bytes(),
+            extension_publication=publication,
+        ) as server:
+            repository = publication["repository"]
+            run(
+                [
+                    str(blender),
+                    "--online-mode",
+                    "--command",
+                    "extension",
+                    "repo-add",
+                    "--clear-all",
+                    "--name",
+                    repository["name"],
+                    "--directory",
+                    str(workdir / "user" / "extensions" / repository["id"]),
+                    "--url",
+                    server.extension_repository_url,
+                    "--access-token",
+                    repository["access_token"],
+                    repository["id"],
+                ],
+                env=env,
+            )
+            run(
+                [str(blender), "--online-mode", "--command", "extension", "sync"],
+                env=env,
+            )
+            run(
+                [
+                    str(blender),
+                    "--online-mode",
+                    "--command",
+                    "extension",
+                    "install",
+                    "-e",
+                    publication["version"]["extension_id"],
+                ],
+                env=env,
+            )
+            listed = run([str(blender), "--command", "extension", "list"], env=env)
+            if "sulu_market_bridge [installed]" not in listed.stdout:
+                raise RuntimeError("Repository-installed Bridge was not listed as installed")
+
             descriptor_path = workdir / "SuluFixtureObject.suluasset"
             descriptor_path.write_bytes(descriptor_bytes(server.origin, VALID_TICKET))
             completed = run(
@@ -159,10 +242,71 @@ def main() -> None:
                 raise RuntimeError("One-use ticket leaked into an HTTP request URL")
             if len(server.state.redeem_bodies) != 2:
                 raise RuntimeError("Expected one successful redemption and one denied replay")
+            extension_paths = [path for path, authorized in server.state.extension_requests if authorized]
+            expected_repo_path = (
+                f"/api/market/extensions/repo/v1/org/{publication['organization']['id']}/index.json"
+            )
+            expected_archive_path = (
+                f"/api/market/extensions/archive/org/{publication['organization']['id']}/product/"
+                f"{publication['product']['id']}/version/{publication['version']['id']}.zip"
+            )
+            if expected_repo_path not in extension_paths or expected_archive_path not in extension_paths:
+                raise RuntimeError(
+                    "Stock Blender did not sync the entitled repository and fetch its exact Bridge archive"
+                )
+            if any(not authorized for _, authorized in server.state.extension_requests):
+                raise RuntimeError("Stock Blender omitted repository authorization")
+            if any(
+                publication["repository"]["access_token"] in path
+                for _, path in server.state.requests
+            ):
+                raise RuntimeError("Repository access token leaked into a request URL")
+
+        cache_root = (
+            Path(env["BLENDER_USER_DATAFILES"])
+            / "sulu_market_bridge"
+            / "redeemed_assets"
+        )
+        listing = run(
+            [
+                str(blender),
+                "--factory-startup",
+                "--disable-autoexec",
+                "--offline-mode",
+                "--command",
+                "asset_listing",
+                "generate",
+                str(cache_root),
+            ],
+            env=env,
+        )
+        if "1 .blend files found" not in listing.stdout:
+            raise RuntimeError("stock Blender did not recursively discover the fan-out bridge cache")
+        meta = json.loads((cache_root / "_asset-library-meta.json").read_text(encoding="utf-8"))
+        index_reference = meta["api_versions"]["v1"]
+        index_path = cache_root / index_reference["url"]
+        assert_hash_reference(index_path, index_reference["hash"])
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        if index["asset_count"] != 1 or len(index["pages"]) != 1:
+            raise RuntimeError("stock Blender emitted the wrong bridge cache listing cardinality")
+        page_reference = index["pages"][0]
+        page_path = cache_root / page_reference["url"]
+        assert_hash_reference(page_path, page_reference["hash"])
+        page = json.loads(page_path.read_text(encoding="utf-8"))
+        expected_relative = f"objects/{expected_sha256[:2]}/{expected_sha256}.blend"
+        if (
+            len(page["files"]) != 1
+            or page["files"][0]["path"] != expected_relative
+            or page["files"][0]["hash"] != f"SHA256:{expected_sha256}"
+        ):
+            raise RuntimeError("stock Blender listing did not preserve the fan-out path and hash")
+        if len(page["assets"]) != 1 or page["assets"][0]["name"] != "SuluFixtureObject":
+            raise RuntimeError("stock Blender listing did not discover the redeemed OBJECT asset")
 
         print(
             f"SULU_BRIDGE_PACKAGED_E2E_OK blender={blender} "
-            f"sha256={expected_sha256} isolated_user={workdir / 'user'}"
+            f"sha256={expected_sha256} distribution=entitled_remote_repository "
+            f"isolated_user={workdir / 'user'}"
         )
     finally:
         if options.keep_workdir:

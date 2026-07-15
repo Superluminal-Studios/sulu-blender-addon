@@ -14,6 +14,7 @@ from bpy.props import BoolProperty, IntProperty, StringProperty
 from .sulu_bridge import (
     DEFAULT_API_ORIGIN,
     BridgeError,
+    CancellationToken,
     ImportAssetError,
     PreparedAsset,
     normalize_api_origin,
@@ -40,7 +41,7 @@ def _cache_root() -> Path:
     )
     if not path:
         raise ImportAssetError("Blender could not create the Sulu Market asset cache")
-    return Path(path).resolve()
+    return Path(os.path.abspath(path))
 
 
 def _register_local_asset_library(context: bpy.types.Context, cache_root: Path) -> bool:
@@ -67,13 +68,58 @@ def _register_local_asset_library(context: bpy.types.Context, cache_root: Path) 
         return False
 
 
-def _remove_loaded_object(obj: bpy.types.Object | None) -> None:
-    if obj is None:
+def _datablock_snapshot() -> set[int]:
+    pointers: set[int] = set()
+    for property_definition in bpy.data.bl_rna.properties:
+        if property_definition.identifier == "rna_type" or property_definition.type != "COLLECTION":
+            continue
+        try:
+            values = getattr(bpy.data, property_definition.identifier)
+            iterator = iter(values)
+        except (AttributeError, TypeError):
+            continue
+        for datablock in iterator:
+            try:
+                pointers.add(datablock.as_pointer())
+            except (AttributeError, ReferenceError):
+                continue
+    return pointers
+
+
+def _remove_new_datablocks(before: set[int]) -> None:
+    new_datablocks: list[Any] = []
+    seen: set[int] = set()
+    for property_definition in bpy.data.bl_rna.properties:
+        if property_definition.identifier == "rna_type" or property_definition.type != "COLLECTION":
+            continue
+        try:
+            values = getattr(bpy.data, property_definition.identifier)
+            iterator = iter(values)
+        except (AttributeError, TypeError):
+            continue
+        for datablock in iterator:
+            try:
+                pointer = datablock.as_pointer()
+            except (AttributeError, ReferenceError):
+                continue
+            if pointer not in before and pointer not in seen:
+                seen.add(pointer)
+                new_datablocks.append(datablock)
+    if not new_datablocks:
         return
     try:
-        bpy.data.objects.remove(obj, do_unlink=True)
-    except (ReferenceError, RuntimeError):
-        pass
+        bpy.data.batch_remove(new_datablocks)
+    except (ReferenceError, RuntimeError, TypeError):
+        # Best-effort fallback for an unusual dependency cycle. The transaction
+        # snapshot remains preferable because it removes meshes, materials,
+        # images, and other appended dependencies, not only the root object.
+        for datablock in reversed(new_datablocks):
+            try:
+                collection = getattr(bpy.data, datablock.bl_rna.identifier.lower() + "s", None)
+                if collection is not None:
+                    collection.remove(datablock)
+            except (AttributeError, ReferenceError, RuntimeError, TypeError):
+                pass
 
 
 def _import_object(
@@ -82,7 +128,7 @@ def _import_object(
 ) -> bpy.types.Object:
     identity = prepared.grant.asset
     name = identity.name
-    loaded_object: bpy.types.Object | None = None
+    before = _datablock_snapshot()
 
     try:
         with bpy.data.libraries.load(
@@ -125,10 +171,10 @@ def _import_object(
         context.view_layer.objects.active = loaded_object
         return loaded_object
     except ImportAssetError:
-        _remove_loaded_object(loaded_object)
+        _remove_new_datablocks(before)
         raise
     except (OSError, RuntimeError, TypeError) as exc:
-        _remove_loaded_object(loaded_object)
+        _remove_new_datablocks(before)
         raise ImportAssetError("Blender could not append the purchased object asset") from exc
 
 
@@ -179,9 +225,9 @@ class SULU_MARKET_Preferences(bpy.types.AddonPreferences):
     max_download_mib: IntProperty(
         name="Maximum asset size (MiB)",
         description="Hard upper bound accepted from signed artifact metadata",
-        default=2048,
+        default=4096,
         min=1,
-        max=16384,
+        max=4096,
     )
 
     def draw(self, context: bpy.types.Context) -> None:
@@ -212,6 +258,7 @@ class SULU_MARKET_OT_import_asset(bpy.types.Operator):
     _timer: Any = None
     _worker_state: dict[str, Any] | None = None
     _cancel_requested: bool = False
+    _cancellation: CancellationToken | None = None
 
     def _settings(self, context: bpy.types.Context) -> dict[str, Any]:
         prefs = _preferences(context)
@@ -280,10 +327,15 @@ class SULU_MARKET_OT_import_asset(bpy.types.Operator):
         state: dict[str, Any] = {"prepared": None, "error": None}
         self._worker_state = state
         self._cancel_requested = False
+        cancellation = CancellationToken()
+        self._cancellation = cancellation
 
         def run() -> None:
             try:
-                state["prepared"] = redeem_descriptor(**settings)
+                state["prepared"] = redeem_descriptor(
+                    **settings,
+                    cancellation=cancellation,
+                )
             except BaseException as exc:  # Store only; Blender API reporting stays on main thread.
                 state["error"] = exc
 
@@ -296,10 +348,13 @@ class SULU_MARKET_OT_import_asset(bpy.types.Operator):
     def modal(self, context: bpy.types.Context, event: bpy.types.Event) -> set[str]:
         if event.type == "ESC":
             self._cancel_requested = True
+            if self._cancellation is not None:
+                self._cancellation.cancel()
         if event.type != "TIMER" or (self._worker is not None and self._worker.is_alive()):
             return {"RUNNING_MODAL"}
 
         self._clear_timer(context)
+        self._cancellation = None
         if self._cancel_requested:
             self._worker_state = None
             self.report({"WARNING"}, "Sulu Market asset import cancelled")
@@ -335,6 +390,9 @@ class SULU_MARKET_OT_import_asset(bpy.types.Operator):
 
     def cancel(self, context: bpy.types.Context) -> None:
         self._cancel_requested = True
+        if self._cancellation is not None:
+            self._cancellation.cancel()
+            self._cancellation = None
         self._clear_timer(context)
 
 

@@ -13,7 +13,7 @@ import subprocess
 import sys
 import tempfile
 import threading
-import urllib.request
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PROCESSOR = REPO_ROOT / "scripts" / "process_assets.py"
 FIXTURE_CREATOR = REPO_ROOT / "tests" / "asset_processor_fixture_create.py"
 IMPORT_VERIFIER = REPO_ROOT / "tests" / "asset_processor_import_verify.py"
+NATIVE_ONLINE_VERIFIER = REPO_ROOT / "tests" / "native_online_asset_e2e_inner.py"
 
 
 def isolated_environment(root: Path) -> dict[str, str]:
@@ -105,6 +106,7 @@ def processor_command(
     output: Path,
     mappings: Path | None = None,
     extra: list[str] | None = None,
+    trusted_metadata: Path,
 ) -> list[str]:
     command = [
         sys.executable,
@@ -115,6 +117,9 @@ def processor_command(
         str(source),
         "--output",
         str(output),
+        "--trusted-metadata",
+        str(trusted_metadata),
+        "--allow-unsafe-direct",
         "--expected-blender-build-hash",
         build_hash,
         "--timeout-seconds",
@@ -156,7 +161,6 @@ def prove_native_listing_download_and_import(
     environment: dict[str, str],
     output: Path,
     manifest: dict[str, Any],
-    downloads: Path,
 ) -> None:
     run(
         [
@@ -207,6 +211,14 @@ def prove_native_listing_download_and_import(
     }
     if listed_assets != expected_assets:
         raise RuntimeError("native asset listing disagrees with normalized manifest")
+    native_assets_by_name = {asset["name"]: asset for asset in page["assets"]}
+    for asset in manifest["assets"]:
+        native_asset = native_assets_by_name[asset["name"]]
+        thumbnail = native_asset.get("thumbnail")
+        if not isinstance(thumbnail, dict):
+            raise RuntimeError("stock listing omitted the processor-generated embedded preview")
+        thumbnail_path = output / urllib.parse.unquote(thumbnail["url"])
+        assert_hash_reference(thumbnail_path, thumbnail["hash"])
 
     def handler(*args: Any, **kwargs: Any) -> QuietHandler:
         return QuietHandler(*args, directory=str(output), **kwargs)
@@ -217,23 +229,42 @@ def prove_native_listing_download_and_import(
     try:
         selected = manifest["assets"][0]
         relative_path = selected["artifact"]["path"]
-        url = f"http://127.0.0.1:{server.server_port}/{relative_path}"
-        with urllib.request.urlopen(url, timeout=10) as response:
-            if response.status != 200:
-                raise RuntimeError("local listing download did not return HTTP 200")
-            payload = response.read(selected["artifact"]["size"] + 1)
-        if len(payload) != selected["artifact"]["size"]:
-            raise RuntimeError("downloaded native listing artifact has the wrong size")
-        if sha256_bytes(payload) != selected["artifact"]["sha256"]:
-            raise RuntimeError("downloaded native listing artifact failed SHA-256")
-        downloads.mkdir()
-        downloaded = downloads / f"{selected['artifact']['sha256']}.blend"
-        downloaded.write_bytes(payload)
+        selected_thumbnail = native_assets_by_name[selected["name"]]["thumbnail"]
+        run(
+            [
+                str(blender),
+                "--background",
+                "--factory-startup",
+                "--online-mode",
+                "--python-exit-code",
+                "1",
+                "--python",
+                str(NATIVE_ONLINE_VERIFIER),
+                "--",
+                "--origin",
+                f"http://127.0.0.1:{server.server_port}/",
+                "--relative-path",
+                relative_path,
+                "--sha256",
+                selected["artifact"]["sha256"],
+                "--preview-relative-path",
+                selected_thumbnail["url"],
+                "--preview-hash",
+                selected_thumbnail["hash"],
+                "--name",
+                selected["name"],
+                "--immutable-id",
+                selected["immutable_id"],
+            ],
+            environment=environment,
+            expected_text="SULU_NATIVE_ONLINE_ASSET_E2E_OK",
+        )
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=10)
 
+    downloaded = output / relative_path
     run(
         [
             str(blender),
@@ -285,6 +316,19 @@ def main() -> None:
         build_hash = match.group(1)
 
         fixtures = workdir / "fixtures"
+        trusted_metadata = workdir / "trusted-metadata.json"
+        trusted_metadata.write_text(
+            json.dumps(
+                {
+                    "seller_org_id": "sellerOrg123456",
+                    "author": "Canonical Sulu Seller",
+                    "license": "CC-BY",
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         valid_source = fixtures / "valid.blend"
         unsupported_source = fixtures / "unsupported.blend"
         unmarked_source = fixtures / "unmarked.blend"
@@ -304,11 +348,17 @@ def main() -> None:
                 build_hash=build_hash,
                 source=valid_source,
                 output=first_output,
+                trusted_metadata=trusted_metadata,
             ),
             environment=environment,
             expected_text="Processed and verified 2 OBJECT asset(s).",
         )
         first_manifest = read_manifest(first_output)
+        for asset in first_manifest["assets"]:
+            if asset["metadata"]["author"] != "Canonical Sulu Seller":
+                raise RuntimeError("seller-authored asset author survived canonical processing")
+            if asset["metadata"]["license"] != "CC-BY":
+                raise RuntimeError("seller-authored asset license survived canonical processing")
         full_source_hash = sha256_bytes(valid_source.read_bytes())
         if first_manifest["source"]["sha256"] != full_source_hash:
             raise RuntimeError("manifest source hash does not cover the complete input file")
@@ -328,6 +378,7 @@ def main() -> None:
                 source=valid_source,
                 output=second_output,
                 mappings=mappings_path,
+                trusted_metadata=trusted_metadata,
             ),
             environment=environment,
             expected_text="Processed and verified 2 OBJECT asset(s).",
@@ -346,6 +397,8 @@ def main() -> None:
                     raise RuntimeError("immutable identity changed across reprocessing")
             if first["artifact"] != second["artifact"]:
                 raise RuntimeError("canonical artifact changed across identical reprocessing")
+            if first["preview"] != second["preview"]:
+                raise RuntimeError("canonical preview changed across identical reprocessing")
 
         rejection_cases = (
             (unsupported_source, "unsupported-out", [], "outside the v1 OBJECT-only contract"),
@@ -379,6 +432,7 @@ def main() -> None:
                     build_hash=build_hash,
                     source=source,
                     output=rejected_output,
+                    trusted_metadata=trusted_metadata,
                     extra=extra,
                 ),
                 environment=environment,
@@ -393,7 +447,6 @@ def main() -> None:
             environment=environment,
             output=first_output,
             manifest=first_manifest,
-            downloads=workdir / "downloads",
         )
         print(
             "SULU_ASSET_PROCESSOR_E2E_OK "

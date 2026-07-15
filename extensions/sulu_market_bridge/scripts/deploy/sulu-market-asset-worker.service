@@ -1,0 +1,64 @@
+[Unit]
+Description=Sulu Market Blender asset worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sulu-market-worker
+Group=sulu-market-worker
+WorkingDirectory=/opt/sulu-market-bridge/scripts
+EnvironmentFile=/etc/sulu/market-asset-worker.env
+ExecStart=/usr/bin/python3 /opt/sulu-market-bridge/scripts/market_asset_worker.py \
+  --api-origin=${MARKET_ASSET_API_ORIGIN} \
+  --worker-id=${MARKET_ASSET_WORKER_ID} \
+  --blender=${MARKET_ASSET_BLENDER_BINARY} \
+  --blender-version=${MARKET_ASSET_WORKER_BLENDER_VERSION} \
+  --blender-build-hash=${MARKET_ASSET_WORKER_BLENDER_BUILD_HASH} \
+  --sandbox-runner=/opt/sulu-market-bridge/scripts/linux_bwrap_runner.py \
+  --sandbox-policy-version=linux-bwrap-v1 \
+  --work-root=/var/lib/sulu-market-worker/jobs
+
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/sulu-market-worker
+ReadOnlyPaths=/opt/sulu-market-bridge /opt/blender-5.2
+
+MemoryAccounting=yes
+MemoryMax=48G
+MemorySwapMax=0
+TasksAccounting=yes
+TasksMax=256
+CPUAccounting=yes
+CPUQuota=800%
+LimitFSIZE=4294967296
+LimitNOFILE=1024
+RuntimeMaxSec=7d
+
+Restart=on-failure
+RestartSec=15s
+TimeoutStopSec=20s
+KillMode=control-group
+
+# Do not set RestrictNamespaces= or a service-wide SystemCallFilter here:
+# Bubblewrap needs namespace/mount syscalls to construct the sandbox. The
+# libseccomp filter is installed for the Blender child after construction.
+
+[Install]
+WantedBy=multi-user.target

@@ -15,6 +15,23 @@ method, and intended API origin. The downloaded file uses a safe
 The backend must never include entitlement, repository, device, account, or
 refresh tokens. `display` is optional and non-authoritative.
 
+Every descriptor also includes the exact compatibility object:
+
+```json
+{
+  "protocol_version": 1,
+  "bridge_min_version": "0.1.0",
+  "bridge_max_version_exclusive": "0.2.0",
+  "blender_min_version": "5.2.0",
+  "blender_max_version_exclusive": "5.3.0"
+}
+```
+
+The Bridge checks this before redemption. The backend checks the same client
+values before atomically consuming the ticket and returns HTTP 426 for an
+unsupported runtime. Compatible patch versions inside either half-open range
+must not require a backend deployment.
+
 ## Redemption
 
 The bridge sends exactly:
@@ -53,6 +70,16 @@ The 200 response follows
   "claim_id": "opaque-claim-id",
   "download_path": "/api/market/assets/download/opaque-claim-id",
   "download_token": "opaque-short-lived-download-token",
+  "compatibility": {
+    "protocol_version": 1,
+    "bridge_min_version": "0.1.0",
+    "bridge_max_version_exclusive": "0.2.0",
+    "blender_min_version": "5.2.0",
+    "blender_max_version_exclusive": "5.3.0"
+  },
+  "limits": {
+    "max_artifact_bytes": 4294967296
+  },
   "artifact": {
     "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "size": 123456
@@ -74,6 +101,11 @@ segment must equal `claim_id`. The backend must reject redirects, return a
 `Content-Length` equal to `size`, and use `application/octet-stream` (preferred)
 or `application/x-blender` for the artifact response.
 
+The compatibility object returned by redemption must exactly equal the one in
+the descriptor. The Bridge rejects a mid-redemption range change. The artifact
+must satisfy both the server's canonical 4 GiB maximum and any lower local
+preference.
+
 ## Artifact invariant
 
 The published `.blend` file must contain exactly one marked asset for the signed
@@ -92,8 +124,10 @@ name is never sufficient identity.
 - A ticket claim is consumed atomically. The backend records a non-secret audit
   event for claim and download outcomes.
 - If the product policy permits a download retry after transport failure, mint a
-  new bounded download claim from authenticated browser/library state; do not
-  make a redeemed drag ticket reusable.
+  new one-use drag descriptor from authenticated browser/library state; do not
+  make a redeemed drag ticket reusable. The backend's already-created download
+  claim may remain retryable only for its exact artifact during its own bounded
+  expiry.
 - Response bodies and logs must not echo ticket or download bearer values.
 - Redemptions and downloads must never redirect to another origin.
 - Rate limits apply by ticket, subject, organization, IP, and product without
@@ -103,8 +137,8 @@ name is never sufficient identity.
 
 The authenticated frontend drag-ticket `POST` receives descriptor JSON plus a
 server-selected safe filename ending in `.suluasset`. The frontend always
-serializes that descriptor into a local `application/json` Blob, creates a local
-object URL, and publishes a Chrome `DownloadURL` entry. It must not fetch or
+serializes that descriptor into a local `application/vnd.sulu.asset+json` Blob,
+creates a local object URL, and publishes a Chrome `DownloadURL` entry. It must not fetch or
 publish an authenticated descriptor URL, and the ticket must never appear in a
 URL. The frontend also renders an explicit local download/open action for
 browsers or desktop environments that do not deliver cross-application file

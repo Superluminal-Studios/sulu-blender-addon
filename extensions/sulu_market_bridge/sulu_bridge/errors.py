@@ -13,6 +13,10 @@ class TransportError(BridgeError):
     """A redemption or artifact request failed safely."""
 
 
+class CancelledError(BridgeError):
+    """The user cooperatively cancelled an in-flight bridge operation."""
+
+
 class CacheError(BridgeError):
     """An artifact could not be verified or committed to the cache."""
 
