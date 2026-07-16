@@ -7,8 +7,8 @@ zstandard>=0.20.0
 # Optional: Static type checking (for BAT code quality)
 mypy>=1.0.0
 
-# Optional: Better test runner (falls back to unittest if not available)
+# Required: canonical test runner (configured by the repo-root pytest.ini)
 pytest>=7.0.0
 
-# Required by submit_worker import path used in focused tests
+# Required by utils/worker_utils.py, which tests/helpers.py re-exports
 requests>=2.31.0

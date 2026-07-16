@@ -121,7 +121,8 @@ def create_packer(
         packer = create_s3packer(bpath, ppath, pathlib.PurePosixPath(target))
 
     elif target.lower().endswith(".zip"):
-        from .pack import zipped
+        # Relative to the top-level package; ".pack" would name this module itself.
+        from ..pack import zipped
 
         if args.compress:
             raise ValueError("ZIP packer does not support on-the-fly compression")
@@ -148,7 +149,8 @@ def create_packer(
 
 
 def create_s3packer(bpath, ppath, tpath) -> pack.Packer:
-    from .pack import s3
+    # Relative to the top-level package; ".pack" would name this module itself.
+    from ..pack import s3
 
     # Split the target path into 's3:/', hostname, and actual target path
     parts = tpath.parts

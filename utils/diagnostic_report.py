@@ -16,6 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from .worker_utils import format_size
+
 
 # Maximum tail_lines stored per upload step in the report JSON.
 # rclone_utils keeps up to 160 lines in memory; we only persist the last N
@@ -142,7 +144,6 @@ class DiagnosticReport:
 
         # Track entries since last flush
         self._entries_since_flush = 0
-        self._current_stage: Optional[str] = None
         self._current_upload_step: Optional[Dict[str, Any]] = None
 
         # Write initial report
@@ -238,7 +239,6 @@ class DiagnosticReport:
     def start_stage(self, stage: str) -> None:
         """Start a new stage (trace, pack, upload)."""
         with self._lock:
-            self._current_stage = stage
             if stage in self._data["stages"]:
                 self._data["stages"][stage]["started_at"] = datetime.now().isoformat()
             self.flush()
@@ -329,7 +329,6 @@ class DiagnosticReport:
                         "has_warnings": has_warnings,
                     }
 
-            self._current_stage = None
             self.flush()
 
     def add_trace_entry(
@@ -493,7 +492,7 @@ class DiagnosticReport:
 
                     self._current_upload_step["rclone_stats"] = stats_to_store
 
-                    # --- Generate anomaly warnings (most specific wins) ---
+                    # Generate anomaly warnings, prioritizing the most specific.
                     checks = rclone_stats.get("checks", 0) or 0
                     transfers = rclone_stats.get("transfers", 0) or 0
                     stats_received = rclone_stats.get("stats_received", True)
@@ -501,14 +500,14 @@ class DiagnosticReport:
 
                     warning = ""
 
-                    # 1. Most fundamental: rclone emitted no stats at all
+                    # No rclone statistics
                     if not stats_received:
                         warning = (
                             "rclone emitted no transfer stats — "
                             "source path may be invalid or transfer "
                             "completed instantly"
                         )
-                    # 2. checks/transfers counters
+                    # Check and transfer counters
                     elif checks == 0 and transfers == 0:
                         warning = (
                             "rclone checked 0 files — manifest may be "
@@ -522,7 +521,7 @@ class DiagnosticReport:
                             "missing"
                         )
 
-                    # 3. bytes_transferred vs expected_bytes mismatch
+                    # Transferred and expected byte mismatch
                     if expected and expected > 0:
                         if bytes_transferred == 0:
                             mismatch = (
@@ -545,7 +544,7 @@ class DiagnosticReport:
                             else:
                                 warning = mismatch
 
-                    # 4. Non-zero errors despite exit 0
+                    # Non-zero errors despite exit code 0
                     errors = rclone_stats.get("errors", 0) or 0
                     if errors > 0:
                         error_warning = (
@@ -666,18 +665,7 @@ def generate_test_report(
 
     Returns: (report_dict, report_path) where report_path is None if saving failed.
     """
-    # Use provided format_size or fallback
-    def _format_size(size_bytes: int) -> str:
-        if format_size_fn:
-            return format_size_fn(size_bytes)
-        if size_bytes < 1000:
-            return f"{size_bytes} B"
-        elif size_bytes < 1000 * 1000:
-            return f"{size_bytes / 1000:.1f} KB"
-        elif size_bytes < 1000 * 1000 * 1000:
-            return f"{size_bytes / (1000 * 1000):.1f} MB"
-        else:
-            return f"{size_bytes / (1000 * 1000 * 1000):.2f} GB"
+    size_formatter = format_size_fn or format_size
 
     # Build report data
     blend_size = 0
@@ -707,13 +695,13 @@ def generate_test_report(
             "path": str(blend_path),
             "name": os.path.basename(blend_path),
             "size_bytes": blend_size,
-            "size_human": _format_size(blend_size),
+            "size_human": size_formatter(blend_size),
         },
         "project_root": str(project_root),
         "dependencies": {
             "total_count": len(dep_paths),
             "total_size_bytes": total_size,
-            "total_size_human": _format_size(total_size),
+            "total_size_human": size_formatter(total_size),
             "by_extension": dict(sorted(by_ext.items(), key=lambda x: -x[1])),
             "same_drive_count": len(same_drive_deps),
             "cross_drive_count": len(cross_drive_deps),

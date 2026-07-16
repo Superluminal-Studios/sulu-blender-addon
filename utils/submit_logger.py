@@ -16,26 +16,19 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Import shared utilities
-from .worker_utils import count as _count, format_size, supports_unicode
+from .worker_utils import count as _count, format_size
 
 # Import TUI utilities from logger_utils
 from .logger_utils import (
     # Rich library
-    RICH_AVAILABLE,
-    Console,
     Table,
     Panel,
     Text,
-    Style,
-    Rule,
-    Theme,
     Align,
-    Live,
     box,
     # Glyphs
     ELLIPSIS,
@@ -46,227 +39,44 @@ from .logger_utils import (
     GLYPH_INFO,
     GLYPH_ARROW,
     GLYPH_BULLET,
-    GLYPH_SEAM,
-    GLYPH_DASH,
     GLYPH_HEX,
     GLYPH_LINK,
-    BAR_FULL,
-    BAR_EMPTY,
     # Theme and console
-    SULU_TUI_THEME,
     SULU_PANEL_BOX,
     SULU_TABLE_BOX,
-    PANEL_PADDING,
-    get_console,
     get_logo_mark as _get_logo_mark,
+    TranscriptLogger,
     # Data models
     TraceEntry,
     BLOCK_TYPE_NAMES,
 )
 
-# Check for Unicode support
-_UNICODE = supports_unicode()
+# Submit logger
 
 
-# ─────────────────────────── Submit Logger ───────────────────────────
-
-
-class SubmitLogger:
+class SubmitLogger(TranscriptLogger):
     """
     Rich-based logger for submit worker with a consistently styled, scrolling transcript.
 
     Falls back to plain text if rich is not available.
     """
 
-    MIN_TABLE_WIDTH = 60
-
     def __init__(
         self,
         log_fn: Optional[Callable[[str], None]] = None,
         input_fn: Optional[Callable[[str, str], str]] = None,
     ):
-        self.console = get_console() if RICH_AVAILABLE else None
-        self._log_fn = log_fn or print
-        self._input_fn = input_fn or (lambda prompt, default="": input(prompt))
+        super().__init__(log_fn=log_fn, input_fn=input_fn)
 
         self._trace_entries: List[TraceEntry] = []
         self._pack_entries: List[Dict[str, Any]] = []
         self._zip_entries: List[Dict[str, Any]] = []
 
-        self._zip_total = 0
-
-        self._upload_total = 0
-        self._upload_step = 0
-        self._transfer_active = False
-        self._transfer_title = ""
-        self._transfer_detail = ""
-        self._transfer_cur = 0
-        self._transfer_total = 0
-
-        # Live region for in-place progress (single line; no frame flicker)
-        self._live = None
-        self._last_progress_time = 0.0
-        self._progress_bar_width = 0
-        self._inline_progress_active = False
-
         # “last known” artifacts so the success screen can show them
         self._last_report_path: Optional[str] = None
         self._last_job_url: Optional[str] = None
 
-    # ───────────────────── internal helpers ─────────────────────
-
-    def _compute_cols(self) -> Dict[str, int]:
-        width = max(self.MIN_TABLE_WIDTH, self._get_width())
-        status_w = 3
-        gaps = 3
-        lead = 2
-        usable = max(30, width - lead - gaps - status_w)
-        col_w = max(10, usable // 3)
-        return {"col": col_w, "status": status_w, "total": width}
-
-    def _print(self, msg: str = "") -> None:
-        if self.console:
-            self.console.print(msg)
-        else:
-            self._log_fn(msg)
-
-    def _rule(self, title: str = "") -> None:
-        if self.console and Rule is not None:
-            if title:
-                self.console.print(
-                    Rule(f"[sulu.muted]{title}[/]", style="sulu.stroke_subtle")
-                )
-            else:
-                self.console.print(Rule(style="sulu.stroke_subtle"))
-        else:
-            self._log_fn("-" * 70)
-
-    def _panel(
-        self,
-        body: Any,
-        *,
-        title: Optional[Any] = None,
-        border_style: str = "sulu.stroke",
-        style: str = "sulu.panel",
-        box_style: Any = None,
-        padding: Tuple[int, int] = PANEL_PADDING,
-    ) -> Any:
-        if Panel is None:
-            return body
-        return Panel(
-            body,
-            title=title,
-            title_align="left",
-            border_style=border_style,
-            padding=padding,
-            box=box_style or SULU_PANEL_BOX,
-            style=style,
-        )
-
-    def _trunc(self, val: str, mx: int) -> str:
-        s = str(val or "")
-        if mx <= 0:
-            return ""
-        if len(s) <= mx:
-            return s
-        ell = "…" if _UNICODE else "."
-        return s[: mx - 1] + ell
-
-    def _get_width(self) -> int:
-        if self.console:
-            try:
-                return int(self.console.width or 80)
-            except Exception:
-                pass
-        return 80
-
-    def _can_prompt(self) -> bool:
-        """
-        Best-effort: only block on input when stdin looks interactive.
-        (We still *display* the prompt inside the success panel either way.)
-        """
-        try:
-            return bool(sys.stdin) and bool(
-                getattr(sys.stdin, "isatty", lambda: False)()
-            )
-        except Exception:
-            return False
-
-    # ───────────────────── logo marks ─────────────────────
-
-    def _print_logo(self, style: str = "sulu.dim", gradient_bg: bool = False) -> None:
-        width = self._get_width()
-        logo_str = _get_logo_mark(width)
-        if not logo_str:
-            return
-
-        lines = logo_str.split("\n")
-        max_len = max(len(line) for line in lines) if lines else 0
-
-        # Add empty lines above and below for more space/earth effect
-        extra_top_lines = 4
-        extra_bottom_lines = 3
-        if gradient_bg:
-            lines = [""] * extra_top_lines + lines + [""] * extra_bottom_lines
-
-        num_lines = len(lines)
-
-        # Space -> Atmosphere -> Earth gradient (darker version)
-        bg_gradient = [
-            "#000000",  # pure black space
-            "#000000",
-            "#010204",
-            "#020408",
-            "#03060c",
-            "#040810",  # deep space
-            "#050a14",
-            "#060c18",
-            "#070e1c",
-            "#081020",
-            "#091224",  # space with hint of blue
-            "#0a1428",
-            "#0b162c",
-            "#0c1830",
-            "#0d1a34",
-            "#0e1c38",  # upper atmosphere
-            "#0f1e3c",
-            "#102040",
-            "#112244",
-            "#122448",
-            "#13264c",  # atmosphere
-            "#142850",
-            "#152a54",
-            "#162c58",
-            "#172e5c",
-            "#183060",  # lower atmosphere
-        ]
-
-        if self.console and Text is not None:
-            for i, line in enumerate(lines):
-                padding = max(0, (width - max_len) // 2)
-                padded_line = " " * padding + line
-
-                if gradient_bg and num_lines > 1:
-                    # Map line index to gradient color
-                    color_idx = int(
-                        (i / max(num_lines - 1, 1)) * (len(bg_gradient) - 1)
-                    )
-                    bg_color = bg_gradient[color_idx]
-                    # Pad line to full width for continuous background
-                    padded_line = padded_line.ljust(width)
-                    t = Text(padded_line, style=f"#A0A8B8 on {bg_color}")
-                else:
-                    t = Text(padded_line, style=style)
-
-                t.no_wrap = True
-                t.overflow = "crop"
-                self.console.print(t)
-        else:
-            self._log_fn("")
-            for line in lines:
-                padding = max(0, (width - max_len) // 2)
-                self._log_fn(" " * padding + line)
-            self._log_fn("")
+    # Logo marks
 
     def logo_start(self) -> None:
         if self.console and Text is not None:
@@ -281,134 +91,7 @@ class SubmitLogger:
             self._log_fn("=== SULU SUBMITTER ===")
             self._log_fn("Render farm submission pipeline")
 
-    # ───────────────────── progress (no flicker, no newlines) ─────────────────────
-
-    def _compute_progress_bar_width(self) -> int:
-        width = max(self.MIN_TABLE_WIDTH, self._get_width())
-        reserved = 2 + 4 + 30
-        bar_w = max(18, width - reserved)
-        return min(60, bar_w)
-
-    def _build_progress_line(self, cur: int, total: int) -> Any:
-        if not self.console or Text is None:
-            return ""
-
-        bar_width = self._progress_bar_width or self._compute_progress_bar_width()
-
-        line = Text()
-        line.no_wrap = True
-        line.overflow = "crop"
-
-        line.append("  ", style="sulu.dim")
-        line.append(f"{GLYPH_SEAM} ", style="sulu.stroke_subtle")
-
-        if total > 0:
-            pct = cur / max(total, 1)
-            pct = 0.0 if pct < 0.0 else (1.0 if pct > 1.0 else pct)
-
-            filled = int(bar_width * pct)
-            empty = max(0, bar_width - filled)
-
-            bar = Text()
-            bar.no_wrap = True
-            bar.overflow = "crop"
-            if filled:
-                bar.append(BAR_FULL * filled, style="sulu.accent")
-            if empty:
-                bar.append(BAR_EMPTY * empty, style="sulu.stroke_subtle")
-
-            line.append_text(bar)
-            line.append(f" {GLYPH_SEAM} ", style="sulu.stroke_subtle")
-
-            line.append(f"{pct * 100:5.1f}%", style="sulu.accent")
-            line.append("  ", style="sulu.stroke_subtle")
-            line.append(f"{format_size(cur)}", style="sulu.fg")
-            line.append(" / ", style="sulu.dim")
-            line.append(f"{format_size(total)}", style="sulu.muted")
-        else:
-            bar = Text(BAR_EMPTY * bar_width, style="sulu.stroke_subtle")
-            bar.no_wrap = True
-            bar.overflow = "crop"
-            line.append_text(bar)
-            line.append(f" {GLYPH_SEAM} ", style="sulu.stroke_subtle")
-            line.append(f"{format_size(cur)}", style="sulu.fg")
-            line.append(" transferred", style="sulu.dim")
-
-        return line
-
-    def _start_live_progress(self) -> None:
-        if not self.console or Live is None:
-            return
-        if self._live is not None:
-            return
-
-        renderable = self._build_progress_line(self._transfer_cur, self._transfer_total)
-
-        try:
-            self._live = Live(
-                renderable,
-                console=self.console,
-                refresh_per_second=10,
-                screen=False,
-                transient=True,
-                auto_refresh=False,  # repaint only when we call update()
-                vertical_overflow="crop",
-            )
-        except TypeError:
-            try:
-                self._live = Live(
-                    renderable,
-                    console=self.console,
-                    refresh_per_second=10,
-                    screen=False,
-                    transient=True,
-                    auto_refresh=False,
-                )
-            except TypeError:
-                self._live = Live(renderable, console=self.console)
-
-        try:
-            self._live.start(refresh=True)
-        except TypeError:
-            try:
-                self._live.start()
-            except Exception:
-                self._live = None
-                return
-        except Exception:
-            self._live = None
-            return
-
-        self._inline_progress_active = False
-
-    def _stop_live_progress(self) -> None:
-        if self._live is not None:
-            try:
-                self._live.stop()
-            except Exception:
-                pass
-            self._live = None
-
-        if self._inline_progress_active and self.console:
-            try:
-                self.console.file.write("\r\033[2K")
-                self.console.file.flush()
-            except Exception:
-                pass
-            self._inline_progress_active = False
-
-    def _live_update(self, renderable: Any) -> None:
-        if self._live is None:
-            return
-        try:
-            self._live.update(renderable, refresh=True)
-        except TypeError:
-            try:
-                self._live.update(renderable)
-            except Exception:
-                pass
-
-    # ───────────────────── stage headers ─────────────────────
+    # Stage headers
 
     def stage_header(
         self,
@@ -454,7 +137,7 @@ class SubmitLogger:
                     self._log_fn(f"  - {line}")
             self._log_fn("=" * 70)
 
-    # ───────────────────── trace logging ─────────────────────
+    # Trace logging
 
     def trace_start(self, blend_path: str) -> None:
         self._trace_entries = []
@@ -793,7 +476,7 @@ class SubmitLogger:
             if warning_text:
                 self._log_fn(warning_text)
 
-    # ───────────────────── packing logging ─────────────────────
+    # Packing logging
 
     def pack_start(self) -> None:
         self._pack_entries = []
@@ -890,10 +573,9 @@ class SubmitLogger:
                 f"{title}: {_count(ok_count, 'file')}, {format_size(total_size)}"
             )
 
-    # ───────────────────── zip callbacks (BAT) ─────────────────────
+    # ZIP callbacks (BAT)
 
     def zip_start(self, total_files: int, total_bytes: int) -> None:
-        self._zip_total = total_files
         self._zip_entries: List[Dict[str, Any]] = []
         # Table will be printed at zip_done
 
@@ -971,12 +653,9 @@ class SubmitLogger:
                 f"Archive ready: {_count(total_files, 'file')}, {format_size(total_bytes)}, {elapsed:.1f}s"
             )
 
-    # ───────────────────── upload / transfer ─────────────────────
+    # Upload and transfer
 
     def upload_start(self, total: int) -> None:
-        self._upload_total = total
-        self._upload_step = 0
-        self._transfer_active = False
         self._last_progress_time = 0.0
         self._progress_bar_width = 0
         self._inline_progress_active = False
@@ -987,10 +666,6 @@ class SubmitLogger:
     ) -> None:
         self._stop_live_progress()
 
-        self._upload_step = step
-        self._transfer_title = title
-        self._transfer_detail = detail
-        self._transfer_active = True
         self._transfer_cur = 0
         self._transfer_total = 0
         self._progress_bar_width = self._compute_progress_bar_width()
@@ -1009,208 +684,7 @@ class SubmitLogger:
         else:
             self._log_fn(f"\n[{step}/{total_steps}] {title} {detail}")
 
-    def transfer_progress(self, cur: int, total: int) -> None:
-        self._transfer_cur = cur
-        self._transfer_total = total
-
-        if self.console and Text is not None:
-            self._render_progress_bar(cur, total)
-        else:
-            if total > 0:
-                pct = (cur / max(total, 1)) * 100
-                sys.stderr.write(
-                    f"\r  {format_size(cur)} / {format_size(total)} ({pct:.1f}%) "
-                )
-                sys.stderr.flush()
-
-    def transfer_progress_ext(
-        self,
-        cur: int,
-        total: int,
-        checks: int = 0,
-        transfers: int = 0,
-        status: str = "",
-        current_file: str = "",
-    ) -> None:
-        """
-        Extended progress update with verification/checking status.
-
-        Args:
-            cur: Bytes transferred so far
-            total: Total bytes to transfer
-            checks: Number of files checked by rclone
-            transfers: Number of files actually transferred
-            status: "checking", "transferring", or ""
-            current_file: Name of file currently being checked/transferred
-        """
-        self._transfer_cur = cur
-        self._transfer_total = total
-
-        if self.console and Text is not None:
-            self._render_progress_bar_ext(cur, total, checks, transfers, status, current_file)
-        else:
-            # Plain text fallback with status suffix
-            status_suffix = ""
-            if status == "checking":
-                status_suffix = f"  Checking {checks} existing files"
-            elif transfers > 0 and checks > transfers:
-                skipped = checks - transfers
-                status_suffix = f"  ({skipped} unchanged)"
-
-            if total > 0:
-                pct = (cur / max(total, 1)) * 100
-                sys.stderr.write(
-                    f"\r  {format_size(cur)} / {format_size(total)} ({pct:.1f}%){status_suffix} "
-                )
-            else:
-                sys.stderr.write(f"\r  {format_size(cur)} transferred{status_suffix} ")
-            sys.stderr.flush()
-
-    def _render_progress_bar(self, cur: int, total: int) -> None:
-        if not self.console or Text is None:
-            return
-
-        now = time.time()
-        if (now - self._last_progress_time) < 0.1:
-            return
-        self._last_progress_time = now
-
-        self._start_live_progress()
-        renderable = self._build_progress_line(cur, total)
-
-        if self._live is not None:
-            self._live_update(renderable)
-            return
-
-        # Fallback: CR update (still no newlines)
-        try:
-            self.console.file.write("\r\033[2K")
-            self.console.file.flush()
-        except Exception:
-            pass
-        try:
-            self.console.print(renderable, end="")
-            try:
-                self.console.file.flush()
-            except Exception:
-                pass
-            self._inline_progress_active = True
-        except Exception:
-            pass
-
-    def _build_progress_line_ext(
-        self,
-        cur: int,
-        total: int,
-        checks: int,
-        transfers: int,
-        status: str,
-        current_file: str,
-    ) -> Any:
-        """Build progress line with extended status (checking/verifying info)."""
-        if not self.console or Text is None:
-            return ""
-
-        bar_width = self._progress_bar_width or self._compute_progress_bar_width()
-        # Reduce bar width to make room for status suffix
-        bar_width = max(12, bar_width - 20)
-
-        line = Text()
-        line.no_wrap = True
-        line.overflow = "crop"
-
-        line.append("  ", style="sulu.dim")
-        line.append(f"{GLYPH_SEAM} ", style="sulu.stroke_subtle")
-
-        if total > 0:
-            pct = cur / max(total, 1)
-            pct = 0.0 if pct < 0.0 else (1.0 if pct > 1.0 else pct)
-
-            filled = int(bar_width * pct)
-            empty = max(0, bar_width - filled)
-
-            bar = Text()
-            bar.no_wrap = True
-            bar.overflow = "crop"
-            if filled:
-                bar.append(BAR_FULL * filled, style="sulu.accent")
-            if empty:
-                bar.append(BAR_EMPTY * empty, style="sulu.stroke_subtle")
-
-            line.append_text(bar)
-            line.append(f" {GLYPH_SEAM} ", style="sulu.stroke_subtle")
-
-            line.append(f"{pct * 100:5.1f}%", style="sulu.accent")
-            line.append("  ", style="sulu.stroke_subtle")
-            line.append(f"{format_size(cur)}", style="sulu.fg")
-            line.append(" / ", style="sulu.dim")
-            line.append(f"{format_size(total)}", style="sulu.muted")
-        else:
-            bar = Text(BAR_EMPTY * bar_width, style="sulu.stroke_subtle")
-            bar.no_wrap = True
-            bar.overflow = "crop"
-            line.append_text(bar)
-            line.append(f" {GLYPH_SEAM} ", style="sulu.stroke_subtle")
-            line.append(f"{format_size(cur)}", style="sulu.fg")
-            line.append(" transferred", style="sulu.dim")
-
-        # Add status suffix based on checking/transferring state
-        if status == "checking":
-            line.append("  ", style="sulu.dim")
-            line.append(f"Checking {checks} existing files", style="sulu.muted")
-        elif transfers > 0 and checks > transfers:
-            skipped = checks - transfers
-            line.append("  ", style="sulu.dim")
-            line.append(f"({skipped} unchanged)", style="sulu.muted")
-
-        return line
-
-    def _render_progress_bar_ext(
-        self,
-        cur: int,
-        total: int,
-        checks: int,
-        transfers: int,
-        status: str,
-        current_file: str,
-    ) -> None:
-        """Render extended progress bar with verification status."""
-        if not self.console or Text is None:
-            return
-
-        now = time.time()
-        if (now - self._last_progress_time) < 0.1:
-            return
-        self._last_progress_time = now
-
-        self._start_live_progress()
-        renderable = self._build_progress_line_ext(
-            cur, total, checks, transfers, status, current_file
-        )
-
-        if self._live is not None:
-            self._live_update(renderable)
-            return
-
-        # Fallback: CR update (still no newlines)
-        try:
-            self.console.file.write("\r\033[2K")
-            self.console.file.flush()
-        except Exception:
-            pass
-        try:
-            self.console.print(renderable, end="")
-            try:
-                self.console.file.flush()
-            except Exception:
-                pass
-            self._inline_progress_active = True
-        except Exception:
-            pass
-
     def upload_complete(self, title: str) -> None:
-        self._transfer_active = False
-
         if self.console and Text is not None:
             self._stop_live_progress()
 
@@ -1233,34 +707,7 @@ class SubmitLogger:
             sys.stderr.flush()
             self._log_fn(f"  {GLYPH_OK} {title}")
 
-    def upload_end(self, elapsed: float) -> None:
-        if self.console and Text is not None:
-            self._stop_live_progress()
-
-            self.console.print()
-            body = Text()
-            body.append(f"{GLYPH_OK} ", style="sulu.ok_b")
-            body.append("Transfer complete", style="sulu.title")
-            body.append("  ·  ", style="sulu.stroke_subtle")
-            body.append(f"{elapsed:.1f}s", style="sulu.muted")
-
-            panel = self._panel(
-                body,
-                title=Text(f"{GLYPH_HEX}  Upload", style="sulu.dim"),
-                border_style="sulu.ok",
-                style="sulu.well",
-            )
-            self.console.print(panel)
-        else:
-            self._log_fn(f"\nTransfer complete in {elapsed:.1f}s")
-
-    # ───────────────────── general messages ─────────────────────
-
-    def info(self, msg: str) -> None:
-        if self.console:
-            self.console.print(f"[sulu.dim]{GLYPH_INFO}[/] [sulu.muted]{msg}[/]")
-        else:
-            self._log_fn(f"[i] {msg}")
+    # General messages
 
     def report_info(self, report_path: str) -> None:
         """Display the diagnostic report location (and remember it for the success screen)."""
@@ -1272,28 +719,7 @@ class SubmitLogger:
         else:
             self._log_fn(f"Diagnostic report: {report_path}")
 
-    def success(self, msg: str) -> None:
-        if self.console:
-            self.console.print(f"[sulu.ok_b]{GLYPH_OK}[/] [sulu.fg]{msg}[/]")
-        else:
-            self._log_fn(f"{GLYPH_OK} {msg}")
-
-    def warning(self, msg: str) -> None:
-        if self.console:
-            self.console.print(f"[sulu.warn_b]{GLYPH_WARN}[/] [sulu.warn]{msg}[/]")
-        else:
-            self._log_fn(f"! {msg}")
-
-    def error(self, msg: str) -> None:
-        if self.console:
-            self.console.print(f"[sulu.err_b]{GLYPH_FAIL}[/] [sulu.err]{msg}[/]")
-        else:
-            self._log_fn(f"X {msg}")
-
-    def log(self, msg: str) -> None:
-        self._print(msg)
-
-    # ───────────────────── success screen (beautiful + integrated prompt) ─────────────────────
+    # Success screen and prompt
 
     def _success_action_block(self, *, have_job: bool, have_report: bool) -> Any:
         """
@@ -1373,24 +799,7 @@ class SubmitLogger:
         ):
             self.console.print()
 
-            # Account for panel borders (2) + padding (4) + grid overhead (2) = 8 chars
-            inner_w = max(20, self._get_width() - 8)
-            logo_str = _get_logo_mark(inner_w)
-
-            logo_renderable = None
-            if logo_str:
-                # Build a grid with each line as a separate row
-                lines = logo_str.split("\n")
-                max_len = max(len(line) for line in lines) if lines else 0
-                padding = max(0, (inner_w - max_len) // 2)
-                logo_grid = Table.grid(padding=(0, 0))
-                logo_grid.add_column()
-                for line in lines:
-                    line_txt = Text(" " * padding + line, style="#FFFFFF")
-                    line_txt.no_wrap = True
-                    line_txt.overflow = "crop"
-                    logo_grid.add_row(line_txt)
-                logo_renderable = logo_grid
+            logo_renderable = self._centered_logo_grid(_get_logo_mark)
 
             headline = Text("Submission complete", style="sulu.ok_b")
             headline.justify = "center"
@@ -1484,7 +893,7 @@ class SubmitLogger:
             return "r" if have_report else "c"
         return "c"
 
-    # ───────────────────── chat-style prompts ─────────────────────
+    # Chat-style prompts
 
     def ask_choice(
         self,
@@ -1557,25 +966,7 @@ class SubmitLogger:
 
             return answer
 
-    # ───────────────────── warn / prompt / fatal ─────────────────────
-
-    def warn_block(self, message: str, severity: str = "warning") -> None:
-        if not self.console or Panel is None or Text is None:
-            tag = "Warning" if severity == "warning" else "Error"
-            self._log_fn(f"{tag}: {message}")
-            return
-
-        border = "sulu.warn" if severity == "warning" else "sulu.err"
-        glyph = GLYPH_WARN if severity == "warning" else GLYPH_FAIL
-        title = Text(f"{glyph}  {severity.title()}", style="sulu.muted")
-        panel = self._panel(
-            Text(str(message), style="sulu.fg"),
-            title=title,
-            border_style=border,
-            style="sulu.well",
-        )
-        self.console.print()
-        self.console.print(panel)
+    # Prompt and exit
 
     def prompt(self, question: str, default: str = "") -> str:
         if self.console and Text is not None and Panel is not None:
@@ -1607,14 +998,6 @@ class SubmitLogger:
         else:
             self._log_fn(f"[SU⡾LU] {question}")
             return self._input_fn("", default)
-
-    def fatal(self, message: str) -> None:
-        self.warn_block(message, severity="error")
-        try:
-            self._input_fn("\nPress Enter to close.", "")
-        except Exception:
-            pass
-        sys.exit(1)
 
     def info_exit(self, message: str) -> None:
         if self.console and Panel is not None and Text is not None:
@@ -1742,20 +1125,7 @@ class SubmitLogger:
 
             return ""
 
-    # ───────────────────── storage connection ─────────────────────
-
-    def storage_connect(self, status: str = "connecting") -> None:
-        if status == "connecting":
-            self.info("Connecting to storage")
-        else:
-            if self.console:
-                self.console.print(
-                    f"[sulu.ok_b]{GLYPH_OK}[/] [sulu.fg]Storage connected[/]"
-                )
-            else:
-                self._log_fn("Storage connected")
-
-    # ───────────────────── job complete ─────────────────────
+    # Job completion
 
     def job_complete(self, web_url: str) -> None:
         """Log that the job page was opened in the browser (and remember it)."""
@@ -1773,7 +1143,7 @@ class SubmitLogger:
         else:
             self._log_fn(f"Opened in browser: {web_url}")
 
-    # ───────────────────── reports (test / no-submit) ─────────────────────
+    # Test and no-submit reports
 
     def test_report(
         self,
@@ -1911,42 +1281,8 @@ class SubmitLogger:
             for line in lines:
                 self._log_fn(f"  {line}")
 
-    # Compatibility aliases (older names)
-    def pack_file(
-        self,
-        index: int,
-        total: int,
-        filepath: str,
-        size: Optional[int] = None,
-        status: str = "ok",
-    ) -> None:
-        self.pack_entry(index, filepath, size=size, status=status)
 
-    def pack_summary(
-        self,
-        ok_count: int,
-        missing_count: int = 0,
-        unreadable_count: int = 0,
-        cross_drive_count: int = 0,
-        total_size: int = 0,
-    ) -> None:
-        if missing_count or unreadable_count or cross_drive_count:
-            parts = []
-            if cross_drive_count:
-                parts.append(
-                    f"{_count(cross_drive_count, 'dependency')} on another drive"
-                )
-            if missing_count:
-                parts.append(f"{_count(missing_count, 'missing dependency')}")
-            if unreadable_count:
-                parts.append(f"{_count(unreadable_count, 'dependency')} not readable")
-            self.warn_block("Problems found: " + ", ".join(parts), severity="warning")
-        self.pack_end(
-            ok_count=ok_count, total_size=total_size, title="Packing complete"
-        )
-
-
-# ─────────────────────────── Factory ───────────────────────────
+# Factory
 
 
 def create_logger(

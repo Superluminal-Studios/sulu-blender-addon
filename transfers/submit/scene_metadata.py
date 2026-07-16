@@ -3,36 +3,20 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Any
 
+if __package__:
+    from .rna_utils import _iter_collection, _name, _safe_get, _safe_int
+else:
+    import importlib.util
 
-def _iter_collection(value: Any) -> list[Any]:
-    if value is None or isinstance(value, (str, bytes)):
-        return []
-    try:
-        return list(value)
-    except TypeError:
-        return []
-
-
-def _safe_get(obj: Any, name: str, default: Any = None) -> Any:
-    try:
-        return getattr(obj, name, default)
-    except Exception:
-        return default
-
-
-def _name(obj: Any) -> str:
-    if obj is None:
-        return ""
-    if isinstance(obj, str):
-        return obj.strip()
-    return str(_safe_get(obj, "name", "") or "").strip()
-
-
-def _safe_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
+    _rna_spec = importlib.util.spec_from_file_location(
+        "sulu_submit_rna_utils", __file__.replace("scene_metadata.py", "rna_utils.py")
+    )
+    _rna_utils = importlib.util.module_from_spec(_rna_spec)
+    _rna_spec.loader.exec_module(_rna_utils)
+    _iter_collection = _rna_utils._iter_collection
+    _name = _rna_utils._name
+    _safe_get = _rna_utils._safe_get
+    _safe_int = _rna_utils._safe_int
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:

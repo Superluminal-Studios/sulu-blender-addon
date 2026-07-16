@@ -12,14 +12,12 @@ The approach is simple and OS-agnostic:
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Optional, Tuple
 
 
 def read_file_with_hydration(
     path: str,
     hydrate: bool = True,
-    timeout_seconds: int = 30,
 ) -> Tuple[bool, Optional[str]]:
     """
     Read a file, ensuring it's fully available (hydrated for cloud files).
@@ -32,7 +30,6 @@ def read_file_with_hydration(
         path: Path to the file
         hydrate: If True, read the entire file to ensure full availability.
                  If False, just read 1 byte to verify accessibility.
-        timeout_seconds: Not used in this implementation (kept for API compat)
 
     Returns:
         (success, error_message) tuple where success=True means the file
@@ -48,11 +45,7 @@ def read_file_with_hydration(
     except Exception:
         pass
 
-    # Try to open and read the file
-    # This is the most reliable cross-platform way to:
-    # 1. Check if the file exists
-    # 2. Trigger cloud providers to download placeholder files
-    # 3. Verify the file is actually readable
+    # Reading checks existence and readability and triggers hydration when needed.
     try:
         with open(path_str, "rb") as f:
             if hydrate:
@@ -86,40 +79,3 @@ def read_file_with_hydration(
         return (False, f"OS error: {e}")
     except Exception as e:
         return (False, f"{type(e).__name__}: {e}")
-
-
-def is_cloud_placeholder(path: str) -> bool:
-    """
-    Check if a file might be a cloud placeholder.
-
-    This is a heuristic check - it returns True if the file appears to be
-    a cloud placeholder that might need hydration. The check is conservative
-    and cross-platform.
-
-    Note: This function is kept for API compatibility but the main logic
-    in read_file_with_hydration handles cloud files transparently.
-    """
-    # Simple heuristic: if the file doesn't exist via os.path.exists but
-    # we can get some info about it, it might be a cloud placeholder
-    try:
-        exists = os.path.exists(path)
-        if exists:
-            return False  # File exists normally, not a placeholder
-
-        # File doesn't exist - could be missing or a placeholder
-        # Try to check parent directory
-        parent = os.path.dirname(path)
-        if parent and os.path.isdir(parent):
-            # Parent exists but file doesn't - could be cloud placeholder
-            # or just missing. We can't tell for sure cross-platform.
-            return False  # Assume missing, not placeholder
-
-        return False
-    except Exception:
-        return False
-
-
-# Alias for backwards compatibility
-def hydrate_file(path: str, timeout_seconds: int = 30) -> Tuple[bool, Optional[str]]:
-    """Alias for read_file_with_hydration with hydrate=True."""
-    return read_file_with_hydration(path, hydrate=True, timeout_seconds=timeout_seconds)

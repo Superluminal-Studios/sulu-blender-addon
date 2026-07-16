@@ -13,7 +13,7 @@ Usage:
         # fixture.root is the temp directory
         # fixture.blend is the main .blend path
         # fixture.dependencies lists all dependency paths
-        run_tests(fixture)
+        exercise_fixture(fixture)
     # Temp dir automatically cleaned up
 """
 
@@ -595,9 +595,7 @@ def create_nightmare_scenario(name: str = "nightmare"):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # FIXTURE DISCOVERY AND REGISTRATION
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 ALL_FIXTURE_CREATORS = {

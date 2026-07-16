@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import bpy
+import sys
+import traceback
 import webbrowser
 import time
 import platform
@@ -10,9 +12,22 @@ from .constants import POCKETBASE_URL
 from .pocketbase_auth import logged_session_request
 from .storage import Storage
 from .utils.request_utils import fetch_projects
-from .utils.logging import report_exception
 from .utils.project_context import ProjectContextError
 from .preferences import apply_project_context
+
+
+def report_exception(
+    op: bpy.types.Operator,
+    exc: Exception,
+    message: str,
+    cleanup=None,
+):
+    """Log the traceback, report a concise UI error, and run optional cleanup."""
+    traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
+    op.report({"ERROR"}, message)
+    if callable(cleanup):
+        cleanup()
+    return {"CANCELLED"}
 
 
 def _flush_wm_credentials(wm: bpy.types.WindowManager) -> None:
@@ -42,18 +57,7 @@ def _redraw_properties_ui() -> None:
                 area.tag_redraw()
 
 
-def _set_default_active_job_id() -> None:
-    try:
-        jobs = Storage.data.get("jobs", {})
-        scene = getattr(bpy.context, "scene", None)
-        if jobs and scene and hasattr(scene, "superluminal_settings"):
-            if hasattr(scene.superluminal_settings, "job_id"):
-                scene.superluminal_settings.job_id = list(jobs.keys())[0]
-    except Exception as exc:
-        print("Could not set default job after refresh.", exc)
-
-
-def _start_background_job_refresh(project_id: str, *, set_active_job: bool = False) -> None:
+def _start_background_job_refresh(project_id: str) -> None:
     if Storage.jobs_updating:
         return
 
@@ -77,8 +81,6 @@ def _start_background_job_refresh(project_id: str, *, set_active_job: bool = Fal
             return 0.05
         Storage.jobs_updating = False
         Storage.projects_updating = False
-        if set_active_job:
-            _set_default_active_job_id()
         print(result["message"])
         _redraw_properties_ui()
         return None
@@ -86,10 +88,9 @@ def _start_background_job_refresh(project_id: str, *, set_active_job: bool = Fal
     bpy.app.timers.register(_poll_worker, first_interval=0.05)
 
 
-def _browser_login_thread_v2(txn):
+def _browser_login_thread_v2(txn, result, deadline):
     token_url = f"{POCKETBASE_URL}/api/cli/token"
-    token = None
-    while token is None:
+    while time.monotonic() < deadline:
         response = logged_session_request(
             Storage.session,
             "POST",
@@ -105,11 +106,14 @@ def _browser_login_thread_v2(txn):
         response.raise_for_status()
         payload = response.json()
 
-        if "token" in payload:
-            token = payload.get("token")
-            first_login(token)
+        token = payload.get("token")
+        if token:
+            result["token"] = token
+            return token
 
-    return token
+        time.sleep(0.2)
+
+    raise TimeoutError("Browser sign-in timed out. Try again.")
 
 
 def _user_email_from_auth_payload(payload) -> str:
@@ -266,8 +270,43 @@ class SUPERLUMINAL_OT_LoginBrowser(bpy.types.Operator):
             if verification_url:
                 self.report({"INFO"}, f"Open this URL to approve: {verification_url}")
 
-        t = threading.Thread(target=_browser_login_thread_v2, args=(txn,), daemon=True)
-        t.start()
+        Storage.last_refresh_error = ""
+        result = {"token": "", "error": ""}
+        deadline = time.monotonic() + 5 * 60
+
+        def _worker():
+            try:
+                _browser_login_thread_v2(txn, result, deadline)
+            except Exception as exc:
+                result["error"] = str(exc)
+
+        worker = threading.Thread(target=_worker, daemon=True)
+        worker.start()
+
+        def _poll_worker():
+            if worker.is_alive():
+                if time.monotonic() < deadline:
+                    return 0.1
+                Storage.last_refresh_error = "Browser sign-in timed out. Try again."
+                _redraw_properties_ui()
+                return None
+
+            error = result.get("error", "")
+            token = result.get("token", "")
+            if error:
+                Storage.last_refresh_error = error
+            elif token:
+                try:
+                    first_login(token)
+                    Storage.last_refresh_error = ""
+                except Exception as exc:
+                    Storage.last_refresh_error = f"Browser sign-in failed: {exc}"
+            else:
+                Storage.last_refresh_error = "Browser sign-in did not return a token."
+            _redraw_properties_ui()
+            return None
+
+        bpy.app.timers.register(_poll_worker, first_interval=0.1)
 
 
         self.report({"INFO"}, "Browser opened. Approve the connection to continue.")
@@ -311,7 +350,6 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
                 else:
                     apply_project_context(result["selected_project_id"], refresh_jobs=True)
             except Exception as exc:
-                Storage.data["projects"] = []
                 Storage.last_refresh_error = str(exc)
                 result["message"] = f"Error updating projects: {exc}"
 
@@ -371,7 +409,7 @@ class SUPERLUMINAL_OT_FetchProjectJobs(bpy.types.Operator):
             self.report({"INFO"}, "Jobs are already updating.")
             return {"FINISHED"}
 
-        _start_background_job_refresh(project_id, set_active_job=True)
+        _start_background_job_refresh(project_id)
         self.report({"INFO"}, "Updating jobs...")
         return {"FINISHED"}
 

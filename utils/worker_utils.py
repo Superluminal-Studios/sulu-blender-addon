@@ -1,4 +1,3 @@
-# utils/worker_utils.py
 """
 worker_utils.py — Shared utilities for Sulu worker processes.
 
@@ -14,6 +13,7 @@ Contains:
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import re
@@ -35,7 +35,6 @@ from urllib3.util import Retry
 
 # constants
 # Windows process creation flags
-DETACHED_PROCESS = 0x00000008  # detached (no console)
 CREATE_NEW_CONSOLE = 0x00000010  # force a new console window
 CREATE_NEW_PROCESS_GROUP = 0x00000200  # allow Ctrl+C to target child
 
@@ -97,14 +96,6 @@ def logger(msg: str) -> None:
         print(str(msg), flush=True)
     except UnicodeEncodeError:
         # Fall back to ASCII-safe output on Windows console
-        print(str(msg).encode("ascii", errors="replace").decode("ascii"), flush=True)
-
-
-def _log(msg: str) -> None:
-    """Thin wrapper around print(..., flush=True); kept for backward-compat."""
-    try:
-        print(str(msg), flush=True)
-    except UnicodeEncodeError:
         print(str(msg).encode("ascii", errors="replace").decode("ascii"), flush=True)
 
 
@@ -178,7 +169,7 @@ def launch_in_terminal(cmd: List[str]) -> None:
         system = "Linux"
 
     if system == "Windows":
-        # 1) Best: create a brand-new console directly (no shell)
+        # Prefer creating a console directly without a shell.
         try:
             subprocess.Popen(
                 cmd, creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP
@@ -187,7 +178,7 @@ def launch_in_terminal(cmd: List[str]) -> None:
         except Exception:
             pass
 
-        # 2) Fallback: use cmd.exe start with correct quoting
+        # Fall back to cmd.exe with explicit quoting.
         try:
             quoted = " ".join(_win_quote(c) for c in cmd)
             subprocess.Popen(f'cmd.exe /c start "" {quoted}', shell=True)
@@ -195,7 +186,7 @@ def launch_in_terminal(cmd: List[str]) -> None:
         except Exception:
             pass
 
-        # 3) Last resort: run in current console (blocking)
+        # Run in the current console if no detached console can be opened.
         subprocess.call(cmd)
         return
 
@@ -218,7 +209,7 @@ def launch_in_terminal(cmd: List[str]) -> None:
             subprocess.call(cmd)
             return
 
-    # 3) Linux / BSD — try common emulators (in a reasonable order)
+    # Linux and BSD terminal emulators, in preference order
     if system in ("Linux", "FreeBSD"):
         quoted = shlex.join(cmd)
         bash_wrap = ["bash", "-lc", quoted]  # preserves PATH, allows shell features
@@ -239,7 +230,7 @@ def launch_in_terminal(cmd: List[str]) -> None:
             ("lxterminal", ["lxterminal", "-e"]),
             ("qterminal", ["qterminal", "-e"]),
             ("deepin-terminal", ["deepin-terminal", "-e"]),
-            # Lightweight / legacy
+            # Lightweight terminals
             ("urxvt", ["urxvt", "-hold", "-e"]),
             ("xterm", ["xterm", "-e"]),
             ("st", ["st", "-e"]),
@@ -253,8 +244,55 @@ def launch_in_terminal(cmd: List[str]) -> None:
                 except Exception:
                     continue  # try the next emulator
 
-    # 4) Absolute last resort — synchronous execution in the current shell
+    # Fall back to synchronous execution in the current shell.
     subprocess.call(cmd)
+
+
+def launch_worker_secure(
+    worker_py: str | Path,
+    handoff: Dict[str, object],
+    tmp_name: str,
+    *,
+    python_executable: str,
+    python_args=(),
+) -> Path:
+    """Write a mode-0600 worker handoff and launch it with Blender's Python."""
+    handoff_path = Path(tempfile.gettempdir()) / tmp_name
+    flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+
+    fd = os.open(handoff_path, flags, 0o600)
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fp:
+            fd = -1
+            json.dump(handoff, fp)
+    except Exception:
+        if fd >= 0:
+            os.close(fd)
+            fd = -1
+        handoff_path.unlink(missing_ok=True)
+        raise
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+    cmd = [
+        python_executable,
+        *list(python_args or ()),
+        "-I",
+        "-u",
+        str(worker_py),
+        str(handoff_path),
+    ]
+    try:
+        launch_in_terminal(cmd)
+    except Exception:
+        handoff_path.unlink(missing_ok=True)
+        raise
+    return handoff_path
 
 
 # robust HTTP sessions
@@ -301,6 +339,34 @@ def requests_retry_session(
     return session
 
 
+def fetch_project_storage(
+    session: requests.Session,
+    pocketbase_url: str,
+    user_token: str,
+    project_id: str,
+    *,
+    force_renew: bool = False,
+) -> object:
+    """Fetch the newest render-storage record list for a project."""
+    params: Dict[str, object] = {
+        "filter": f"(project_id='{project_id}' && bucket_name~'render-')",
+        "sort": "-updated",
+        "perPage": 1,
+        "skipTotal": 1,
+    }
+    if force_renew:
+        params["force_renew"] = "1"
+
+    response = session.get(
+        f"{pocketbase_url}/api/collections/project_storage/records",
+        headers={"Authorization": user_token},
+        params=params,
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 # save/flush detection
 def is_blend_saved(path: str | Path, logger_instance=None) -> None:
     """
@@ -318,13 +384,13 @@ def is_blend_saved(path: str | Path, logger_instance=None) -> None:
         if logger_instance and hasattr(logger_instance, "info"):
             logger_instance.info(msg)
         else:
-            _log(msg)
+            logger(msg)
 
     def _log_success(msg: str) -> None:
         if logger_instance and hasattr(logger_instance, "success"):
             logger_instance.success(msg)
         else:
-            _log(msg)
+            logger(msg)
 
     path = str(path)
     warned = False
@@ -359,12 +425,6 @@ def is_blend_saved(path: str | Path, logger_instance=None) -> None:
         time.sleep(0.25)
 
 
-# tiny compatibility helpers
-def _short(p: str) -> str:
-    """Return just the basename unless the string already looks like an S3 path."""
-    return p if str(p).startswith(":s3:") else Path(str(p)).name
-
-
 # rclone base command
 def _build_base(
     rclone_bin: Path,
@@ -374,9 +434,9 @@ def _build_base(
     """
     Construct the base rclone CLI invocation shared by all commands.
 
-    Returns a list where element 0 is the rclone binary, and element 1..N are
-    *global flags*. Our run_rclone() implementation appends these *after* the
-    verb to match existing workers’ expectations.
+    Credentials are placed in the worker environment for rclone's env-auth
+    provider; the returned list contains only the executable and non-secret
+    global flags.
     """
     # Validate and lift credentials with friendly errors
     try:
@@ -387,28 +447,25 @@ def _build_base(
 
     session_token = s3.get("session_token") or ""
 
+    os.environ["AWS_ACCESS_KEY_ID"] = str(access_key)
+    os.environ["AWS_SECRET_ACCESS_KEY"] = str(secret_key)
+    if session_token:
+        os.environ["AWS_SESSION_TOKEN"] = str(session_token)
+    else:
+        os.environ.pop("AWS_SESSION_TOKEN", None)
+
     base: list[str] = [
         str(rclone_bin),
         "--s3-endpoint",
         endpoint,
-        "--s3-access-key-id",
-        access_key,
-        "--s3-secret-access-key",
-        secret_key,
     ]
-
-    # Only include session token if provided; some providers omit it.
-    if session_token:
-        base.extend(["--s3-session-token", session_token])
 
     # Add our shared flags (provider, region, etc.)
     base.extend(COMMON_RCLONE_FLAGS)
     return base
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Text formatting utilities
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def plural_word(word: str) -> str:
@@ -475,14 +532,18 @@ def normalize_nfc(s: str) -> str:
     return unicodedata.normalize("NFC", str(s))
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Environment / terminal detection
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def debug_enabled() -> bool:
     """Check if SULU_DEBUG environment variable is set."""
     return os.environ.get("SULU_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def apply_debug_handoff(handoff: Dict[str, object]) -> None:
+    """Enable worker debug logging when requested by an optional handoff field."""
+    if bool((handoff or {}).get("debug_mode", False)):
+        os.environ["SULU_DEBUG"] = "1"
 
 
 def is_interactive() -> bool:
@@ -536,9 +597,7 @@ def safe_input(prompt: str, default: str = "", log_fn: Optional[Callable[[str], 
     return default
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Path utilities (OS-agnostic drive detection + S3 key cleaning)
-# ─────────────────────────────────────────────────────────────────────────────
 
 _WIN_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]+")
 _IS_MAC = sys.platform == "darwin"
@@ -639,9 +698,7 @@ def looks_like_cloud_storage_path(p: str) -> bool:
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # File probing utilities
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def mac_permission_help(path: str, err: str) -> str:
@@ -664,97 +721,7 @@ def mac_permission_help(path: str, err: str) -> str:
     return "\n".join(lines)
 
 
-def probe_readable_file(
-    p: str, *, hydrate: bool = False, cloud_files_module=None
-) -> Tuple[bool, Optional[str]]:
-    """
-    Check if a file exists and can be read.
-
-    Returns (ok, error_message):
-    - ok=True: file exists and can be opened for reading
-    - ok=False: missing or not readable (permission / offline placeholder / etc.)
-
-    If hydrate=True, reads the entire file to force cloud-mounted drives (OneDrive,
-    Google Drive, iCloud, etc.) to fully download "dehydrated" placeholder files.
-    This ensures files are actually available before rclone tries to upload them.
-    """
-    path = str(p)
-
-    # Check for directory first
-    try:
-        if os.path.isdir(path):
-            return (False, "is a directory")
-    except Exception:
-        pass
-
-    # Windows cloud placeholder handling (optional module)
-    if cloud_files_module is not None:
-        return cloud_files_module.read_file_with_hydration(
-            path,
-            hydrate=hydrate,
-            timeout_seconds=30,
-        )
-
-    # Fallback: direct file access
-    try:
-        with open(path, "rb") as f:
-            if hydrate:
-                chunk_size = 1024 * 1024  # 1 MiB
-                while True:
-                    chunk = f.read(chunk_size)
-                    if not chunk:
-                        break
-            else:
-                f.read(1)
-        return (True, None)
-    except FileNotFoundError:
-        return (False, "not found")
-    except PermissionError as exc:
-        return (False, f"PermissionError: {exc}")
-    except OSError as exc:
-        return (False, f"OSError: {exc}")
-    except Exception as exc:
-        return (False, f"{type(exc).__name__}: {exc}")
-
-
-def should_moveto_local_file(local_path: str, original_blend_path: str) -> bool:
-    """
-    Return True only when it's safe to let rclone delete the local file after upload.
-
-    We treat `moveto` as dangerous and only allow it when:
-      - local_path is NOT the same as the user's original .blend path
-      - local_path is located under the OS temp directory
-
-    Otherwise use `copyto` (never deletes).
-    """
-    lp = str(local_path or "").strip()
-    op = str(original_blend_path or "").strip()
-    if not lp:
-        return False
-
-    # Never move the user's actual blend file.
-    try:
-        if op and samepath(lp, op):
-            return False
-    except Exception:
-        return False
-
-    # Only allow move when file is under temp dir.
-    try:
-        lp_abs = os.path.abspath(lp)
-        tmp_abs = os.path.abspath(tempfile.gettempdir())
-        common = os.path.commonpath([lp_abs, tmp_abs])
-        if samepath(common, tmp_abs):
-            return True
-    except Exception:
-        return False
-
-    return False
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Pre-flight checks (time sync, storage space)
-# ─────────────────────────────────────────────────────────────────────────────
 
 # Maximum allowed clock drift in seconds (S3 signatures fail beyond ~15 min)
 MAX_CLOCK_DRIFT_SECONDS = 300  # 5 minutes - warn before S3's 15 min limit
@@ -879,7 +846,6 @@ def get_temp_space_available() -> int:
 def run_preflight_checks(
     session: Optional[requests.Session] = None,
     storage_checks: Optional[List[Tuple[str, int, str]]] = None,
-    logger_instance=None,
 ) -> Tuple[bool, List[str]]:
     """
     Run all pre-flight checks and collect issues.
@@ -887,7 +853,6 @@ def run_preflight_checks(
     Args:
         session: HTTP session for time check
         storage_checks: List of (path, required_bytes, label) for storage checks
-        logger_instance: Unused, kept for backward compatibility
 
     Returns:
         Tuple of (all_ok, issues_list) where issues_list contains issue messages.

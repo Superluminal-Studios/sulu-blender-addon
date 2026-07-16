@@ -39,27 +39,36 @@ def _load_module_directly(name: str, filepath: Path):
     return mod
 
 
-# Load the modules we need directly, without triggering __init__.py (which
-# imports bpy).  Only the modules themselves are needed for unit testing.
-_diagnostic_report = _load_module_directly(
-    "diagnostic_report", _addon_dir / "utils" / "diagnostic_report.py"
-)
-_rclone_utils = _load_module_directly(
-    "rclone_utils", _addon_dir / "transfers" / "rclone_utils.py"
-)
-# submit_worker imports requests at module level, so load it carefully.
-# We only need the free-standing helpers, not the full main().
-_submit_worker = _load_module_directly(
-    "submit_worker", _addon_dir / "transfers" / "submit" / "submit_worker.py"
+def _synthesize_addon_package() -> str:
+    """Create the package tree workers use without importing add-on __init__.py."""
+    pkg_name = "_test_sulu_blender_addon"
+    packages = {
+        pkg_name: _addon_dir,
+        f"{pkg_name}.utils": _addon_dir / "utils",
+        f"{pkg_name}.transfers": _addon_dir / "transfers",
+        f"{pkg_name}.transfers.submit": _addon_dir / "transfers" / "submit",
+    }
+    for name, path in packages.items():
+        if name in sys.modules:
+            continue
+        package = types.ModuleType(name)
+        package.__path__ = [str(path)]
+        sys.modules[name] = package
+    return pkg_name
+
+
+_pkg_name = _synthesize_addon_package()
+_diagnostic_report = importlib.import_module(f"{_pkg_name}.utils.diagnostic_report")
+_rclone_utils = importlib.import_module(f"{_pkg_name}.transfers.rclone_utils")
+_submit_worker = importlib.import_module(
+    f"{_pkg_name}.transfers.submit.submit_worker"
 )
 _farm_upload_harness = _load_module_directly(
     "farm_upload_harness", _addon_dir / "tests" / "realworld" / "test_farm_upload.py"
 )
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  1. DiagnosticReport warning generation
-# ═════════════════════════════════════════════════════════════════════════
+# DiagnosticReport warning generation
 
 
 class TestUploadStepWarnings(unittest.TestCase):
@@ -92,7 +101,7 @@ class TestUploadStepWarnings(unittest.TestCase):
         steps = self.report._data["stages"]["upload"]["steps"]
         return steps[-1]
 
-    # ── stats_received=False ──
+    # Missing statistics
 
     def test_no_stats_received(self):
         """stats_received=False should produce a warning."""
@@ -115,7 +124,7 @@ class TestUploadStepWarnings(unittest.TestCase):
         self.assertIn("no transfer stats", step["warning"])
         self.assertIn("Expected 1000000 bytes", step["warning"])
 
-    # ── checks/transfers counters ──
+    # Check and transfer counters
 
     def test_zero_checks_zero_transfers(self):
         """checks=0, transfers=0 should warn about empty manifest."""
@@ -137,7 +146,7 @@ class TestUploadStepWarnings(unittest.TestCase):
         self.assertIn("warning", step)
         self.assertIn("checked 42 files but transferred 0", step["warning"])
 
-    # ── bytes mismatch ──
+    # Byte mismatches
 
     def test_expected_nonzero_transferred_zero(self):
         """Expected >0 bytes but transferred 0 should warn."""
@@ -169,7 +178,7 @@ class TestUploadStepWarnings(unittest.TestCase):
         # No checks/transfers anomaly, no bytes mismatch
         self.assertNotIn("warning", step)
 
-    # ── errors > 0 despite exit 0 ──
+    # Errors despite exit code 0
 
     def test_errors_nonzero_exit_zero(self):
         """errors > 0 despite successful checks/transfers should warn."""
@@ -216,7 +225,7 @@ class TestUploadStepWarnings(unittest.TestCase):
         }, expected_bytes=500_000)
         self.assertNotIn("warning", step)
 
-    # ── normal success ──
+    # Successful transfers
 
     def test_no_warning_on_success(self):
         """Normal successful transfer should produce no warnings."""
@@ -232,7 +241,7 @@ class TestUploadStepWarnings(unittest.TestCase):
         step = self._run_step(1024, None)
         self.assertNotIn("warning", step)
 
-    # ── combined warnings (appending) ──
+    # Combined warnings
 
     def test_checks_zero_plus_bytes_mismatch(self):
         """Both checks=0 AND expected-bytes mismatch should combine."""
@@ -259,7 +268,7 @@ class TestUploadStepWarnings(unittest.TestCase):
         # Should NOT contain the checks-based warning
         self.assertNotIn("checked 50 files", step["warning"])
 
-    # ── edge cases ──
+    # Edge cases
 
     def test_expected_bytes_zero_no_mismatch_warning(self):
         """expected_bytes=0 should not trigger byte mismatch warnings."""
@@ -280,9 +289,7 @@ class TestUploadStepWarnings(unittest.TestCase):
         self.assertNotIn("warning", step)
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  2. _redact_cmd
-# ═════════════════════════════════════════════════════════════════════════
+# _redact_cmd
 
 
 class TestRedactCmd(unittest.TestCase):
@@ -360,9 +367,7 @@ class TestRedactCmd(unittest.TestCase):
         self.assertNotIn("AKIA", result)
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  3. _log_upload_result (submit_worker)
-# ═════════════════════════════════════════════════════════════════════════
+# _log_upload_result (submit_worker)
 
 
 class TestLogUploadResult(unittest.TestCase):
@@ -494,9 +499,7 @@ class TestLogUploadResult(unittest.TestCase):
         self.assertEqual(len(self._captured), 1)
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  4. _is_filesystem_root
-# ═════════════════════════════════════════════════════════════════════════
+# _is_filesystem_root
 
 
 class TestIsFilesystemRoot(unittest.TestCase):
@@ -536,9 +539,7 @@ class TestIsFilesystemRoot(unittest.TestCase):
         self.assertFalse(self._is_root("/mnt/data/projects"))
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  5. _split_manifest_by_first_dir
-# ═════════════════════════════════════════════════════════════════════════
+# _split_manifest_by_first_dir
 
 
 class TestSplitManifest(unittest.TestCase):
@@ -572,9 +573,7 @@ class TestSplitManifest(unittest.TestCase):
         self.assertEqual(self._split([]), {})
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  6. Structured upload success marker
-# ═════════════════════════════════════════════════════════════════════════
+# Structured upload success marker
 
 
 class TestUploadSuccessMarker(unittest.TestCase):
@@ -658,9 +657,7 @@ class TestUploadSuccessMarker(unittest.TestCase):
         self.assertIn("uploaded_file_count", error)
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  7. _rclone_bytes / _rclone_stats / _is_empty_upload helpers
-# ═════════════════════════════════════════════════════════════════════════
+# _rclone_bytes / _rclone_stats / _is_empty_upload helpers
 
 
 class TestRcloneHelpers(unittest.TestCase):
@@ -719,9 +716,7 @@ class TestRcloneHelpers(unittest.TestCase):
         self.assertEqual(_submit_worker._get_rclone_tail(None), [])
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  7. Diagnostic report JSON round-trip with warnings
-# ═════════════════════════════════════════════════════════════════════════
+# Diagnostic report JSON round-trip with warnings
 
 
 class TestReportJsonRoundTrip(unittest.TestCase):
@@ -792,9 +787,7 @@ class TestReportJsonRoundTrip(unittest.TestCase):
             self.assertNotIn("warning", step)
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  8. Report v3.0: environment section
-# ═════════════════════════════════════════════════════════════════════════
+# Report v3.0: environment section
 
 
 class TestReportEnvironment(unittest.TestCase):
@@ -839,9 +832,7 @@ class TestReportEnvironment(unittest.TestCase):
             self.assertIn("os", data["environment"])
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  9. Report v3.0: preflight section
-# ═════════════════════════════════════════════════════════════════════════
+# Report v3.0: preflight section
 
 
 class TestReportPreflight(unittest.TestCase):
@@ -888,9 +879,7 @@ class TestReportPreflight(unittest.TestCase):
             self.assertTrue(data["preflight"]["user_override"])
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  10. Report v3.0: user choices
-# ═════════════════════════════════════════════════════════════════════════
+# Report v3.0: user choices
 
 
 class TestReportUserChoices(unittest.TestCase):
@@ -933,9 +922,7 @@ class TestReportUserChoices(unittest.TestCase):
             self.assertEqual(data["user_choices"][0]["choice"], "y")
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  11. Report v3.0: upload summary (computed in complete_stage)
-# ═════════════════════════════════════════════════════════════════════════
+# Report v3.0: upload summary (computed in complete_stage)
 
 
 class TestReportUploadSummary(unittest.TestCase):
@@ -993,9 +980,7 @@ class TestReportUploadSummary(unittest.TestCase):
             self.assertEqual(summary["step_count"], 1)
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  12. Report v3.0: elapsed_seconds + tail_lines truncation
-# ═════════════════════════════════════════════════════════════════════════
+# Report v3.0: elapsed_seconds and tail_lines truncation
 
 
 class TestReportStepDetails(unittest.TestCase):
@@ -1065,9 +1050,7 @@ class TestReportStepDetails(unittest.TestCase):
             self.assertNotIn("tail_lines_truncated", step["rclone_stats"])
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  13. Report v3.0: source/destination/verb in upload steps
-# ═════════════════════════════════════════════════════════════════════════
+# Report v3.0: source, destination, and verb in upload steps
 
 
 class TestReportUploadStepMeta(unittest.TestCase):
@@ -1144,9 +1127,7 @@ class TestReportUploadStepMeta(unittest.TestCase):
             self.assertIn("completed_at", step)
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  14. Report v3.0: split upload groups
-# ═════════════════════════════════════════════════════════════════════════
+# Report v3.0: split upload groups
 
 
 class TestReportSplitGroups(unittest.TestCase):
@@ -1239,9 +1220,7 @@ class TestReportSplitGroups(unittest.TestCase):
             self.assertEqual(groups[0]["bytes_transferred"], 1234)
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  15. Report v3.0: pack dependency size
-# ═════════════════════════════════════════════════════════════════════════
+# Report v3.0: pack dependency size
 
 
 class TestReportPackDependencySize(unittest.TestCase):
@@ -1279,9 +1258,7 @@ class TestReportPackDependencySize(unittest.TestCase):
             )
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  16. Report v3.0: version + metadata
-# ═════════════════════════════════════════════════════════════════════════
+# Report v3.0: version and metadata
 
 
 class TestReportVersionAndMetadata(unittest.TestCase):
@@ -1372,9 +1349,7 @@ class TestReportVersionAndMetadata(unittest.TestCase):
             self.assertIn("empty_directory_dependencies", data["issues"])
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  17. _check_risky_path_chars
-# ═════════════════════════════════════════════════════════════════════════
+# _check_risky_path_chars
 
 
 class TestCheckRiskyPathChars(unittest.TestCase):
@@ -1434,9 +1409,7 @@ class TestCheckRiskyPathChars(unittest.TestCase):
             self.assertIsNotNone(result, f"Character {char!r} should be detected")
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  18. farm ZIP unpack filename guards
-# ═════════════════════════════════════════════════════════════════════════
+# Farm ZIP unpack filename guards
 
 
 class TestFarmZipUnpackGuards(unittest.TestCase):
@@ -1494,9 +1467,7 @@ class TestFarmZipUnpackGuards(unittest.TestCase):
         self.assertEqual(blocked, ["Animation/Animations/broken....blend"])
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  19. _RISKY_CHARS constant
-# ═════════════════════════════════════════════════════════════════════════
+# _RISKY_CHARS constant
 
 
 class TestRiskyCharsConstant(unittest.TestCase):

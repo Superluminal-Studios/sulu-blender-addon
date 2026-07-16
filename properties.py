@@ -12,9 +12,7 @@ from .utils.request_utils import fetch_jobs
 from .storage import Storage
 
 
-# ────────────────────────────────────────────────────────────────
-#  Enum items (dynamic for image format to reflect current scene)
-# ────────────────────────────────────────────────────────────────
+# Enum items (dynamic for image format to reflect current scene)
 def image_format_items_cb(self, context):
     current = "Unknown"
     try:
@@ -35,11 +33,6 @@ def image_format_items_cb(self, context):
     ]
 
 
-render_type_items = [
-    ("IMAGE",     "Image",     "Render only a single frame"),
-    ("ANIMATION", "Animation", "Render a sequence of frames"),
-]
-
 render_order_items = [
     ("LINEAR", "Linear", "Render frames in ascending order (start to end)."),
     (
@@ -55,9 +48,7 @@ render_order_items = [
 ]
 
 
-# ────────────────────────────────────────────────────────────────
-#  Live-job-update callback (used by SuluWMSceneProperties)
-# ────────────────────────────────────────────────────────────────
+# Live-job-update callback (used by SuluWMSceneProperties)
 def live_job_update(self, context):
     prefs = get_prefs()
     if self.live_job_updates:
@@ -71,9 +62,7 @@ def live_job_update(self, context):
         Storage.enable_job_thread = False
 
 
-# ────────────────────────────────────────────────────────────────
-#  1. Main Superluminal scene properties
-# ────────────────────────────────────────────────────────────────
+# Main Superluminal scene properties
 class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     # ------------------------------------------------------------
     #  Project packaging
@@ -142,16 +131,6 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     )
 
     # ------------------------------------------------------------
-    #  Render type
-    # ------------------------------------------------------------
-    render_type: bpy.props.EnumProperty(
-        name="Render Type",
-        items=render_type_items,
-        default="ANIMATION",
-        description="Choose whether to render the current frame only or the whole frame range.",
-    )
-
-    # ------------------------------------------------------------
     #  Frame range overrides
     # ------------------------------------------------------------
     frame_start: bpy.props.IntProperty(
@@ -206,18 +185,6 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         ),
     )
 
-    # device_type: bpy.props.EnumProperty(
-    #     name="Device Type",
-    #     items=[
-    #         ("GPU", "GPU", "Use GPU for rendering"),
-    #         ("CPU", "CPU", "Use CPU for rendering"),
-    #     ],
-    #     default="GPU",
-    #     description=(
-    #         "Specify which device type the render farm should use. "
-    #     ),
-    # )
-
     device_type: bpy.props.EnumProperty(
         name="Device Type",
         items=[
@@ -264,17 +231,6 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
             "up your renders, especially if you have persistent data enabled."
         ),
     )
-    use_async_upload: bpy.props.BoolProperty(
-        name="Async Frame Upload",
-        default=True,
-        description=(
-            "Upload frames asynchronously to the farm. Frames are uploaded while "
-            "the next frame is already rendering. This makes the cost needed to "
-            "upload the render results to the server essentially free if the "
-            "render is slower than the upload, which is the case for most renders."
-        ),
-    )
-
     included_addons: bpy.props.StringProperty(
         name="Included Add-ons",
         description=(
@@ -286,9 +242,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     )
 
 
-# ────────────────────────────────────────────────────────────────
-#  2. Sulu WM scene properties (live things)
-# ────────────────────────────────────────────────────────────────
+# Sulu WM scene properties (live things)
 class SuluWMSceneProperties(bpy.types.PropertyGroup):
     live_job_updates: bpy.props.BoolProperty(
         name="Live Job Updates",
@@ -298,10 +252,7 @@ class SuluWMSceneProperties(bpy.types.PropertyGroup):
     )
 
 
-# ────────────────────────────────────────────────────────────────
-#  3. WindowManager-scoped (runtime-only) auth props
-#      — not saved in .blend or user preferences
-# ────────────────────────────────────────────────────────────────
+# WindowManager-scoped auth properties are not saved in .blend files or preferences.
 class SuluWMProperties(bpy.types.PropertyGroup):
     username: bpy.props.StringProperty(
         name="Email",
@@ -314,9 +265,7 @@ class SuluWMProperties(bpy.types.PropertyGroup):
     )
 
 
-# ────────────────────────────────────────────────────────────────
-#  Registration helpers
-# ────────────────────────────────────────────────────────────────
+# Registration helpers
 _classes = (
     SuperluminalSceneProperties,
     SuluWMSceneProperties,

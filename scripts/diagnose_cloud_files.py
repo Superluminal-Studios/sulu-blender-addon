@@ -6,7 +6,7 @@ Traces dependencies from a blend file and tests various methods to detect
 and hydrate cloud-mounted placeholder files.
 
 Usage:
-    python scripts/test_cloud_files.py [--hydrate]
+    python scripts/diagnose_cloud_files.py [--hydrate]
 
 Options:
     --hydrate    Attempt to hydrate cloud placeholders using Windows APIs
@@ -220,17 +220,11 @@ def main():
     print("Testing dependency file access:")
     print("-" * 70)
 
-    stats = {"ok": 0, "missing": 0, "error": 0, "cloud_placeholder": 0, "hydrated": 0}
+    stats = {"ok": 0, "missing": 0, "error": 0}
 
     for i, dep_path in enumerate(deps[:20], 1):  # Limit to first 20 for brevity
         print(f"\n[{i}/{len(deps)}] {dep_path.name}")
         print(f"  Path: {dep_path}")
-
-        # Check if it's a cloud placeholder
-        is_cloud_placeholder = cloud_files.is_cloud_placeholder(str(dep_path))
-        if is_cloud_placeholder:
-            stats["cloud_placeholder"] += 1
-            print(f"  Cloud placeholder: YES")
 
         # Test with cloud_files module
         if do_hydrate:
@@ -238,15 +232,10 @@ def main():
             ok, err = cloud_files.read_file_with_hydration(
                 str(dep_path),
                 hydrate=True,
-                timeout_seconds=30,
             )
             if ok:
                 stats["ok"] += 1
-                if is_cloud_placeholder:
-                    stats["hydrated"] += 1
-                    print(f"  Result: HYDRATED successfully!")
-                else:
-                    print(f"  Result: OK")
+                print(f"  Result: OK")
             elif err == "File not found":
                 stats["missing"] += 1
                 print(f"  Result: MISSING (file not found)")
@@ -282,9 +271,6 @@ def main():
     print(f"  OK: {stats['ok']}")
     print(f"  Missing: {stats['missing']}")
     print(f"  Errors: {stats['error']}")
-    print(f"  Cloud placeholders detected: {stats['cloud_placeholder']}")
-    if do_hydrate:
-        print(f"  Successfully hydrated: {stats['hydrated']}")
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from tests.utils import get_drive, is_win_drive_path
+from tests.helpers import get_drive, is_win_drive_path
 
 
 class TestWindowsDriveDetection(unittest.TestCase):

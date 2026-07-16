@@ -1,4 +1,3 @@
-# submit_worker.py
 """
 submit_worker.py – Sulu Submit worker (robust, with retries).
 
@@ -21,7 +20,7 @@ All worker execution happens inside main(), guarded by __name__ == "__main__".
 
 from __future__ import annotations
 
-# ─── stdlib ──────────────────────────────────────────────────────
+# Standard library
 import importlib
 import json
 import os
@@ -33,14 +32,15 @@ import tempfile
 import time
 import types
 import zipfile
-from pathlib import Path
-from typing import Dict, Iterable, List, Optional
 import webbrowser
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional
 
 import requests
 
 
-# ─── Lightweight logger fallback ──────────────────────────────────
+# Lightweight logger fallback
 # This gets replaced after bootstrap when worker_utils.logger is available.
 def _default_logger(msg: str) -> None:
     print(str(msg))
@@ -485,7 +485,7 @@ def _request_exception_details(exc: requests.RequestException) -> str:
     return details
 
 
-# ─── Utilities imported after bootstrap ───────────────────────────
+# Utilities imported after bootstrap
 # These will be set by _bootstrap_addon_modules() at runtime.
 # Declared here to satisfy static analysis and allow early use in type hints.
 _count = None
@@ -502,7 +502,7 @@ _mac_permission_help = None
 _IS_MAC = sys.platform == "darwin"
 
 
-# ─── Worker bootstrap (safe to import) ────────────────────────────
+# Worker bootstrap (safe to import)
 
 
 def _load_handoff_from_argv(argv: List[str]) -> Dict[str, object]:
@@ -513,7 +513,12 @@ def _load_handoff_from_argv(argv: List[str]) -> Dict[str, object]:
             "Example: submit_worker.py /path/to/handoff.json"
         )
     handoff_path = Path(argv[1]).resolve(strict=True)
-    return json.loads(handoff_path.read_text("utf-8"))
+    data = json.loads(handoff_path.read_text("utf-8"))
+    try:
+        handoff_path.unlink()
+    except OSError:
+        pass
+    return data
 
 
 def _bootstrap_addon_modules(data: Dict[str, object]):
@@ -539,6 +544,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     sys.modules[pkg_name] = pkg
 
     worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
+    worker_utils.apply_debug_handoff(data)
 
     # Set logger for this script
     _set_logger(worker_utils.logger)
@@ -569,6 +575,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     _build_base = worker_utils._build_base
     CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
     open_folder = worker_utils.open_folder
+    fetch_project_storage = worker_utils.fetch_project_storage
 
     bat_utils = importlib.import_module(f"{pkg_name}.utils.bat_utils")
     pack_blend = bat_utils.pack_blend
@@ -599,6 +606,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "_build_base": _build_base,
         "CLOUDFLARE_R2_DOMAIN": CLOUDFLARE_R2_DOMAIN,
         "open_folder": open_folder,
+        "fetch_project_storage": fetch_project_storage,
         "pack_blend": pack_blend,
         "trace_dependencies": trace_dependencies,
         "compute_project_root": compute_project_root,
@@ -611,47 +619,51 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     }
 
 
-# ─── main ────────────────────────────────────────────────────────
-def main() -> None:
-    t_start = time.perf_counter()
+@dataclass
+class _SubmitContext:
+    data: Dict[str, object]
+    mods: Dict[str, object]
+    t_start: float
+    proj: Dict[str, object]
+    logger: Any
+    session: requests.Session
+    preflight_ok: bool = True
+    preflight_issues: List[str] = field(default_factory=list)
+    preflight_user_override: Optional[bool] = None
+    headers: Dict[str, str] = field(default_factory=dict)
+    rclone_bin: Any = None
+    blend_path: str = ""
+    use_project: bool = False
+    automatic_project_path: bool = True
+    custom_project_path_str: str = ""
+    job_id: str = ""
+    test_mode: bool = False
+    no_submit: bool = False
+    render_order: str = "LINEAR"
+    frame_step_val: int = 1
+    render_tasks: List[int] = field(default_factory=list)
+    effective_end_frame: int = 0
+    zip_file: Optional[Path] = None
+    filelist: Optional[Path] = None
+    org_id: str = ""
+    project_sqid: str = ""
+    project_name: str = ""
+    report: Any = None
+    rel_manifest: List[str] = field(default_factory=list)
+    dependency_total_size: int = 0
+    required_storage: int = 0
+    common_path: str = ""
+    main_blend_s3: str = ""
+    project_root_str: str = ""
 
-    data = _load_handoff_from_argv(sys.argv)
-    if data.get("debug_mode", False):
-        os.environ["SULU_DEBUG"] = "1"
-    mods = _bootstrap_addon_modules(data)
 
-    clear_console = mods["clear_console"]
-    shorten_path = mods["shorten_path"]
-    is_blend_saved = mods["is_blend_saved"]
-    requests_retry_session = mods["requests_retry_session"]
-    _build_base = mods["_build_base"]
-    CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
-    open_folder = mods["open_folder"]
-    pack_blend = mods["pack_blend"]
-    trace_dependencies = mods["trace_dependencies"]
-    compute_project_root = mods["compute_project_root"]
-    cloud_files = mods["cloud_files"]
-    create_logger = mods["create_logger"]
-    run_rclone = mods["run_rclone"]
-    ensure_rclone = mods["ensure_rclone"]
-    DiagnosticReport = mods["DiagnosticReport"]
-    generate_test_report = mods["generate_test_report"]
+def _preflight(ctx: _SubmitContext) -> None:
+    data = ctx.data
+    mods = ctx.mods
+    logger = ctx.logger
+    session = ctx.session
 
-    proj = data["project"]
-
-    clear_console()
-
-    # Rich logger: scrolling transcript UI
-    logger = create_logger(_LOG, input_fn=_safe_input)
-    try:
-        logger.logo_start()
-    except Exception:
-        pass
-
-    # Single resilient session for all HTTP traffic
-    session = requests_retry_session()
-
-    # ─── Preflight checks (run early so user knows quickly if something's wrong) ───
+    # Early preflight checks
     worker_utils = importlib.import_module(f"{mods['pkg_name']}.utils.worker_utils")
     run_preflight_checks = worker_utils.run_preflight_checks
     get_temp_space_available = worker_utils.get_temp_space_available
@@ -694,6 +706,16 @@ def main() -> None:
             sys.exit(1)
         _preflight_user_override = True
 
+    ctx.preflight_ok = preflight_ok
+    ctx.preflight_issues = preflight_issues
+    ctx.preflight_user_override = _preflight_user_override
+
+
+def _check_update(ctx: _SubmitContext) -> None:
+    data = ctx.data
+    logger = ctx.logger
+    session = ctx.session
+
     # Optional: check for addon update
     try:
         github_response = session.get(
@@ -730,6 +752,20 @@ def main() -> None:
         logger.info(
             "Couldn't check for add-on updates. Continuing with current version."
         )
+
+
+def _ensure_farm_ready(ctx: _SubmitContext) -> None:
+    data = ctx.data
+    mods = ctx.mods
+    proj = ctx.proj
+    logger = ctx.logger
+    session = ctx.session
+    preflight_ok = ctx.preflight_ok
+    preflight_issues = ctx.preflight_issues
+    _preflight_user_override = ctx.preflight_user_override
+    ensure_rclone = mods["ensure_rclone"]
+    is_blend_saved = mods["is_blend_saved"]
+    DiagnosticReport = mods["DiagnosticReport"]
 
     headers = {"Authorization": data["user_token"]}
 
@@ -789,7 +825,6 @@ def main() -> None:
     automatic_project_path: bool = bool(data["automatic_project_path"])
     custom_project_path_str: str = data["custom_project_path"]
     job_id: str = data["job_id"]
-    tmp_blend: str = data["temp_blend_path"]
 
     # Test mode flags (optional in handoff)
     test_mode: bool = bool(data.get("test_mode", False))
@@ -868,9 +903,156 @@ def main() -> None:
         report.set_status("failed")
         logger.fatal(_format_farm_unpack_blocking_message(_source_unpack_blocked))
 
-    # ═══════════════════════════════════════════════════════════════════════════
+    ctx.headers = headers
+    ctx.rclone_bin = rclone_bin
+    ctx.blend_path = blend_path
+    ctx.use_project = use_project
+    ctx.automatic_project_path = automatic_project_path
+    ctx.custom_project_path_str = custom_project_path_str
+    ctx.job_id = job_id
+    ctx.test_mode = test_mode
+    ctx.no_submit = no_submit
+    ctx.render_order = render_order
+    ctx.frame_step_val = frame_step_val
+    ctx.render_tasks = render_tasks
+    ctx.effective_end_frame = effective_end_frame
+    ctx.zip_file = zip_file
+    ctx.filelist = filelist
+    ctx.org_id = org_id
+    ctx.project_sqid = project_sqid
+    ctx.project_name = project_name
+    ctx.report = report
+
+
+def _run_test_mode_report(
+    ctx: _SubmitContext,
+    *,
+    upload_type: str,
+    dep_paths: List[Path],
+    missing_set: set,
+    unreadable_dict: Dict[Path, str],
+    project_root: Path,
+    same_drive_deps: List[Path],
+    cross_drive_deps: List[Path],
+    has_issues: bool,
+) -> None:
+    data = ctx.data
+    mods = ctx.mods
+    logger = ctx.logger
+    report = ctx.report
+    generate_test_report = mods["generate_test_report"]
+    shorten_path = mods["shorten_path"]
+    open_folder = mods["open_folder"]
+
+    if ctx.test_mode:
+        by_ext: Dict[str, int] = {}
+        total_size = 0
+        for dep in dep_paths:
+            ext = dep.suffix.lower() if dep.suffix else "(no ext)"
+            by_ext[ext] = by_ext.get(ext, 0) + 1
+            if dep.exists() and dep.is_file():
+                try:
+                    total_size += dep.stat().st_size
+                except OSError:
+                    pass
+
+        _, test_report_path = generate_test_report(
+            blend_path=ctx.blend_path,
+            dep_paths=dep_paths,
+            missing_set=missing_set,
+            unreadable_dict=unreadable_dict,
+            project_root=project_root,
+            same_drive_deps=same_drive_deps,
+            cross_drive_deps=cross_drive_deps,
+            upload_type=upload_type,
+            addon_dir=str(data["addon_dir"]),
+            mode="test",
+            format_size_fn=_format_size,
+        )
+        logger.test_report(
+            blend_path=ctx.blend_path,
+            dep_count=len(dep_paths),
+            project_root=str(project_root),
+            same_drive=len(same_drive_deps),
+            cross_drive=len(cross_drive_deps),
+            by_ext=by_ext,
+            total_size=total_size,
+            missing=[str(p) for p in sorted(missing_set)],
+            unreadable=[
+                (str(p), err)
+                for p, err in sorted(
+                    unreadable_dict.items(), key=lambda x: str(x[0])
+                )
+            ],
+            cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
+            upload_type=upload_type,
+            report_path=str(test_report_path) if test_report_path else None,
+            shorten_fn=shorten_path,
+        )
+        _safe_input("\nPress Enter to close.", "")
+        sys.exit(0)
+
+    if not has_issues:
+        return
+
+    answer = logger.ask_choice(
+        "Some dependencies have problems. Continue anyway?",
+        [
+            ("y", "Continue", "Proceed with submission"),
+            ("n", "Cancel", "Cancel and close"),
+            (
+                "r",
+                "Open diagnostic reports",
+                "Open the diagnostic reports folder",
+            ),
+        ],
+        default="y",
+    )
+    report.record_user_choice(
+        "Dependency issues found",
+        answer,
+        options=["Continue", "Cancel", "Open reports"],
+    )
+    if answer == "r":
+        logger.report_info(str(report.get_path()))
+        open_folder(str(report.get_reports_dir()), logger_instance=logger)
+        answer = logger.ask_choice(
+            "Continue with submission?",
+            [
+                ("y", "Continue", "Proceed with submission"),
+                ("n", "Cancel", "Cancel and close"),
+            ],
+            default="y",
+        )
+        report.record_user_choice(
+            "Continue after viewing reports?",
+            answer,
+            options=["Continue", "Cancel"],
+        )
+    if answer != "y":
+        report.set_status("cancelled")
+        sys.exit(1)
+
+
+def _trace_and_pack(ctx: _SubmitContext) -> None:
+    data = ctx.data
+    mods = ctx.mods
+    logger = ctx.logger
+    report = ctx.report
+    shorten_path = mods["shorten_path"]
+    pack_blend = mods["pack_blend"]
+    trace_dependencies = mods["trace_dependencies"]
+    compute_project_root = mods["compute_project_root"]
+    blend_path = ctx.blend_path
+    use_project = ctx.use_project
+    automatic_project_path = ctx.automatic_project_path
+    custom_project_path_str = ctx.custom_project_path_str
+    test_mode = ctx.test_mode
+    no_submit = ctx.no_submit
+    zip_file = ctx.zip_file
+    filelist = ctx.filelist
+
     # Stage 1: Tracing — discover dependencies
-    # ═══════════════════════════════════════════════════════════════════════════
     logger.stage_header(
         1,
         "Tracing dependencies",
@@ -1051,96 +1233,19 @@ def main() -> None:
         )
         report.complete_stage("trace")
 
-        # TEST MODE: show report and exit
-        if test_mode:
-            by_ext: Dict[str, int] = {}
-            total_size = 0
-            for dep in dep_paths:
-                ext = dep.suffix.lower() if dep.suffix else "(no ext)"
-                by_ext[ext] = by_ext.get(ext, 0) + 1
-                if dep.exists() and dep.is_file():
-                    try:
-                        total_size += dep.stat().st_size
-                    except:
-                        pass
+        _run_test_mode_report(
+            ctx,
+            upload_type="PROJECT",
+            dep_paths=dep_paths,
+            missing_set=missing_set,
+            unreadable_dict=unreadable_dict,
+            project_root=project_root,
+            same_drive_deps=same_drive_deps,
+            cross_drive_deps=cross_drive_deps,
+            has_issues=has_issues,
+        )
 
-            test_report_data, test_report_path = generate_test_report(
-                blend_path=blend_path,
-                dep_paths=dep_paths,
-                missing_set=missing_set,
-                unreadable_dict=unreadable_dict,
-                project_root=project_root,
-                same_drive_deps=same_drive_deps,
-                cross_drive_deps=cross_drive_deps,
-                upload_type="PROJECT",
-                addon_dir=str(data["addon_dir"]),
-                mode="test",
-                format_size_fn=_format_size,
-            )
-            logger.test_report(
-                blend_path=blend_path,
-                dep_count=len(dep_paths),
-                project_root=str(project_root),
-                same_drive=len(same_drive_deps),
-                cross_drive=len(cross_drive_deps),
-                by_ext=by_ext,
-                total_size=total_size,
-                missing=[str(p) for p in sorted(missing_set)],
-                unreadable=[
-                    (str(p), err)
-                    for p, err in sorted(
-                        unreadable_dict.items(), key=lambda x: str(x[0])
-                    )
-                ],
-                cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
-                upload_type="PROJECT",
-                report_path=str(test_report_path) if test_report_path else None,
-                shorten_fn=shorten_path,
-            )
-            _safe_input("\nPress Enter to close.", "")
-            sys.exit(0)
-
-        # Prompt if there are issues
-        if has_issues:
-            answer = logger.ask_choice(
-                "Some dependencies have problems. Continue anyway?",
-                [
-                    ("y", "Continue", "Proceed with submission"),
-                    ("n", "Cancel", "Cancel and close"),
-                    (
-                        "r",
-                        "Open diagnostic reports",
-                        "Open the diagnostic reports folder",
-                    ),
-                ],
-                default="y",
-            )
-            report.record_user_choice(
-                "Dependency issues found", answer,
-                options=["Continue", "Cancel", "Open reports"],
-            )
-            if answer == "r":
-                logger.report_info(str(report.get_path()))
-                open_folder(str(report.get_reports_dir()), logger_instance=logger)
-                answer = logger.ask_choice(
-                    "Continue with submission?",
-                    [
-                        ("y", "Continue", "Proceed with submission"),
-                        ("n", "Cancel", "Cancel and close"),
-                    ],
-                    default="y",
-                )
-                report.record_user_choice(
-                    "Continue after viewing reports?", answer,
-                    options=["Continue", "Cancel"],
-                )
-            if answer != "y":
-                report.set_status("cancelled")
-                sys.exit(1)
-
-        # ═══════════════════════════════════════════════════════════════════════
         # Stage 2: Manifest — map dependencies into project structure
-        # ═══════════════════════════════════════════════════════════════════════
         logger.stage_header(
             2,
             "Building manifest",
@@ -1150,12 +1255,11 @@ def main() -> None:
         report.start_stage("pack")
 
         # Build file map from pre-expanded OK files (no filesystem I/O needed)
-        fmap, pack_report = pack_blend(
+        fmap = pack_blend(
             blend_path,
             target="",
             method="PROJECT",
             project_path=common_path,
-            return_report=True,
             pre_traced_deps=list(ok_files_set),
         )
 
@@ -1168,7 +1272,7 @@ def main() -> None:
 
         ok_count = 0
         pack_idx = 0
-        for idx, (src_path, dst_path) in enumerate(fmap.items()):
+        for src_path in fmap:
             src_str = str(src_path).replace("\\", "/")
 
             # Skip the main blend file (uploaded separately)
@@ -1283,95 +1387,19 @@ def main() -> None:
         )
         report.complete_stage("trace")
 
-        if has_zip_issues:
-            answer = logger.ask_choice(
-                "Some dependencies have problems. Continue anyway?",
-                [
-                    ("y", "Continue", "Proceed with submission"),
-                    ("n", "Cancel", "Cancel and close"),
-                    (
-                        "r",
-                        "Open diagnostic reports",
-                        "Open the diagnostic reports folder",
-                    ),
-                ],
-                default="y",
-            )
-            report.record_user_choice(
-                "Dependency issues found", answer,
-                options=["Continue", "Cancel", "Open reports"],
-            )
-            if answer == "r":
-                logger.report_info(str(report.get_path()))
-                open_folder(str(report.get_reports_dir()), logger_instance=logger)
-                answer = logger.ask_choice(
-                    "Continue with submission?",
-                    [
-                        ("y", "Continue", "Proceed with submission"),
-                        ("n", "Cancel", "Cancel and close"),
-                    ],
-                    default="y",
-                )
-                report.record_user_choice(
-                    "Continue after viewing reports?", answer,
-                    options=["Continue", "Cancel"],
-                )
-            if answer != "y":
-                report.set_status("cancelled")
-                sys.exit(1)
+        _run_test_mode_report(
+            ctx,
+            upload_type="ZIP",
+            dep_paths=dep_paths,
+            missing_set=missing_set,
+            unreadable_dict=unreadable_dict,
+            project_root=project_root,
+            same_drive_deps=same_drive_deps,
+            cross_drive_deps=cross_drive_deps,
+            has_issues=has_zip_issues,
+        )
 
-        # TEST MODE
-        if test_mode:
-            by_ext: Dict[str, int] = {}
-            total_size = 0
-            for dep in dep_paths:
-                ext = dep.suffix.lower() if dep.suffix else "(no ext)"
-                by_ext[ext] = by_ext.get(ext, 0) + 1
-                if dep.exists() and dep.is_file():
-                    try:
-                        total_size += dep.stat().st_size
-                    except:
-                        pass
-
-            test_report_data, test_report_path = generate_test_report(
-                blend_path=blend_path,
-                dep_paths=dep_paths,
-                missing_set=missing_set,
-                unreadable_dict=unreadable_dict,
-                project_root=project_root,
-                same_drive_deps=same_drive_deps,
-                cross_drive_deps=cross_drive_deps,
-                upload_type="ZIP",
-                addon_dir=str(data["addon_dir"]),
-                mode="test",
-                format_size_fn=_format_size,
-            )
-            logger.test_report(
-                blend_path=blend_path,
-                dep_count=len(dep_paths),
-                project_root=str(project_root),
-                same_drive=len(same_drive_deps),
-                cross_drive=len(cross_drive_deps),
-                by_ext=by_ext,
-                total_size=total_size,
-                missing=[str(p) for p in sorted(missing_set)],
-                unreadable=[
-                    (str(p), err)
-                    for p, err in sorted(
-                        unreadable_dict.items(), key=lambda x: str(x[0])
-                    )
-                ],
-                cross_drive_files=[str(p) for p in sorted(cross_drive_deps)],
-                upload_type="ZIP",
-                report_path=str(test_report_path) if test_report_path else None,
-                shorten_fn=shorten_path,
-            )
-            _safe_input("\nPress Enter to close.", "")
-            sys.exit(0)
-
-        # ═══════════════════════════════════════════════════════════════════════
         # Stage 2: Packing (Zip upload)
-        # ═══════════════════════════════════════════════════════════════════════
         logger.stage_header(
             2,
             "Packing",
@@ -1400,12 +1428,11 @@ def main() -> None:
         def _noop_emit(msg):
             pass
 
-        zip_report = pack_blend(
+        pack_blend(
             abs_blend_norm,
             str(zip_file),
             method="ZIP",
             project_path=project_root_str,
-            return_report=True,
             pre_traced_deps=raw_usages,
             zip_emit_fn=_noop_emit,
             zip_entry_cb=_on_zip_entry,
@@ -1447,32 +1474,55 @@ def main() -> None:
             try:
                 zip_file.unlink()
                 logger.info(f"Temporary archive removed: {zip_file}")
-            except:
+            except OSError:
                 pass
         _safe_input("\nPress Enter to close.", "")
         sys.exit(0)
 
-    # ═══════════════════════════════════════════════════════════════════════════
+    ctx.rel_manifest = rel_manifest
+    ctx.dependency_total_size = dependency_total_size if use_project else 0
+    ctx.required_storage = required_storage
+    ctx.common_path = common_path
+    ctx.main_blend_s3 = main_blend_s3
+    ctx.project_root_str = project_root_str if not use_project else ""
+
+
+def _upload(ctx: _SubmitContext) -> None:
+    data = ctx.data
+    mods = ctx.mods
+    logger = ctx.logger
+    session = ctx.session
+    report = ctx.report
+    fetch_project_storage = mods["fetch_project_storage"]
+    _build_base = mods["_build_base"]
+    CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
+    run_rclone = mods["run_rclone"]
+    rclone_bin = ctx.rclone_bin
+    blend_path = ctx.blend_path
+    use_project = ctx.use_project
+    zip_file = ctx.zip_file
+    filelist = ctx.filelist
+    project_name = ctx.project_name
+    job_id = ctx.job_id
+    rel_manifest = ctx.rel_manifest
+    dependency_total_size = ctx.dependency_total_size
+    required_storage = ctx.required_storage
+    common_path = ctx.common_path
+    main_blend_s3 = ctx.main_blend_s3
+
     # Stage 3: Uploading — transfer to cloud storage
-    # ═══════════════════════════════════════════════════════════════════════════
     logger.stage_header(3, "Uploading", "Transferring data to farm storage")
     report.start_stage("upload")
 
     # R2 credentials
     try:
-        s3_response = session.get(
-            f"{data['pocketbase_url']}/api/collections/project_storage/records",
-            headers=headers,
-            params={
-                "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')",
-                "sort": "-updated",
-                "perPage": 1,
-                "skipTotal": 1,
-            },
-            timeout=30,
+        storage_payload = fetch_project_storage(
+            session,
+            data["pocketbase_url"],
+            data["user_token"],
+            data["project"]["id"],
         )
-        s3_response.raise_for_status()
-        s3info, bucket = _parse_project_storage_payload(s3_response.json())
+        s3info, bucket = _parse_project_storage_payload(storage_payload)
     except Exception as exc:
         logger.fatal(
             f"Couldn't get storage credentials. Check your connection and try again.\nDetails: {exc}"
@@ -1582,7 +1632,7 @@ def main() -> None:
             blend_size = 0
             try:
                 blend_size = os.path.getsize(blend_path)
-            except:
+            except OSError:
                 pass
             logger.upload_step(step, total_steps, "Uploading main blend")
             move_to_path = _nfc(_s3key_clean(f"{project_name}/{main_blend_s3}"))
@@ -1751,7 +1801,6 @@ def main() -> None:
                             f"{len(rel_manifest) - total_touched} file(s) may have been skipped"
                         )
                 else:
-                    # --- NORMAL PATH: non-root source (existing behavior) ---
                     report.start_upload_step(
                         step, total_steps, "Uploading dependencies",
                         manifest_entries=len(rel_manifest),
@@ -1867,6 +1916,25 @@ def main() -> None:
         except Exception:
             pass
 
+
+def _register_job(ctx: _SubmitContext) -> None:
+    data = ctx.data
+    logger = ctx.logger
+    session = ctx.session
+    report = ctx.report
+    headers = ctx.headers
+    blend_path = ctx.blend_path
+    use_project = ctx.use_project
+    org_id = ctx.org_id
+    project_name = ctx.project_name
+    project_root_str = ctx.project_root_str
+    main_blend_s3 = ctx.main_blend_s3
+    effective_end_frame = ctx.effective_end_frame
+    frame_step_val = ctx.frame_step_val
+    render_order = ctx.render_order
+    render_tasks = ctx.render_tasks
+    required_storage = ctx.required_storage
+
     use_scene_image_format = bool(data.get("use_scene_image_format")) or (
         str(data.get("image_format", "")).upper() == "SCENE"
     )
@@ -1934,6 +2002,20 @@ def main() -> None:
             f"Details: {_request_exception_details(exc)}"
         )
 
+
+def _finish(ctx: _SubmitContext) -> None:
+    data = ctx.data
+    mods = ctx.mods
+    logger = ctx.logger
+    report = ctx.report
+    t_start = ctx.t_start
+    use_project = ctx.use_project
+    project_sqid = ctx.project_sqid
+    rel_manifest = ctx.rel_manifest
+    main_blend_s3 = ctx.main_blend_s3
+    blend_path = ctx.blend_path
+    open_folder = mods["open_folder"]
+
     # Finalize the diagnostic report
     report.finalize()
 
@@ -1964,13 +2046,6 @@ def main() -> None:
     except Exception:
         selection = "c"
 
-    try:
-        # Best effort: remove the handoff file (only in worker mode)
-        handoff_path = Path(sys.argv[1]).resolve()
-        handoff_path.unlink(missing_ok=True)
-    except Exception:
-        pass
-
     # Act on the integrated success prompt.
     if selection == "j":
         try:
@@ -1994,7 +2069,37 @@ def main() -> None:
     sys.exit(0)
 
 
-# ─── entry ───────────────────────────────────────────────────────
+def main() -> None:
+    t_start = time.perf_counter()
+    data = _load_handoff_from_argv(sys.argv)
+    mods = _bootstrap_addon_modules(data)
+    proj = data["project"]
+
+    mods["clear_console"]()
+    logger = mods["create_logger"](_LOG, input_fn=_safe_input)
+    try:
+        logger.logo_start()
+    except Exception:
+        pass
+
+    ctx = _SubmitContext(
+        data=data,
+        mods=mods,
+        t_start=t_start,
+        proj=proj,
+        logger=logger,
+        session=mods["requests_retry_session"](),
+    )
+    _preflight(ctx)
+    _check_update(ctx)
+    _ensure_farm_ready(ctx)
+    _trace_and_pack(ctx)
+    _upload(ctx)
+    _register_job(ctx)
+    _finish(ctx)
+
+
+# Entry point
 if __name__ == "__main__":
     try:
         main()

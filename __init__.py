@@ -25,13 +25,16 @@ from . import panels
 from . import operators
 
 
-def get_prefs():
-    addon_name = __name__
-    prefs_container = bpy.context.preferences.addons.get(addon_name)
-    return prefs_container and prefs_container.preferences
+# atexit handlers persist across addon reloads; register only once per process.
+if "_atexit_registered" not in globals():
+    _atexit_registered = False
+
 
 def register():
-    atexit.register(Storage.save)
+    global _atexit_registered
+    if not _atexit_registered:
+        atexit.register(Storage.save)
+        _atexit_registered = True
     icons.register()
     properties.register()
     preferences.register()
@@ -49,8 +52,3 @@ def unregister():
     preferences.unregister()
     properties.unregister()
     icons.unregister()
-
-
-if __name__ == "__main__":
-
-    register()

@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
 """
-Test to verify the compression theory and fix for "File format not supported" error.
+Verify that packing preserves compressed .blend files.
 
-The bug: Gzip-compressed .blend files were being re-compressed with Zstd, creating
-Zstd(Gzip(data)). When Blender opened these files:
-1. Blender sees Zstd magic → decompresses with Zstd
-2. Result is Gzip data, not a valid .blend header
-3. Blender fails with "File format not supported"
-
-The fix: Detect gzip magic and store as-is (no re-compression).
+Gzip-compressed input must be stored as-is. Wrapping it in Zstd produces
+Zstd(Gzip(data)), which Blender cannot open after a single decompression pass.
 
 Run with: python tests/test_compression_theory.py
 """
@@ -19,7 +14,6 @@ import sys
 import zipfile
 from pathlib import Path
 
-# Add the addon to path
 addon_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(addon_dir))
 
@@ -103,11 +97,11 @@ def simulate_blender_open(data: bytes) -> tuple[bool, str]:
         try:
             decompressor = zstd.ZstdDecompressor()
             decompressed = decompressor.decompress(data)
-            # Now check if decompressed data is valid
+            # Validate the decompressed data.
             if decompressed[:7] == b"BLENDER":
                 return True, "Zstd decompressed successfully"
             elif decompressed[:2] == _GZIP_MAGIC:
-                # THIS IS THE BUG: Zstd(Gzip(data)) produces Gzip data after decompression
+                # Zstd-wrapped Gzip data remains compressed after one decompression pass.
                 return False, "ERROR: File format is not supported (got Gzip data after Zstd decompression)"
             else:
                 return False, f"ERROR: Invalid header after Zstd decompression: {decompressed[:10]}"
@@ -157,8 +151,7 @@ def test_uncompressed_blend():
 
 def test_gzip_blend_with_bug():
     """
-    Test: Simulate the BUG scenario
-    Gzip .blend → incorrectly Zstd compressed → Blender FAILS
+    Confirm that a Zstd-wrapped Gzip .blend cannot be opened.
     """
     print("\n" + "=" * 70)
     print("TEST 2: Gzip .blend WITH BUG (double compression)")
@@ -168,7 +161,7 @@ def test_gzip_blend_with_bug():
     print(f"  Original: {len(original)} bytes, header: {original[:2].hex()}")
     print(f"  Magic check: starts with Gzip = {original[:2] == _GZIP_MAGIC}")
 
-    # Simulate the BUG: ignore gzip magic and compress anyway
+    # Wrap Gzip data in Zstd compression.
     if HAS_ZSTD:
         compressor = zstd.ZstdCompressor(level=1)
         packed_with_bug = compressor.compress(original)  # Zstd(Gzip(data))
@@ -182,7 +175,7 @@ def test_gzip_blend_with_bug():
     success, msg = simulate_blender_open(packed_with_bug)
     print(f"  Blender open: {msg}")
 
-    # This SHOULD fail with the bug
+    # Blender cannot open double-compressed input.
     assert not success, "Bug scenario should have failed!"
     assert "File format is not supported" in msg, f"Expected format error, got: {msg}"
     print("  ✓ PASSED (correctly demonstrates the bug)")
@@ -190,7 +183,7 @@ def test_gzip_blend_with_bug():
 
 def test_gzip_blend_with_fix():
     """
-    Test: Gzip .blend → stored as-is (THE FIX) → Blender opens OK
+    Confirm that a Gzip .blend stored as-is opens successfully.
     """
     print("\n" + "=" * 70)
     print("TEST 3: Gzip .blend WITH FIX (stored as-is)")
@@ -203,7 +196,7 @@ def test_gzip_blend_with_fix():
     packed, label = simulate_zip_packing(original)  # Uses our fixed logic
     print(f"  After fixed packing: {len(packed)} bytes, header: {packed[:4].hex()}, label: {label}")
 
-    # Verify the fix: packed data should be identical to original (stored as-is)
+    # Packed data remains identical to the Gzip input.
     assert packed == original, "Fix should store gzip .blend as-is!"
     assert label == "Store (gzip)", f"Expected 'Store (gzip)' label, got: {label}"
     print(f"  Verify: packed == original = {packed == original}")

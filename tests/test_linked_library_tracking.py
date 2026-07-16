@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 """
-Test to verify linked .blend files are properly tracked as dependencies.
+Verify linked .blend files are tracked as dependencies.
 
-This addresses the concern: "blend files weren't found if they didn't have
-any dependencies because the trace dependencies would not add the blend
-a missing file would come from"
-
-The fix verification:
-1. Linked .blend files ARE tracked via LI (Library) blocks
-2. Even if a linked .blend has no external dependencies (textures), it's still tracked
-3. The main .blend file is always added to the pack, even with zero dependencies
-4. All source .blend files that dependencies come from are tracked
+Linked files are discovered through LI (Library) blocks even when they have no
+external dependencies. The main file and every source .blend associated with a
+dependency must be included in the pack.
 
 Run with: python tests/test_linked_library_tracking.py
 """
@@ -18,7 +12,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-# Add the addon to path
 addon_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(addon_dir))
 

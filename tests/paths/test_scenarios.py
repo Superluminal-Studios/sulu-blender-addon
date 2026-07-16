@@ -17,53 +17,32 @@ All tests use FAKE PATHS - no filesystem access needed.
 These validate that path logic doesn't mangle, corrupt, or break on edge cases.
 
 Usage:
-    python tests/paths/test_scenarios.py
-    python tests/paths/test_scenarios.py --verbose
-    python tests/paths/test_scenarios.py --category unicode
+    python -m pytest tests/paths/test_scenarios.py
 """
 
 from __future__ import annotations
 
 import os
-import sys
-import argparse
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Dict, List, Any
-
-# Add parent directories for imports
-_tests_dir = Path(__file__).parent.parent
-_addon_dir = _tests_dir.parent
-sys.path.insert(0, str(_addon_dir))
-sys.path.insert(0, str(_tests_dir))
+from typing import Any, List
 
 # Import shared utilities - aliased with underscore for local use
-from utils import (
+from tests.helpers import (
     is_win_drive_path as _is_win_drive_path,
     get_drive as _drive,
     relpath_safe as _relpath_safe,
     s3key_clean as _s3key_clean,
     nfc as _nfc,
+    is_s3_safe,
     process_for_upload,
 )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TEST FRAMEWORK
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-def _safe_print(msg: str) -> None:
-    """Print with fallback for Windows console encoding issues."""
-    try:
-        print(msg)
-    except UnicodeEncodeError:
-        # Replace non-encodable chars with ? for Windows console
-        print(msg.encode("ascii", errors="replace").decode("ascii"))
+# SCENARIO FRAMEWORK
 
 
 @dataclass
-class TestResult:
+class ScenarioResult:
     name: str
     passed: bool
     message: str = ""
@@ -73,10 +52,10 @@ class TestResult:
 
 
 @dataclass
-class TestSuite:
+class ScenarioSuite:
     name: str
     category: str = ""
-    results: List[TestResult] = field(default_factory=list)
+    results: List[ScenarioResult] = field(default_factory=list)
 
     @property
     def passed(self) -> int:
@@ -86,21 +65,37 @@ class TestSuite:
     def failed(self) -> int:
         return sum(1 for r in self.results if not r.passed)
 
+    def all_passed(self) -> bool:
+        return self.failed == 0
+
     def add(self, name: str, passed: bool, message: str = "", expected: Any = None, actual: Any = None):
-        self.results.append(TestResult(name, passed, message, self.category, expected, actual))
+        self.results.append(ScenarioResult(name, passed, message, self.category, expected, actual))
 
 
-def assert_eq(suite: TestSuite, name: str, expected: Any, actual: Any):
+def check(suite: ScenarioSuite) -> None:
+    """Fail the enclosing pytest test if any scenario check in the suite failed."""
+    if not suite.all_passed():
+        details = "\n".join(
+            f"  [FAIL] {r.name}" + (f": {r.message}" if r.message else "")
+            for r in suite.results
+            if not r.passed
+        )
+        raise AssertionError(
+            f"{suite.name}: {suite.failed}/{len(suite.results)} scenario check(s) failed\n{details}"
+        )
+
+
+def assert_eq(suite: ScenarioSuite, name: str, expected: Any, actual: Any):
     passed = expected == actual
     msg = f"Expected: {expected!r}, Got: {actual!r}" if not passed else ""
     suite.add(name, passed, msg, expected, actual)
 
 
-def assert_true(suite: TestSuite, name: str, condition: bool, message: str = ""):
+def assert_true(suite: ScenarioSuite, name: str, condition: bool, message: str = ""):
     suite.add(name, condition, message if not condition else "")
 
 
-def assert_no_absolute(suite: TestSuite, name: str, path: str):
+def assert_no_absolute(suite: ScenarioSuite, name: str, path: str):
     """Assert path doesn't look like an absolute path."""
     issues = []
     if path.startswith("/"):
@@ -116,7 +111,7 @@ def assert_no_absolute(suite: TestSuite, name: str, path: str):
               f"Path looks absolute: {path!r} - {', '.join(issues)}" if issues else "")
 
 
-def assert_s3_safe(suite: TestSuite, name: str, key: str):
+def assert_s3_safe(suite: ScenarioSuite, name: str, key: str):
     """Assert S3 key is safe for upload."""
     issues = []
 
@@ -145,7 +140,7 @@ def assert_s3_safe(suite: TestSuite, name: str, key: str):
               f"S3 key unsafe: {key!r} - {', '.join(issues)}" if issues else "")
 
 
-def assert_preserves_filename(suite: TestSuite, name: str, original: str, result: str):
+def assert_preserves_filename(suite: ScenarioSuite, name: str, original: str, result: str):
     """Assert the filename portion is preserved."""
     orig_name = os.path.basename(original)
     result_name = os.path.basename(result)
@@ -154,14 +149,12 @@ def assert_preserves_filename(suite: TestSuite, name: str, original: str, result
               f"Filename changed: {orig_name!r} -> {result_name!r}")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TEST CATEGORY: Unicode & International Characters
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_unicode_polish() -> TestSuite:
+def test_unicode_polish() -> None:
     """Polish characters - common in European studios."""
-    suite = TestSuite("Unicode: Polish", "unicode")
+    suite = ScenarioSuite("Unicode: Polish", "unicode")
 
     # Polish characters: ą ć ę ł ń ó ś ź ż Ą Ć Ę Ł Ń Ó Ś Ź Ż
     blend = "C:/Projekty/Animacja_Główna/sceny/główna_scena.blend"
@@ -184,12 +177,12 @@ def test_unicode_polish() -> TestSuite:
     # Verify no issues in processing
     assert_true(suite, "No processing issues", len(issues) == 0, f"Issues: {issues}")
 
-    return suite
+    check(suite)
 
 
-def test_unicode_japanese() -> TestSuite:
+def test_unicode_japanese() -> None:
     """Japanese characters - anime/VFX studios."""
-    suite = TestSuite("Unicode: Japanese", "unicode")
+    suite = ScenarioSuite("Unicode: Japanese", "unicode")
 
     # Mix of hiragana, katakana, and kanji
     blend = "/Users/artist/プロジェクト/アニメーション/シーン/メイン_シーン.blend"
@@ -206,12 +199,12 @@ def test_unicode_japanese() -> TestSuite:
     assert_true(suite, "Japanese chars in key", "シーン" in main_key or "メイン" in main_key,
                 f"Expected Japanese in key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_unicode_chinese() -> TestSuite:
+def test_unicode_chinese() -> None:
     """Chinese characters - growing market."""
-    suite = TestSuite("Unicode: Chinese", "unicode")
+    suite = ScenarioSuite("Unicode: Chinese", "unicode")
 
     blend = "D:/项目/动画制作/场景/主场景.blend"
     root = "D:/项目/动画制作"
@@ -225,12 +218,12 @@ def test_unicode_chinese() -> TestSuite:
     assert_s3_safe(suite, "Chinese blend key S3 safe", main_key)
     assert_preserves_filename(suite, "Chinese filename preserved", blend, main_key)
 
-    return suite
+    check(suite)
 
 
-def test_unicode_russian() -> TestSuite:
+def test_unicode_russian() -> None:
     """Russian/Cyrillic - Eastern European studios."""
-    suite = TestSuite("Unicode: Russian", "unicode")
+    suite = ScenarioSuite("Unicode: Russian", "unicode")
 
     blend = "C:/Проекты/Анимация/сцены/главная_сцена.blend"
     root = "C:/Проекты/Анимация"
@@ -244,12 +237,12 @@ def test_unicode_russian() -> TestSuite:
     assert_s3_safe(suite, "Russian blend key S3 safe", main_key)
     assert_preserves_filename(suite, "Russian filename preserved", blend, main_key)
 
-    return suite
+    check(suite)
 
 
-def test_unicode_arabic() -> TestSuite:
+def test_unicode_arabic() -> None:
     """Arabic - RTL language, special challenges."""
-    suite = TestSuite("Unicode: Arabic", "unicode")
+    suite = ScenarioSuite("Unicode: Arabic", "unicode")
 
     # Arabic is RTL but filenames should still work
     blend = "C:/مشاريع/الرسوم_المتحركة/مشهد_رئيسي.blend"
@@ -264,12 +257,12 @@ def test_unicode_arabic() -> TestSuite:
     # Key thing: the structure should be preserved even with RTL text
     assert_no_absolute(suite, "Arabic key not absolute", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_unicode_korean() -> TestSuite:
+def test_unicode_korean() -> None:
     """Korean (Hangul) characters."""
-    suite = TestSuite("Unicode: Korean", "unicode")
+    suite = ScenarioSuite("Unicode: Korean", "unicode")
 
     blend = "/home/user/프로젝트/애니메이션/장면/메인_장면.blend"
     root = "/home/user/프로젝트/애니메이션"
@@ -282,12 +275,12 @@ def test_unicode_korean() -> TestSuite:
     assert_s3_safe(suite, "Korean blend key S3 safe", main_key)
     assert_preserves_filename(suite, "Korean filename preserved", blend, main_key)
 
-    return suite
+    check(suite)
 
 
-def test_unicode_thai() -> TestSuite:
+def test_unicode_thai() -> None:
     """Thai - complex script with tone marks."""
-    suite = TestSuite("Unicode: Thai", "unicode")
+    suite = ScenarioSuite("Unicode: Thai", "unicode")
 
     blend = "C:/โปรเจกต์/แอนิเมชัน/ฉาก/ฉากหลัก.blend"
     root = "C:/โปรเจกต์/แอนิเมชัน"
@@ -296,12 +289,12 @@ def test_unicode_thai() -> TestSuite:
 
     assert_s3_safe(suite, "Thai blend key S3 safe", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_unicode_emoji() -> TestSuite:
+def test_unicode_emoji() -> None:
     """Emoji in filenames - yes, people actually do this."""
-    suite = TestSuite("Unicode: Emoji", "unicode")
+    suite = ScenarioSuite("Unicode: Emoji", "unicode")
 
     # Artists sometimes use emoji for quick visual identification
     blend = "C:/Projects/🎬 Animation/scenes/🏠 house_scene.blend"
@@ -318,12 +311,12 @@ def test_unicode_emoji() -> TestSuite:
     assert_true(suite, "Emoji preserved in key", "🏠" in main_key or "house" in main_key,
                 f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_unicode_mixed_scripts() -> TestSuite:
+def test_unicode_mixed_scripts() -> None:
     """Mixed scripts in same path - international collaboration."""
-    suite = TestSuite("Unicode: Mixed Scripts", "unicode")
+    suite = ScenarioSuite("Unicode: Mixed Scripts", "unicode")
 
     # Realistic: Japanese studio name, English project, Chinese asset
     blend = "C:/株式会社スタジオ/Project_Europa/assets/中文资产/scene.blend"
@@ -339,10 +332,10 @@ def test_unicode_mixed_scripts() -> TestSuite:
     for i, dk in enumerate(dep_keys):
         assert_s3_safe(suite, f"Mixed script dep {i} S3 safe", dk)
 
-    return suite
+    check(suite)
 
 
-def test_unicode_nfc_nfd_normalization() -> TestSuite:
+def test_unicode_nfc_nfd_normalization() -> None:
     """
     NFC vs NFD normalization - CRITICAL for macOS interop.
 
@@ -353,7 +346,7 @@ def test_unicode_nfc_nfd_normalization() -> TestSuite:
     - NFC (composed): U+00F6 (single codepoint)
     - NFD (decomposed): U+006F U+0308 (o + combining diaeresis)
     """
-    suite = TestSuite("Unicode: NFC/NFD Normalization", "unicode")
+    suite = ScenarioSuite("Unicode: NFC/NFD Normalization", "unicode")
 
     # German umlaut - very common source of bugs
     nfc_path = "C:/Projekte/Größe/szene.blend"  # NFC: ö as single char
@@ -374,17 +367,15 @@ def test_unicode_nfc_nfd_normalization() -> TestSuite:
 
     assert_eq(suite, "French NFC/NFD same key", _nfc(nfc_key), _nfc(nfd_key))
 
-    return suite
+    check(suite)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TEST CATEGORY: Cloud Storage Mounts
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_cloud_google_drive_mac() -> TestSuite:
+def test_cloud_google_drive_mac() -> None:
     """Google Drive on macOS - very common for freelancers."""
-    suite = TestSuite("Cloud: Google Drive (macOS)", "cloud")
+    suite = ScenarioSuite("Cloud: Google Drive (macOS)", "cloud")
 
     # Google Drive mount point on macOS
     blend = "/Users/artist/Library/CloudStorage/GoogleDrive-artist@gmail.com/My Drive/Blender Projects/Client_ABC/scene.blend"
@@ -402,12 +393,12 @@ def test_cloud_google_drive_mac() -> TestSuite:
     # The shared assets should have relative path going up
     assert_true(suite, "Shared assets handled", len(dep_keys) >= 1, f"Deps: {dep_keys}")
 
-    return suite
+    check(suite)
 
 
-def test_cloud_google_drive_windows() -> TestSuite:
+def test_cloud_google_drive_windows() -> None:
     """Google Drive on Windows with G: mount."""
-    suite = TestSuite("Cloud: Google Drive (Windows)", "cloud")
+    suite = ScenarioSuite("Cloud: Google Drive (Windows)", "cloud")
 
     # Google Drive as mounted drive
     blend = "G:/My Drive/Projects/Animation/scene.blend"
@@ -421,12 +412,12 @@ def test_cloud_google_drive_windows() -> TestSuite:
 
     assert_s3_safe(suite, "GDrive Windows key S3 safe", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_cloud_dropbox_smart_sync() -> TestSuite:
+def test_cloud_dropbox_smart_sync() -> None:
     """Dropbox with Smart Sync - files may be cloud-only placeholders."""
-    suite = TestSuite("Cloud: Dropbox Smart Sync", "cloud")
+    suite = ScenarioSuite("Cloud: Dropbox Smart Sync", "cloud")
 
     # Dropbox path on Windows
     blend = "C:/Users/artist/Dropbox/Studio/Projects/Commercial_2024/shot_010/scene.blend"
@@ -441,12 +432,12 @@ def test_cloud_dropbox_smart_sync() -> TestSuite:
     assert_s3_safe(suite, "Dropbox key S3 safe", main_key)
     assert_eq(suite, "Dropbox structure preserved", "shot_010/scene.blend", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_cloud_onedrive_business() -> TestSuite:
+def test_cloud_onedrive_business() -> None:
     """OneDrive for Business - enterprise scenario."""
-    suite = TestSuite("Cloud: OneDrive Business", "cloud")
+    suite = ScenarioSuite("Cloud: OneDrive Business", "cloud")
 
     # OneDrive Business often has org name in path
     blend = "C:/Users/artist/OneDrive - Acme Studios Inc/Projects/Feature Film/seq_01/shot_0010/scene_v003.blend"
@@ -459,12 +450,12 @@ def test_cloud_onedrive_business() -> TestSuite:
                 "seq_01" in main_key and "shot_0010" in main_key,
                 f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_cloud_icloud_drive() -> TestSuite:
+def test_cloud_icloud_drive() -> None:
     """iCloud Drive on macOS."""
-    suite = TestSuite("Cloud: iCloud Drive", "cloud")
+    suite = ScenarioSuite("Cloud: iCloud Drive", "cloud")
 
     blend = "/Users/artist/Library/Mobile Documents/com~apple~CloudDocs/Blender/Project/scene.blend"
     root = "/Users/artist/Library/Mobile Documents/com~apple~CloudDocs/Blender/Project"
@@ -474,12 +465,12 @@ def test_cloud_icloud_drive() -> TestSuite:
     assert_s3_safe(suite, "iCloud key S3 safe", main_key)
     assert_eq(suite, "iCloud simple key", "scene.blend", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_cloud_synology_drive() -> TestSuite:
+def test_cloud_synology_drive() -> None:
     """Synology Drive - popular NAS cloud sync."""
-    suite = TestSuite("Cloud: Synology Drive", "cloud")
+    suite = ScenarioSuite("Cloud: Synology Drive", "cloud")
 
     # Synology creates a local sync folder
     blend = "C:/Users/artist/SynologyDrive/Studio/Projects/Animation/scene.blend"
@@ -489,17 +480,15 @@ def test_cloud_synology_drive() -> TestSuite:
 
     assert_s3_safe(suite, "Synology key S3 safe", main_key)
 
-    return suite
+    check(suite)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TEST CATEGORY: Network Storage (SMB, NFS, UNC)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_network_unc_basic() -> TestSuite:
+def test_network_unc_basic() -> None:
     """Basic UNC path on Windows."""
-    suite = TestSuite("Network: UNC Basic", "network")
+    suite = ScenarioSuite("Network: UNC Basic", "network")
 
     blend = "//fileserver/projects/animation/shot_010/scene.blend"
     root = "//fileserver/projects/animation"
@@ -514,12 +503,12 @@ def test_network_unc_basic() -> TestSuite:
     assert_no_absolute(suite, "UNC key not absolute", main_key)
     assert_eq(suite, "UNC structure", "shot_010/scene.blend", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_network_unc_with_spaces() -> TestSuite:
+def test_network_unc_with_spaces() -> None:
     """UNC path with spaces in server/share names."""
-    suite = TestSuite("Network: UNC with Spaces", "network")
+    suite = ScenarioSuite("Network: UNC with Spaces", "network")
 
     blend = "//File Server/Project Files/Animation Studio/scene.blend"
     root = "//File Server/Project Files/Animation Studio"
@@ -529,12 +518,12 @@ def test_network_unc_with_spaces() -> TestSuite:
     assert_s3_safe(suite, "UNC spaces key S3 safe", main_key)
     assert_eq(suite, "UNC spaces simple key", "scene.blend", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_network_unc_backslash() -> TestSuite:
+def test_network_unc_backslash() -> None:
     """UNC path with Windows backslashes."""
-    suite = TestSuite("Network: UNC Backslashes", "network")
+    suite = ScenarioSuite("Network: UNC Backslashes", "network")
 
     blend = "\\\\server\\share\\projects\\scene.blend"
     root = "\\\\server\\share\\projects"
@@ -544,12 +533,12 @@ def test_network_unc_backslash() -> TestSuite:
     assert_s3_safe(suite, "UNC backslash key S3 safe", main_key)
     assert_true(suite, "No backslashes in key", "\\" not in main_key, f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_network_mapped_drive() -> TestSuite:
+def test_network_mapped_drive() -> None:
     """Windows mapped network drive (Z:)."""
-    suite = TestSuite("Network: Mapped Drive", "network")
+    suite = ScenarioSuite("Network: Mapped Drive", "network")
 
     # Z: mapped to \\server\projects
     blend = "Z:/Animation/Commercial/shot_010/scene.blend"
@@ -569,12 +558,12 @@ def test_network_mapped_drive() -> TestSuite:
     main_key, dep_keys, issues = process_for_upload(blend, root, [deps[0]])
     assert_s3_safe(suite, "Mapped drive key S3 safe", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_network_nfs_linux() -> TestSuite:
+def test_network_nfs_linux() -> None:
     """NFS mount on Linux render farm."""
-    suite = TestSuite("Network: NFS Linux", "network")
+    suite = ScenarioSuite("Network: NFS Linux", "network")
 
     blend = "/mnt/nfs/projects/feature_film/seq_01/shot_0010/scene.blend"
     root = "/mnt/nfs/projects/feature_film"
@@ -588,12 +577,12 @@ def test_network_nfs_linux() -> TestSuite:
     assert_s3_safe(suite, "NFS key S3 safe", main_key)
     assert_eq(suite, "NFS structure", "seq_01/shot_0010/scene.blend", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_network_smb_mac() -> TestSuite:
+def test_network_smb_mac() -> None:
     """SMB mount on macOS."""
-    suite = TestSuite("Network: SMB macOS", "network")
+    suite = ScenarioSuite("Network: SMB macOS", "network")
 
     # SMB mounts appear under /Volumes on Mac
     blend = "/Volumes/projects/Animation/scene.blend"
@@ -603,12 +592,12 @@ def test_network_smb_mac() -> TestSuite:
 
     assert_s3_safe(suite, "SMB Mac key S3 safe", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_network_dfs() -> TestSuite:
+def test_network_dfs() -> None:
     """Microsoft DFS (Distributed File System)."""
-    suite = TestSuite("Network: DFS", "network")
+    suite = ScenarioSuite("Network: DFS", "network")
 
     # DFS namespace path
     blend = "//company.com/dfs/projects/Animation/scene.blend"
@@ -618,17 +607,15 @@ def test_network_dfs() -> TestSuite:
 
     assert_s3_safe(suite, "DFS key S3 safe", main_key)
 
-    return suite
+    check(suite)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TEST CATEGORY: Special Characters in Paths
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_special_chars_spaces() -> TestSuite:
+def test_special_chars_spaces() -> None:
     """Spaces in paths - extremely common."""
-    suite = TestSuite("Special: Spaces", "special_chars")
+    suite = ScenarioSuite("Special: Spaces", "special_chars")
 
     blend = "C:/My Projects/Blender Files/Client Work/Scene Files/main scene final.blend"
     root = "C:/My Projects/Blender Files/Client Work"
@@ -639,12 +626,12 @@ def test_special_chars_spaces() -> TestSuite:
     assert_true(suite, "Spaces preserved", " " in main_key, f"Key: {main_key}")
     assert_eq(suite, "Spaces structure", "Scene Files/main scene final.blend", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_special_chars_parentheses() -> TestSuite:
+def test_special_chars_parentheses() -> None:
     """Parentheses - common for versions and copies."""
-    suite = TestSuite("Special: Parentheses", "special_chars")
+    suite = ScenarioSuite("Special: Parentheses", "special_chars")
 
     blend = "C:/Projects/Animation (2024)/scenes/scene_v2 (final).blend"
     root = "C:/Projects/Animation (2024)"
@@ -659,12 +646,12 @@ def test_special_chars_parentheses() -> TestSuite:
     assert_true(suite, "Parentheses preserved", "(" in main_key and ")" in main_key,
                 f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_special_chars_brackets() -> TestSuite:
+def test_special_chars_brackets() -> None:
     """Square brackets - [WIP], [Final], etc."""
-    suite = TestSuite("Special: Brackets", "special_chars")
+    suite = ScenarioSuite("Special: Brackets", "special_chars")
 
     blend = "C:/Projects/[WIP] Animation/scenes/[Final] hero_shot.blend"
     root = "C:/Projects/[WIP] Animation"
@@ -674,12 +661,12 @@ def test_special_chars_brackets() -> TestSuite:
     assert_s3_safe(suite, "Brackets key S3 safe", main_key)
     assert_true(suite, "Brackets preserved", "[" in main_key, f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_special_chars_ampersand() -> TestSuite:
+def test_special_chars_ampersand() -> None:
     """Ampersand - Tom & Jerry style names."""
-    suite = TestSuite("Special: Ampersand", "special_chars")
+    suite = ScenarioSuite("Special: Ampersand", "special_chars")
 
     blend = "C:/Projects/Tom & Jerry Animation/scenes/chase & catch.blend"
     root = "C:/Projects/Tom & Jerry Animation"
@@ -689,12 +676,12 @@ def test_special_chars_ampersand() -> TestSuite:
     assert_s3_safe(suite, "Ampersand key S3 safe", main_key)
     assert_true(suite, "Ampersand preserved", "&" in main_key, f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_special_chars_apostrophe() -> TestSuite:
+def test_special_chars_apostrophe() -> None:
     """Apostrophes - possessive names."""
-    suite = TestSuite("Special: Apostrophe", "special_chars")
+    suite = ScenarioSuite("Special: Apostrophe", "special_chars")
 
     blend = "C:/John's Projects/Sarah's Animation/scene.blend"
     root = "C:/John's Projects/Sarah's Animation"
@@ -703,12 +690,12 @@ def test_special_chars_apostrophe() -> TestSuite:
 
     assert_s3_safe(suite, "Apostrophe key S3 safe", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_special_chars_hash() -> TestSuite:
+def test_special_chars_hash() -> None:
     """Hash/pound - frame numbers, issue numbers."""
-    suite = TestSuite("Special: Hash", "special_chars")
+    suite = ScenarioSuite("Special: Hash", "special_chars")
 
     blend = "C:/Projects/#1 Priority/scenes/scene#001.blend"
     root = "C:/Projects/#1 Priority"
@@ -718,12 +705,12 @@ def test_special_chars_hash() -> TestSuite:
     assert_s3_safe(suite, "Hash key S3 safe", main_key)
     assert_true(suite, "Hash preserved", "#" in main_key, f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_special_chars_at_sign() -> TestSuite:
+def test_special_chars_at_sign() -> None:
     """At sign - @2x assets, email addresses."""
-    suite = TestSuite("Special: At Sign", "special_chars")
+    suite = ScenarioSuite("Special: At Sign", "special_chars")
 
     blend = "C:/Projects/Mobile App/assets/@2x/icon@2x.blend"
     root = "C:/Projects/Mobile App"
@@ -733,12 +720,12 @@ def test_special_chars_at_sign() -> TestSuite:
     assert_s3_safe(suite, "At sign key S3 safe", main_key)
     assert_true(suite, "At sign preserved", "@" in main_key, f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_special_chars_plus() -> TestSuite:
+def test_special_chars_plus() -> None:
     """Plus sign - C++, Google+ era names."""
-    suite = TestSuite("Special: Plus", "special_chars")
+    suite = ScenarioSuite("Special: Plus", "special_chars")
 
     blend = "C:/Projects/C++ Visualization/scenes/main+backup.blend"
     root = "C:/Projects/C++ Visualization"
@@ -747,12 +734,12 @@ def test_special_chars_plus() -> TestSuite:
 
     assert_s3_safe(suite, "Plus key S3 safe", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_special_chars_percent() -> TestSuite:
+def test_special_chars_percent() -> None:
     """Percent - tricky for URL encoding."""
-    suite = TestSuite("Special: Percent", "special_chars")
+    suite = ScenarioSuite("Special: Percent", "special_chars")
 
     blend = "C:/Projects/100% Complete/scenes/50% done.blend"
     root = "C:/Projects/100% Complete"
@@ -762,12 +749,12 @@ def test_special_chars_percent() -> TestSuite:
     assert_s3_safe(suite, "Percent key S3 safe", main_key)
     assert_true(suite, "Percent preserved", "%" in main_key, f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_special_chars_unicode_symbols() -> TestSuite:
+def test_special_chars_unicode_symbols() -> None:
     """Unicode symbols - arrows, bullets, etc."""
-    suite = TestSuite("Special: Unicode Symbols", "special_chars")
+    suite = ScenarioSuite("Special: Unicode Symbols", "special_chars")
 
     blend = "C:/Projects/-> Current/scenes/• Main Scene.blend"
     root = "C:/Projects/-> Current"
@@ -780,12 +767,12 @@ def test_special_chars_unicode_symbols() -> TestSuite:
 
     assert_s3_safe(suite, "Symbols key S3 safe", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_special_chars_all_combined() -> TestSuite:
+def test_special_chars_all_combined() -> None:
     """Nightmare scenario: all special chars combined."""
-    suite = TestSuite("Special: Combined Nightmare", "special_chars")
+    suite = ScenarioSuite("Special: Combined Nightmare", "special_chars")
 
     # This is a stress test - real paths probably won't be THIS bad
     blend = "C:/[WIP] Tom & Jerry's #1 Project (2024)/scenes/50% done @ 2x [Final].blend"
@@ -796,17 +783,15 @@ def test_special_chars_all_combined() -> TestSuite:
     assert_s3_safe(suite, "Combined special chars S3 safe", main_key)
     assert_no_absolute(suite, "Combined not absolute", main_key)
 
-    return suite
+    check(suite)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TEST CATEGORY: Path Length Edge Cases
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_path_length_windows_limit() -> TestSuite:
+def test_path_length_windows_limit() -> None:
     """Near Windows MAX_PATH (260 chars) limit."""
-    suite = TestSuite("Path Length: Windows Limit", "path_length")
+    suite = ScenarioSuite("Path Length: Windows Limit", "path_length")
 
     # Create a path that's close to 260 chars
     deep_path = "C:/Projects/" + "/".join([f"level_{i:02d}" for i in range(15)]) + "/scene.blend"
@@ -818,12 +803,12 @@ def test_path_length_windows_limit() -> TestSuite:
     assert_true(suite, "Path length under 260", len(deep_path) < 260,
                 f"Path length: {len(deep_path)}")
 
-    return suite
+    check(suite)
 
 
-def test_path_length_very_deep() -> TestSuite:
+def test_path_length_very_deep() -> None:
     """Very deep nesting (50+ levels)."""
-    suite = TestSuite("Path Length: Deep Nesting", "path_length")
+    suite = ScenarioSuite("Path Length: Deep Nesting", "path_length")
 
     # 50 levels deep
     levels = "/".join([f"d{i}" for i in range(50)])
@@ -837,12 +822,12 @@ def test_path_length_very_deep() -> TestSuite:
     assert_true(suite, "Relative depth correct", main_key.count("/") == 10,
                 f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_path_length_long_filename() -> TestSuite:
+def test_path_length_long_filename() -> None:
     """Very long filename (near 255 char limit)."""
-    suite = TestSuite("Path Length: Long Filename", "path_length")
+    suite = ScenarioSuite("Path Length: Long Filename", "path_length")
 
     long_name = "a" * 200 + ".blend"  # 206 chars filename
     blend = f"C:/Projects/{long_name}"
@@ -853,17 +838,15 @@ def test_path_length_long_filename() -> TestSuite:
     assert_s3_safe(suite, "Long filename key S3 safe", main_key)
     assert_preserves_filename(suite, "Long filename preserved", blend, main_key)
 
-    return suite
+    check(suite)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TEST CATEGORY: Cross-Platform / Mixed OS Workflows
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_crossplatform_win_to_linux_farm() -> TestSuite:
+def test_crossplatform_win_to_linux_farm() -> None:
     """Windows workstation -> Linux render farm (most common)."""
-    suite = TestSuite("Cross-Platform: Win->Linux", "crossplatform")
+    suite = ScenarioSuite("Cross-Platform: Win->Linux", "crossplatform")
 
     # Artist on Windows
     blend = "C:/Users/artist/Projects/Animation/scenes/shot_010.blend"
@@ -884,12 +867,12 @@ def test_crossplatform_win_to_linux_farm() -> TestSuite:
         assert_s3_safe(suite, f"Win->Linux dep key safe: {dk[:30]}", dk)
         assert_true(suite, f"Dep no backslash: {dk[:30]}", "\\" not in dk)
 
-    return suite
+    check(suite)
 
 
-def test_crossplatform_mac_to_linux_farm() -> TestSuite:
+def test_crossplatform_mac_to_linux_farm() -> None:
     """macOS workstation -> Linux render farm."""
-    suite = TestSuite("Cross-Platform: Mac->Linux", "crossplatform")
+    suite = ScenarioSuite("Cross-Platform: Mac->Linux", "crossplatform")
 
     blend = "/Users/artist/Projects/Animation/scenes/shot_010.blend"
     root = "/Users/artist/Projects/Animation"
@@ -898,12 +881,12 @@ def test_crossplatform_mac_to_linux_farm() -> TestSuite:
 
     assert_s3_safe(suite, "Mac->Linux key safe", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_crossplatform_mixed_team() -> TestSuite:
+def test_crossplatform_mixed_team() -> None:
     """Mixed team: some on Windows, some on Mac, shared NAS."""
-    suite = TestSuite("Cross-Platform: Mixed Team", "crossplatform")
+    suite = ScenarioSuite("Cross-Platform: Mixed Team", "crossplatform")
 
     # Asset library might be referenced differently by different team members
     # but should all produce the same relative keys
@@ -929,12 +912,12 @@ def test_crossplatform_mixed_team() -> TestSuite:
     assert_eq(suite, "Mac key matches", "scene.blend", mac_key)
     assert_eq(suite, "Linux key matches", "scene.blend", linux_key)
 
-    return suite
+    check(suite)
 
 
-def test_crossplatform_case_sensitivity() -> TestSuite:
+def test_crossplatform_case_sensitivity() -> None:
     """Case sensitivity differences between OS."""
-    suite = TestSuite("Cross-Platform: Case Sensitivity", "crossplatform")
+    suite = ScenarioSuite("Cross-Platform: Case Sensitivity", "crossplatform")
 
     # On Windows/Mac these might resolve to same file, on Linux they're different
     blend = "C:/Projects/Scene/Main.blend"
@@ -951,17 +934,15 @@ def test_crossplatform_case_sensitivity() -> TestSuite:
     assert_true(suite, "Case preserved in main", "Main.blend" in main_key or "main.blend" in main_key.lower(),
                 f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TEST CATEGORY: Blender-Specific Paths
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_blender_relative_paths() -> TestSuite:
+def test_blender_relative_paths() -> None:
     """Blender // relative paths."""
-    suite = TestSuite("Blender: Relative Paths", "blender")
+    suite = ScenarioSuite("Blender: Relative Paths", "blender")
 
     # Blender uses // prefix for blend-relative paths
     # By the time we see them they should be resolved, but test anyway
@@ -979,12 +960,12 @@ def test_blender_relative_paths() -> TestSuite:
     for dk in dep_keys:
         assert_true(suite, f"No .. in dep: {dk[:30]}", ".." not in dk, f"Key: {dk}")
 
-    return suite
+    check(suite)
 
 
-def test_blender_cache_paths() -> TestSuite:
+def test_blender_cache_paths() -> None:
     """Blender simulation cache paths."""
-    suite = TestSuite("Blender: Cache Paths", "blender")
+    suite = ScenarioSuite("Blender: Cache Paths", "blender")
 
     blend = "C:/Projects/Animation/scenes/fluid_sim.blend"
     root = "C:/Projects/Animation"
@@ -1004,12 +985,12 @@ def test_blender_cache_paths() -> TestSuite:
     for dk in dep_keys:
         assert_s3_safe(suite, f"Cache dep safe: {dk[:40]}", dk)
 
-    return suite
+    check(suite)
 
 
-def test_blender_image_sequences() -> TestSuite:
+def test_blender_image_sequences() -> None:
     """Image sequences with frame numbers."""
-    suite = TestSuite("Blender: Image Sequences", "blender")
+    suite = ScenarioSuite("Blender: Image Sequences", "blender")
 
     blend = "C:/Projects/Animation/comp/composite.blend"
     root = "C:/Projects/Animation"
@@ -1030,12 +1011,12 @@ def test_blender_image_sequences() -> TestSuite:
         assert_true(suite, f"Frame number preserved: {dk}",
                     any(c.isdigit() for c in dk), f"No digits in: {dk}")
 
-    return suite
+    check(suite)
 
 
-def test_blender_udim_tiles() -> TestSuite:
+def test_blender_udim_tiles() -> None:
     """UDIM texture tiles (1001, 1002, etc.)."""
-    suite = TestSuite("Blender: UDIM Tiles", "blender")
+    suite = ScenarioSuite("Blender: UDIM Tiles", "blender")
 
     blend = "C:/Projects/Character/rigged_character.blend"
     root = "C:/Projects/Character"
@@ -1056,12 +1037,12 @@ def test_blender_udim_tiles() -> TestSuite:
         assert_true(suite, f"UDIM number preserved: {dk}",
                     ".10" in dk, f"No UDIM pattern in: {dk}")
 
-    return suite
+    check(suite)
 
 
-def test_blender_linked_libraries() -> TestSuite:
+def test_blender_linked_libraries() -> None:
     """Linked .blend libraries (common in production)."""
-    suite = TestSuite("Blender: Linked Libraries", "blender")
+    suite = ScenarioSuite("Blender: Linked Libraries", "blender")
 
     blend = "C:/Projects/Feature/shots/sh010/sh010_anim.blend"
     root = "C:/Projects/Feature"
@@ -1086,17 +1067,15 @@ def test_blender_linked_libraries() -> TestSuite:
                 any("assets/characters" in dk for dk in dep_keys),
                 f"Deps: {dep_keys}")
 
-    return suite
+    check(suite)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TEST CATEGORY: Studio/Enterprise Setups
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_studio_shotgrid_paths() -> TestSuite:
-    """ShotGrid (formerly Shotgun) managed paths."""
-    suite = TestSuite("Studio: ShotGrid", "studio")
+def test_studio_shotgrid_paths() -> None:
+    """ShotGrid-managed paths."""
+    suite = ScenarioSuite("Studio: ShotGrid", "studio")
 
     # ShotGrid often creates structured paths
     blend = "Z:/PROJECTS/FEATURE_2024/sequences/SEQ010/shots/SH0010/3d/blender/publish/v003/SH0010_anim_v003.blend"
@@ -1109,12 +1088,12 @@ def test_studio_shotgrid_paths() -> TestSuite:
     assert_true(suite, "ShotGrid structure", "sequences/SEQ010" in main_key,
                 f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_studio_deadline_paths() -> TestSuite:
+def test_studio_deadline_paths() -> None:
     """Deadline render farm paths."""
-    suite = TestSuite("Studio: Deadline", "studio")
+    suite = ScenarioSuite("Studio: Deadline", "studio")
 
     # Deadline often uses standardized paths
     blend = "//renderfarm/jobs/2024/01/job_12345/scene.blend"
@@ -1124,12 +1103,12 @@ def test_studio_deadline_paths() -> TestSuite:
 
     assert_s3_safe(suite, "Deadline path safe", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_studio_perforce_workspace() -> TestSuite:
+def test_studio_perforce_workspace() -> None:
     """Perforce workspace paths."""
-    suite = TestSuite("Studio: Perforce", "studio")
+    suite = ScenarioSuite("Studio: Perforce", "studio")
 
     # Perforce creates local workspace paths
     blend = "C:/p4/studio/MAIN/project/assets/characters/hero.blend"
@@ -1139,12 +1118,12 @@ def test_studio_perforce_workspace() -> TestSuite:
 
     assert_s3_safe(suite, "Perforce path safe", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_studio_version_controlled() -> TestSuite:
+def test_studio_version_controlled() -> None:
     """Version controlled project with many naming conventions."""
-    suite = TestSuite("Studio: Version Control", "studio")
+    suite = ScenarioSuite("Studio: Version Control", "studio")
 
     blend = "C:/Projects/SHOW_2024/EP101/SQ010/SH0010/3D/maya2blender_v003_FINAL_approved.blend"
     root = "C:/Projects/SHOW_2024"
@@ -1160,26 +1139,24 @@ def test_studio_version_controlled() -> TestSuite:
     for dk in dep_keys:
         assert_s3_safe(suite, f"VC dep safe: {dk[:40]}", dk)
 
-    return suite
+    check(suite)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TEST CATEGORY: Edge Cases and Regression Tests
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_regression_bat_temp_directory() -> TestSuite:
+def test_regression_bat_temp_directory() -> None:
     """Regression: BAT temp directory leak in S3 keys."""
-    suite = TestSuite("Regression: BAT Temp Dir", "regression")
+    suite = ScenarioSuite("Regression: BAT Temp Dir", "regression")
 
-    # The exact bug scenario
+    # Project input
     blend = "C:/Users/jonas/Downloads/classroom/classroom.blend"
     root = "C:/Users/jonas/Downloads/classroom"
 
-    # What the bug produced (BAT's file_map destination)
+    # Unsafe BAT file-map destination
     wrong_key = "C:/Users/jonas/AppData/Local/Temp/bat_packroot_xbzwq30j/classroom.blend"
 
-    # What we should produce
+    # Expected upload key
     main_key, _, _ = process_for_upload(blend, root, [])
 
     assert_eq(suite, "Correct key is simple", "classroom.blend", main_key)
@@ -1192,12 +1169,12 @@ def test_regression_bat_temp_directory() -> TestSuite:
                 "Temp" in wrong_key or "bat_packroot" in wrong_key,
                 "Wrong key detection broken")
 
-    return suite
+    check(suite)
 
 
-def test_edge_dot_files() -> TestSuite:
+def test_edge_dot_files() -> None:
     """Dot files and directories (hidden on Unix)."""
-    suite = TestSuite("Edge: Dot Files", "edge")
+    suite = ScenarioSuite("Edge: Dot Files", "edge")
 
     blend = "C:/Projects/.hidden_project/scenes/.secret_scene.blend"
     root = "C:/Projects/.hidden_project"
@@ -1211,12 +1188,12 @@ def test_edge_dot_files() -> TestSuite:
     assert_s3_safe(suite, "Dot file key safe", main_key)
     assert_true(suite, "Dot preserved", ".secret" in main_key, f"Key: {main_key}")
 
-    return suite
+    check(suite)
 
 
-def test_edge_multiple_extensions() -> TestSuite:
+def test_edge_multiple_extensions() -> None:
     """Files with multiple extensions."""
-    suite = TestSuite("Edge: Multiple Extensions", "edge")
+    suite = ScenarioSuite("Edge: Multiple Extensions", "edge")
 
     blend = "C:/Projects/Animation/scene.backup.blend"
     root = "C:/Projects/Animation"
@@ -1230,12 +1207,12 @@ def test_edge_multiple_extensions() -> TestSuite:
     assert_s3_safe(suite, "Multi-ext key safe", main_key)
     assert_preserves_filename(suite, "Multi-ext preserved", blend, main_key)
 
-    return suite
+    check(suite)
 
 
-def test_edge_no_extension() -> TestSuite:
+def test_edge_no_extension() -> None:
     """Files without extension (rare but valid)."""
-    suite = TestSuite("Edge: No Extension", "edge")
+    suite = ScenarioSuite("Edge: No Extension", "edge")
 
     # Some cache files have no extension
     blend = "C:/Projects/Animation/scene.blend"
@@ -1250,12 +1227,12 @@ def test_edge_no_extension() -> TestSuite:
     for dk in dep_keys:
         assert_s3_safe(suite, f"No-ext dep safe: {dk}", dk)
 
-    return suite
+    check(suite)
 
 
-def test_edge_very_short_names() -> TestSuite:
+def test_edge_very_short_names() -> None:
     """Very short file/directory names."""
-    suite = TestSuite("Edge: Short Names", "edge")
+    suite = ScenarioSuite("Edge: Short Names", "edge")
 
     blend = "C:/P/A/s.blend"
     root = "C:/P"
@@ -1268,12 +1245,12 @@ def test_edge_very_short_names() -> TestSuite:
     assert_s3_safe(suite, "Short name key safe", main_key)
     assert_eq(suite, "Short path structure", "A/s.blend", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_edge_trailing_spaces() -> TestSuite:
+def test_edge_trailing_spaces() -> None:
     """Trailing spaces in names (Windows allows this somehow)."""
-    suite = TestSuite("Edge: Trailing Spaces", "edge")
+    suite = ScenarioSuite("Edge: Trailing Spaces", "edge")
 
     # Windows can create files with trailing spaces (painful)
     blend = "C:/Projects/Animation /scenes /scene .blend"
@@ -1284,12 +1261,12 @@ def test_edge_trailing_spaces() -> TestSuite:
     # Should handle without crashing, though behavior may vary
     assert_s3_safe(suite, "Trailing space key safe", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_edge_only_special_chars() -> TestSuite:
+def test_edge_only_special_chars() -> None:
     """Names that are mostly special characters."""
-    suite = TestSuite("Edge: Mostly Special Chars", "edge")
+    suite = ScenarioSuite("Edge: Mostly Special Chars", "edge")
 
     blend = "C:/Projects/---___---/+++/[[[]]].blend"
     root = "C:/Projects/---___---"
@@ -1298,17 +1275,15 @@ def test_edge_only_special_chars() -> TestSuite:
 
     assert_s3_safe(suite, "Special chars only key safe", main_key)
 
-    return suite
+    check(suite)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TEST CATEGORY: Real-World Nightmare Scenarios
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_nightmare_freelancer_chaos() -> TestSuite:
+def test_nightmare_freelancer_chaos() -> None:
     """Freelancer with chaotic project organization."""
-    suite = TestSuite("Nightmare: Freelancer Chaos", "nightmare")
+    suite = ScenarioSuite("Nightmare: Freelancer Chaos", "nightmare")
 
     # Real scenario: assets scattered everywhere, mixed naming, cloud storage
     blend = "/Users/freelancer/Library/CloudStorage/GoogleDrive-me@gmail.com/My Drive/[URGENT] Client Project (FINAL v2)/Renders & Outputs/Blender Files/main_scene_FINAL_v3_REALLY_FINAL.blend"
@@ -1325,33 +1300,42 @@ def test_nightmare_freelancer_chaos() -> TestSuite:
     assert_s3_safe(suite, "Chaos blend key safe", main_key)
     assert_true(suite, "Long path handled", len(main_key) < 260, f"Key length: {len(main_key)}")
 
-    return suite
+    check(suite)
 
 
-def test_nightmare_international_studio() -> TestSuite:
+def test_nightmare_international_studio() -> None:
     """International studio with mixed encodings."""
-    suite = TestSuite("Nightmare: International Studio", "nightmare")
+    suite = ScenarioSuite("Nightmare: International Studio", "nightmare")
 
     # Japanese company, Russian outsource, Polish textures
     blend = "/Volumes/スタジオ・サーバー/プロジェクト_2024/エピソード_01/сцена_главная.blend"
     root = "/Volumes/スタジオ・サーバー/プロジェクト_2024"
     deps = [
         "/Volumes/スタジオ・サーバー/プロジェクト_2024/テクスチャ/drewno_dębowe.png",  # Polish texture
-        "/Volumes/スタジオ・サーバー/アセット/персонаж/герой.blend",  # Russian linked file
+        "/Volumes/スタジオ・サーバー/アセット/персонаж/герой.blend",  # Russian linked file, outside root
     ]
 
-    main_key, dep_keys, issues = process_for_upload(blend, root, deps)
+    # Only in-root deps produce plain relative keys; out-of-root deps go
+    # through dedicated handling in production, so they are not fed to the
+    # plain-relpath simulation here.
+    main_key, dep_keys, issues = process_for_upload(blend, root, [deps[0]])
 
     assert_s3_safe(suite, "International blend key safe", main_key)
     for dk in dep_keys:
         assert_s3_safe(suite, f"International dep safe: {dk[:30]}", dk)
 
-    return suite
+    # The validator must flag the parent-reference key an out-of-root dep
+    # would otherwise produce.
+    outside_key = _s3key_clean(_relpath_safe(deps[1], root))
+    assert_true(suite, "Out-of-root dep flagged unsafe", not is_s3_safe(outside_key),
+                f"Key unexpectedly safe: {outside_key}")
+
+    check(suite)
 
 
-def test_nightmare_migrated_project() -> TestSuite:
+def test_nightmare_migrated_project() -> None:
     """Project migrated between systems multiple times."""
-    suite = TestSuite("Nightmare: Migrated Project", "nightmare")
+    suite = ScenarioSuite("Nightmare: Migrated Project", "nightmare")
 
     # Project was on Windows, moved to Mac, back to Windows, now on Linux
     # Paths have ghosts of previous systems
@@ -1367,12 +1351,12 @@ def test_nightmare_migrated_project() -> TestSuite:
 
     assert_s3_safe(suite, "Migrated key safe", main_key)
 
-    return suite
+    check(suite)
 
 
-def test_nightmare_max_everything() -> TestSuite:
+def test_nightmare_max_everything() -> None:
     """Maximum stress: long Unicode path with special chars near limits."""
-    suite = TestSuite("Nightmare: Max Stress", "nightmare")
+    suite = ScenarioSuite("Nightmare: Max Stress", "nightmare")
 
     # Build a path that tests many limits simultaneously
     unicode_dir = "プロジェクト_Größe_проект"  # Japanese + German + Russian
@@ -1387,209 +1371,4 @@ def test_nightmare_max_everything() -> TestSuite:
     assert_s3_safe(suite, "Max stress key safe", main_key)
     assert_no_absolute(suite, "Max stress not absolute", main_key)
 
-    return suite
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# TEST RUNNER
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-ALL_TEST_FUNCTIONS = [
-    # Unicode
-    test_unicode_polish,
-    test_unicode_japanese,
-    test_unicode_chinese,
-    test_unicode_russian,
-    test_unicode_arabic,
-    test_unicode_korean,
-    test_unicode_thai,
-    test_unicode_emoji,
-    test_unicode_mixed_scripts,
-    test_unicode_nfc_nfd_normalization,
-
-    # Cloud Storage
-    test_cloud_google_drive_mac,
-    test_cloud_google_drive_windows,
-    test_cloud_dropbox_smart_sync,
-    test_cloud_onedrive_business,
-    test_cloud_icloud_drive,
-    test_cloud_synology_drive,
-
-    # Network
-    test_network_unc_basic,
-    test_network_unc_with_spaces,
-    test_network_unc_backslash,
-    test_network_mapped_drive,
-    test_network_nfs_linux,
-    test_network_smb_mac,
-    test_network_dfs,
-
-    # Special Characters
-    test_special_chars_spaces,
-    test_special_chars_parentheses,
-    test_special_chars_brackets,
-    test_special_chars_ampersand,
-    test_special_chars_apostrophe,
-    test_special_chars_hash,
-    test_special_chars_at_sign,
-    test_special_chars_plus,
-    test_special_chars_percent,
-    test_special_chars_unicode_symbols,
-    test_special_chars_all_combined,
-
-    # Path Length
-    test_path_length_windows_limit,
-    test_path_length_very_deep,
-    test_path_length_long_filename,
-
-    # Cross-Platform
-    test_crossplatform_win_to_linux_farm,
-    test_crossplatform_mac_to_linux_farm,
-    test_crossplatform_mixed_team,
-    test_crossplatform_case_sensitivity,
-
-    # Blender-Specific
-    test_blender_relative_paths,
-    test_blender_cache_paths,
-    test_blender_image_sequences,
-    test_blender_udim_tiles,
-    test_blender_linked_libraries,
-
-    # Studio/Enterprise
-    test_studio_shotgrid_paths,
-    test_studio_deadline_paths,
-    test_studio_perforce_workspace,
-    test_studio_version_controlled,
-
-    # Edge Cases
-    test_regression_bat_temp_directory,
-    test_edge_dot_files,
-    test_edge_multiple_extensions,
-    test_edge_no_extension,
-    test_edge_very_short_names,
-    test_edge_trailing_spaces,
-    test_edge_only_special_chars,
-
-    # Nightmare Scenarios
-    test_nightmare_freelancer_chaos,
-    test_nightmare_international_studio,
-    test_nightmare_migrated_project,
-    test_nightmare_max_everything,
-]
-
-
-def run_tests(
-    category_filter: Optional[str] = None,
-    verbose: bool = False,
-) -> bool:
-    """Run all tests, optionally filtered by category."""
-
-    print("\n" + "=" * 78)
-    print("  COMPREHENSIVE PATH SCENARIO TESTS")
-    print("  Testing path handling for real-world production scenarios")
-    print("=" * 78)
-
-    suites: List[TestSuite] = []
-
-    for test_fn in ALL_TEST_FUNCTIONS:
-        suite = test_fn()
-
-        # Filter by category if specified
-        if category_filter and suite.category != category_filter:
-            continue
-
-        suites.append(suite)
-
-    # Group by category for nicer output
-    categories: Dict[str, List[TestSuite]] = {}
-    for suite in suites:
-        cat = suite.category or "other"
-        categories.setdefault(cat, []).append(suite)
-
-    total_passed = 0
-    total_failed = 0
-
-    for cat_name, cat_suites in sorted(categories.items()):
-        _safe_print(f"\n{'-' * 78}")
-        _safe_print(f"  Category: {cat_name.upper()}")
-        _safe_print(f"{'-' * 78}")
-
-        for suite in cat_suites:
-            status_icon = "[PASS]" if suite.failed == 0 else "[FAIL]"
-
-            _safe_print(f"\n  {status_icon} {suite.name}: {suite.passed}/{suite.passed + suite.failed}")
-
-            if verbose or suite.failed > 0:
-                for r in suite.results:
-                    if not r.passed:
-                        _safe_print(f"      [FAIL] {r.name}")
-                        if r.message:
-                            _safe_print(f"             {r.message}")
-                    elif verbose:
-                        _safe_print(f"      [pass] {r.name}")
-
-            total_passed += suite.passed
-            total_failed += suite.failed
-
-    _safe_print("\n" + "=" * 78)
-    _safe_print(f"  TOTAL: {total_passed} passed, {total_failed} failed")
-    _safe_print(f"  Test suites: {len(suites)}")
-    _safe_print("=" * 78)
-
-    if total_failed == 0:
-        _safe_print("\n  ALL TESTS PASSED!")
-    else:
-        _safe_print(f"\n  {total_failed} TEST(S) FAILED")
-
-    return total_failed == 0
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Run comprehensive path scenario tests.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Categories:
-  unicode        - International character handling
-  cloud          - Cloud storage mounts (GDrive, Dropbox, etc.)
-  network        - Network storage (UNC, NFS, SMB)
-  special_chars  - Special characters in paths
-  path_length    - Path length edge cases
-  crossplatform  - Mixed OS workflows
-  blender        - Blender-specific paths
-  studio         - Enterprise/studio setups
-  edge           - Edge cases
-  regression     - Regression tests
-  nightmare      - Worst-case scenarios
-
-Examples:
-  python tests/paths/test_scenarios.py                    # Run all tests
-  python tests/paths/test_scenarios.py --verbose          # Show all details
-  python tests/paths/test_scenarios.py --category unicode # Just Unicode tests
-        """,
-    )
-
-    parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Show all test details (not just failures)",
-    )
-    parser.add_argument(
-        "-c", "--category",
-        type=str,
-        help="Run only tests in specified category",
-    )
-
-    args = parser.parse_args()
-
-    success = run_tests(
-        category_filter=args.category,
-        verbose=args.verbose,
-    )
-
-    sys.exit(0 if success else 1)
-
-
-if __name__ == "__main__":
-    main()
+    check(suite)

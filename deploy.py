@@ -11,16 +11,14 @@ ADDON_NAME = "SuperluminalRender"
 
 EXCLUDE = {
     # directories
-    "__pycache__", ".pytest_cache", ".venv", ".git", ".github", ".claude", "tests", "reports", "releases", "rclone",
+    "__pycache__", ".pytest_cache", ".mypy_cache", ".venv", ".git", ".github", ".claude", "tests", "reports", "rclone",
+    "docs", "scripts",
     # files
     ".gitignore", ".gitkeep", ".gitattributes",
-    "README.md", "CLAUDE.md",
-    "extensions_index.json", "manifest.py", "update_manifest.py", "blender_manifest.toml",
-    "deploy.py", "test_deploy.ps1",
+    "README.md", "AGENTS.md", "CLAUDE.md", "pytest.ini",
+    "deploy.py",
     "dev_config.json", "dev_config.example.json",
-    "session.json",
-    "rclone.exe",
-    "nul",
+    "session.json", "session.json.tmp",
 }
 
 

@@ -1,4 +1,4 @@
-# utils/project_scan.py
+
 from __future__ import annotations
 
 """
@@ -200,7 +200,7 @@ def scan_dependencies_fast() -> ScanSummary:
         # If the file is unsaved, use cwd; still allows cross-drive detection in the UI.
         summary.main_root = _drive_tag(os.getcwd())
 
-    # 1) Known file paths across all ID types (images, sounds, movieclips, fonts, volumes, libraries, cachefiles, pointcaches, etc.)
+    # Known file paths across all ID types
     id_to_paths: Dict[bpy.types.ID, Set[str]] = bpy.data.file_path_map(include_libraries=True)
     for idb, pathset in id_to_paths.items():
         for raw in pathset:
@@ -211,7 +211,7 @@ def scan_dependencies_fast() -> ScanSummary:
                 continue
             summary.all_paths.add(ap)
 
-    # 2) VSE (explicit) – Blender 5.0+ uses "strips" (not "sequences").
+    # VSE paths: Blender 5.0+ uses "strips" rather than "sequences".
     #    We still support older Blender by falling back to sequences_* if present.
     for scn in bpy.data.scenes:
         se = getattr(scn, "sequence_editor", None)
@@ -271,7 +271,7 @@ def scan_dependencies_fast() -> ScanSummary:
                     summary.all_paths.add(ap)
 
 
-    # 3) Shader nodes with explicit file paths (IES, OSL script)
+    # Shader nodes with explicit file paths (IES and OSL scripts)
     def _scan_node_tree(nt: bpy.types.NodeTree | None):
         if not nt:
             return

@@ -1,29 +1,13 @@
-# operators/download_job_operator.py
 from __future__ import annotations
 
 import bpy
-import json
 import sys
-import tempfile
 from pathlib import Path
 
-from ...utils.worker_utils import launch_in_terminal
+from ...utils.worker_utils import launch_worker_secure
 from ...constants import POCKETBASE_URL
 from ...utils.prefs import get_prefs, get_addon_dir
 from ...storage import Storage
-
-
-# ---- helpers to guarantee isolated Blender Python for the worker ----
-
-def _blender_python_args() -> list[str]:
-    """
-    Blender's recommended Python flags (if available).
-    """
-    try:
-        args = getattr(bpy.app, "python_args", ())
-        return list(args) if args else []
-    except Exception:
-        return []
 
 
 class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
@@ -45,7 +29,20 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
         prefs = get_prefs()
 
         # Find the currently selected project
-        selected_project = [p for p in Storage.data["projects"] if p["id"] == prefs.project_id][0]
+        selected_project = next(
+            (
+                project
+                for project in Storage.data.get("projects", [])
+                if project.get("id") == prefs.project_id
+            ),
+            None,
+        )
+        if selected_project is None:
+            self.report(
+                {"ERROR"},
+                "Selected project not found. Refresh projects and try again.",
+            )
+            return {"CANCELLED"}
         job_snapshot = dict(Storage.data.get("jobs", {}).get(self.job_id, {}) or {})
         if job_snapshot and not job_snapshot.get("id"):
             job_snapshot["id"] = self.job_id
@@ -64,18 +61,16 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
             "debug_mode": bool(getattr(prefs, "debug_mode", False)),
         }
 
-        tmp_json = Path(tempfile.gettempdir()) / f"superluminal_download_{self.job_id}.json"
-        tmp_json.write_text(json.dumps(handoff), encoding="utf-8")
-
         worker = Path(__file__).with_name("download_worker.py")
 
-        # Launch the worker with Blender's Python in isolated mode (-I)
-        pybin = sys.executable
-        pyargs = _blender_python_args()
-        cmd = [pybin, *pyargs, "-I", "-u", str(worker), str(tmp_json)]
-
         try:
-            launch_in_terminal(cmd)
+            launch_worker_secure(
+                worker,
+                handoff,
+                f"superluminal_download_{self.job_id}.json",
+                python_executable=sys.executable,
+                python_args=getattr(bpy.app, "python_args", ()),
+            )
         except Exception as e:
             self.report({"ERROR"}, f"Failed to start download: {e}")
             return {"CANCELLED"}

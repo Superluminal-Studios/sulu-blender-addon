@@ -114,7 +114,7 @@ def test_gzip_detection_priority():
 
 
 def test_blender_open_simulation():
-    """Simulate what Blender does when opening files to verify fix prevents errors."""
+    """Simulate Blender opening supported and double-compressed files."""
     print("Testing Blender open simulation...")
 
     def simulate_blender_open(data: bytes) -> tuple:
@@ -156,7 +156,7 @@ def test_blender_open_simulation():
         else:
             return False, f"Unknown format"
 
-    # Test valid formats
+    # Valid formats
     test_cases = [
         ("Uncompressed", FAKE_BLEND_CONTENT, True),
         ("Gzip", gzip.compress(FAKE_BLEND_CONTENT), True),
@@ -169,7 +169,7 @@ def test_blender_open_simulation():
         assert success == should_succeed, f"{name} should {'succeed' if should_succeed else 'fail'}: {msg}"
         print(f"  ✓ {name}: {msg}")
 
-    # Test the BUG scenario: Zstd(Gzip(data)) should fail
+    # Zstd-wrapped Gzip data is invalid.
     if HAS_ZSTD:
         gzip_data = gzip.compress(FAKE_BLEND_CONTENT)
         double_compressed = zstd.ZstdCompressor().compress(gzip_data)
@@ -198,21 +198,21 @@ def test_packing_logic_simulation():
         else:
             return data, "Store (unknown)"
 
-    # Test uncompressed -> gets compressed
+    # Uncompressed input
     if HAS_ZSTD:
         packed, label = simulate_pack_blend(FAKE_BLEND_CONTENT)
         assert label == "Zstd", f"Uncompressed should be zstd compressed, got {label}"
         assert packed[:4] == _ZSTD_MAGIC, "Result should be zstd-compressed"
         print("  ✓ Uncompressed -> Zstd compression")
 
-    # Test gzip -> stored as-is
+    # Gzip input
     gzip_data = gzip.compress(FAKE_BLEND_CONTENT)
     packed, label = simulate_pack_blend(gzip_data)
     assert label == "Store (gzip)", f"Gzip should be stored as-is, got {label}"
     assert packed == gzip_data, "Gzip data should be unchanged"
     print("  ✓ Gzip -> Stored as-is")
 
-    # Test zstd -> stored as-is
+    # Zstd input
     if HAS_ZSTD:
         zstd_data = zstd.ZstdCompressor().compress(FAKE_BLEND_CONTENT)
         packed, label = simulate_pack_blend(zstd_data)
@@ -269,7 +269,7 @@ def test_with_real_blendfiles():
     for blend_file, compression in test_files:
         print(f"  ✓ {blend_file.name}: {compression}")
 
-    # Now test that ZipPacker handles them correctly
+    # ZipPacker validation
     with tempfile.TemporaryDirectory(prefix="sulu_test_") as tmpdir:
         tmpdir = Path(tmpdir)
 
@@ -347,7 +347,7 @@ def test_roundtrip_verification():
         if head[:4] == _ZSTD_MAGIC:
             return data  # Store as-is
         elif head[:2] == _GZIP_MAGIC:
-            return data  # Store as-is (THE FIX!)
+            return data  # Store as-is
         elif head[:7] == b"BLENDER":
             if HAS_ZSTD:
                 return zstd.ZstdCompressor(level=1).compress(data)
@@ -355,7 +355,7 @@ def test_roundtrip_verification():
         else:
             return data  # Unknown - store as-is
 
-    # Test all formats
+    # Supported formats
     test_data = [
         ("Uncompressed", FAKE_BLEND_CONTENT),
         ("Gzip", gzip.compress(FAKE_BLEND_CONTENT)),
@@ -369,10 +369,9 @@ def test_roundtrip_verification():
         assert can_open, f"After packing {name}, Blender should be able to open it"
         print(f"  ✓ {name}: Pack -> Blender can open")
 
-    # Test that the OLD BUG would have failed
+    # Double-compressed Gzip input is invalid.
     if HAS_ZSTD:
         gzip_data = gzip.compress(FAKE_BLEND_CONTENT)
-        # OLD buggy behavior: compress gzip with zstd
         double_compressed = zstd.ZstdCompressor().compress(gzip_data)
         can_open = simulate_blender_open(double_compressed)
         assert not can_open, "Double-compressed file should NOT be openable"

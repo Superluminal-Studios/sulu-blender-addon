@@ -47,8 +47,8 @@ _tests_dir = Path(__file__).parent.parent
 _addon_dir = _tests_dir.parent
 sys.path.insert(0, str(_addon_dir))
 
-from tests.reporting import TestReporter, TestStatus
-from tests.utils import (
+from tests.realworld.reporting import TestReporter, TestStatus
+from tests.helpers import (
     get_drive,
     s3key_clean,
     is_s3_safe,
@@ -61,9 +61,7 @@ from storage import Storage
 from constants import POCKETBASE_URL, FARM_IP
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TEST CONFIGURATION
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 @dataclass
@@ -148,9 +146,7 @@ def parse_upload_success_line(
     return payload, None
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # CREDENTIAL AND AUTH CHECKS
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def load_credentials() -> Tuple[bool, str, Dict]:
@@ -221,9 +217,7 @@ def verify_auth(credentials: Dict) -> Tuple[bool, str]:
         return False, f"Auth verification failed: {e}"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # TEST BLEND FILE CREATION
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def find_test_blend_files(config: FarmTestConfig) -> List[Path]:
@@ -331,9 +325,7 @@ def get_test_scenarios(config: FarmTestConfig) -> List[Dict]:
     return scenarios
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # UPLOAD SIMULATION (DRY RUN)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def simulate_upload(
@@ -413,9 +405,7 @@ def simulate_upload(
     return result
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # ACTUAL UPLOAD (REAL RUN)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def perform_upload(
@@ -534,12 +524,10 @@ def perform_upload(
     return result
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN TEST RUNNER
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
-def run_tests(config: FarmTestConfig) -> TestReporter:
+def run_farm_tests(config: FarmTestConfig) -> TestReporter:
     """Run all farm upload tests."""
     reporter = TestReporter("Farm Upload Tests")
     reporter.start()
@@ -672,7 +660,7 @@ After running (without --dry-run), check the farm dashboard:
             sys.exit(0)
         print()
 
-    reporter = run_tests(config)
+    reporter = run_farm_tests(config)
     reporter.print_summary()
 
     if config.write_report:

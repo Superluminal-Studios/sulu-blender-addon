@@ -1,3 +1,4 @@
+import os
 import pathlib
 import sys
 import unittest
@@ -22,7 +23,26 @@ class MypyRunnerTest(unittest.TestCase):
                 self.skipTest("Mypy doesn't like Tox")
 
         path = pathlib.Path(blender_asset_tracer.__file__).parent
-        result = mypy.api.run(["--incremental", "--ignore-missing-imports", str(path)])
+        # The addon root has an __init__.py and a non-identifier directory
+        # name, so mypy's walk-up package detection aborts before analysis.
+        # --explicit-package-bases plus a pinned MYPYPATH anchor the package
+        # root regardless of the invoking process's cwd.
+        old_mypypath = os.environ.get("MYPYPATH")
+        os.environ["MYPYPATH"] = str(path.parent)
+        try:
+            result = mypy.api.run(
+                [
+                    "--incremental",
+                    "--ignore-missing-imports",
+                    "--explicit-package-bases",
+                    str(path),
+                ]
+            )
+        finally:
+            if old_mypypath is None:
+                os.environ.pop("MYPYPATH", None)
+            else:
+                os.environ["MYPYPATH"] = old_mypypath
 
         stdout, stderr, status = result
 

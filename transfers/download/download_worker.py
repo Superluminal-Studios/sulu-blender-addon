@@ -9,7 +9,7 @@ Modes:
 
 from __future__ import annotations
 
-# ─── stdlib ──────────────────────────────────────────────────────
+# Standard library
 import importlib
 import json
 import os
@@ -20,18 +20,28 @@ import tempfile
 import time
 import types
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 import traceback
 import requests
 
-try:
-    t_start = time.perf_counter()
-    handoff_path = Path(sys.argv[1]).resolve(strict=True)
-    data: Dict[str, object] = json.loads(handoff_path.read_text("utf-8"))
-    if data.get("debug_mode", False):
-        os.environ["SULU_DEBUG"] = "1"
 
-    # Import add-on internals
+def _load_handoff_from_argv(argv: List[str]) -> Dict[str, object]:
+    if len(argv) < 2:
+        raise RuntimeError(
+            "download_worker.py was launched without a handoff JSON path.\n"
+            "This script should be run as a subprocess by the add-on.\n"
+            "Example: download_worker.py /path/to/handoff.json"
+        )
+    handoff_path = Path(argv[1]).resolve(strict=True)
+    data = json.loads(handoff_path.read_text("utf-8"))
+    try:
+        handoff_path.unlink()
+    except OSError:
+        pass
+    return data
+
+
+def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
     addon_dir = Path(data["addon_dir"]).resolve()
     pkg_name = addon_dir.name.replace("-", "_")
     sys.path.insert(0, str(addon_dir.parent))
@@ -43,29 +53,38 @@ try:
     rclone = importlib.import_module(f"{pkg_name}.transfers.rclone_utils")
     run_rclone = rclone.run_rclone
     ensure_rclone = rclone.ensure_rclone
+    NOT_FOUND_MARKERS = getattr(rclone, "NOT_FOUND_MARKERS", ())
+    AUTH_MARKERS = getattr(rclone, "AUTH_MARKERS", ())
     worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
+    apply_debug_handoff = getattr(worker_utils, "apply_debug_handoff", lambda handoff: None)
+    apply_debug_handoff(data)
     clear_console = worker_utils.clear_console
     open_folder = worker_utils.open_folder
+    fetch_project_storage = getattr(worker_utils, "fetch_project_storage", None)
 
     # Import download logger
     download_logger_mod = importlib.import_module(f"{pkg_name}.utils.download_logger")
     DownloadLogger = download_logger_mod.DownloadLogger
 
-    clear_console()
+    return {
+        "pkg_name": pkg_name,
+        "run_rclone": run_rclone,
+        "ensure_rclone": ensure_rclone,
+        "NOT_FOUND_MARKERS": NOT_FOUND_MARKERS,
+        "AUTH_MARKERS": AUTH_MARKERS,
+        "clear_console": clear_console,
+        "open_folder": open_folder,
+        "fetch_project_storage": fetch_project_storage,
+        "DownloadLogger": DownloadLogger,
+        "_build_base": worker_utils._build_base,
+        "requests_retry_session": worker_utils.requests_retry_session,
+        "CLOUDFLARE_R2_DOMAIN": worker_utils.CLOUDFLARE_R2_DOMAIN,
+        "run_preflight_checks": worker_utils.run_preflight_checks,
+    }
 
-    # Internal utils
-    _build_base = worker_utils._build_base
-    requests_retry_session = worker_utils.requests_retry_session
-    CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
 
-except Exception as exc:
-    print(f"Couldn't start downloader: {exc}")
-    traceback.print_exc()
-    input("\nPress Enter to close.")
-    sys.exit(1)
-
-
-# ───────────────────  globals set in main()  ─────────────────────
+# Globals set in main()
+data: Dict[str, object]
 session: requests.Session
 job_id: str
 job_name: str
@@ -78,26 +97,15 @@ download_type: str
 sarfis_url: Optional[str]
 sarfis_token: Optional[str]
 logger: DownloadLogger
-
-
-# Helpers
-_REMOTE_NOT_FOUND_HINTS = (
-    "directory not found",
-    "no such key",
-    "404",
-    "not exist",
-    "cannot find",
-)
-
-_STORAGE_AUTH_HINTS = (
-    "statuscode: 403",
-    " forbidden",
-    "accessdenied",
-    "unauthorized",
-    "invalidaccesskeyid",
-    "signaturedoesnotmatch",
-    "access denied",
-)
+run_rclone: Any
+ensure_rclone: Any
+NOT_FOUND_MARKERS: Tuple[str, ...] = ()
+AUTH_MARKERS: Tuple[str, ...] = ()
+open_folder: Any
+fetch_project_storage: Any = None
+_build_base: Any
+requests_retry_session: Any
+CLOUDFLARE_R2_DOMAIN: str
 
 
 def _safe_dir_name(name: str, fallback: str) -> str:
@@ -128,34 +136,44 @@ def _build_rclone_base() -> List[str]:
     )
 
 
-def _is_remote_missing(msg: str) -> bool:
-    low = str(msg).lower()
-    return any(h in low for h in _REMOTE_NOT_FOUND_HINTS)
-
-
-def _looks_like_storage_auth_error(msg: str) -> bool:
-    low = str(msg).lower()
-    return any(h in low for h in _STORAGE_AUTH_HINTS)
+def _failure_category(exc: RuntimeError) -> str:
+    category = str(getattr(exc, "category", "") or "").strip()
+    if category:
+        return category
+    low = str(exc).lower()
+    if any(marker in low for marker in NOT_FOUND_MARKERS):
+        return "not_found"
+    if any(marker in low for marker in AUTH_MARKERS):
+        return "forbidden"
+    return "unknown"
 
 
 def _fetch_storage_credentials(force_renew: bool = False) -> Tuple[Dict[str, object], str]:
-    headers = {"Authorization": data["user_token"]}
-    params = {
-        "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')",
-        "sort": "-updated",
-        "perPage": 1,
-        "skipTotal": 1,
-    }
-    if force_renew:
-        params["force_renew"] = "1"
-    s3_resp = session.get(
-        f"{data['pocketbase_url']}/api/collections/project_storage/records",
-        headers=headers,
-        params=params,
-        timeout=30,
-    )
-    s3_resp.raise_for_status()
-    payload = s3_resp.json()
+    if fetch_project_storage is not None:
+        payload = fetch_project_storage(
+            session,
+            data["pocketbase_url"],
+            data["user_token"],
+            data["project"]["id"],
+            force_renew=force_renew,
+        )
+    else:
+        params = {
+            "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')",
+            "sort": "-updated",
+            "perPage": 1,
+            "skipTotal": 1,
+        }
+        if force_renew:
+            params["force_renew"] = "1"
+        response = session.get(
+            f"{data['pocketbase_url']}/api/collections/project_storage/records",
+            headers={"Authorization": data["user_token"]},
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
     items = payload.get("items", [])
     if not items:
         raise RuntimeError(
@@ -397,17 +415,12 @@ def _fetch_job_details() -> Tuple[str, int, int]:
     Returns (status, finished, total) with safe defaults.
     Falls back to the job snapshot passed by Blender when live queue data is gone.
 
-    Note on null bodies: the queue manager's `job_details` endpoint returns
-    `None` whenever the job_id isn't in `Database.jobs` (jobs that just got
-    submitted, finished and aged out, or were deleted). Sanic wraps that
-    as `{"status": "success", "body": null}`. We previously called
-    `resp.json().get("body", {})` and assumed missing-key semantics — but
-    `dict.get` only returns the default for ABSENT keys, not for keys
-    whose value is None. Combined with the gateway occasionally returning
-    a bare JSON `null` (no wrapper), `resp.json()` itself can be None.
-    Either path bubbled `'NoneType' object has no attribute 'get'` once
-    per 5 s poll forever. This branch handles both cases AND deduplicates
-    the warning so the log doesn't spam.
+    The queue manager's `job_details` endpoint returns `None` whenever the
+    job_id isn't in `Database.jobs` (jobs that were just submitted, finished
+    and aged out, or were deleted). Sanic wraps that as
+    `{"status": "success", "body": null}`, while the gateway can return a
+    bare JSON `null`. Both forms are valid protocol responses and fall back to
+    the handoff snapshot without repeating warnings on every poll.
     """
     if not sarfis_url or not sarfis_token:
         return _handoff_job_details()
@@ -472,11 +485,11 @@ def _rclone_copy_output(dest_dir: str) -> bool:
         _run_output_copy(dest_dir)
         return True
     except RuntimeError as exc:
-        msg = str(exc)
-        if _is_remote_missing(msg):
+        category = _failure_category(exc)
+        if category == "not_found":
             logger.info("No frames available yet")
             return False
-        if _looks_like_storage_auth_error(msg):
+        if category == "forbidden":
             _refresh_storage_credentials(
                 "Storage credentials were rejected. Refreshing credentials and retrying once.",
                 force_renew=True,
@@ -485,8 +498,7 @@ def _rclone_copy_output(dest_dir: str) -> bool:
                 _run_output_copy(dest_dir)
                 return True
             except RuntimeError as retry_exc:
-                retry_msg = str(retry_exc)
-                if _is_remote_missing(retry_msg):
+                if _failure_category(retry_exc) == "not_found":
                     logger.info("No frames available yet")
                     return False
                 logger.error(f"Download stopped: {retry_exc}")
@@ -567,10 +579,34 @@ def auto_downloader(dest_dir: str, poll_seconds: int = 5) -> None:
 
 
 def main() -> None:
-    global session, job_id, job_name, download_path
+    global data, session, job_id, job_name, download_path
     global rclone_bin, s3info, bucket, base_cmd
     global download_type, sarfis_url, sarfis_token
     global logger
+    global run_rclone, ensure_rclone, NOT_FOUND_MARKERS, AUTH_MARKERS
+    global open_folder, fetch_project_storage, _build_base
+    global requests_retry_session, CLOUDFLARE_R2_DOMAIN
+
+    t_start = time.perf_counter()
+    try:
+        data = _load_handoff_from_argv(sys.argv)
+        mods = _bootstrap_addon_modules(data)
+        run_rclone = mods["run_rclone"]
+        ensure_rclone = mods["ensure_rclone"]
+        NOT_FOUND_MARKERS = mods["NOT_FOUND_MARKERS"]
+        AUTH_MARKERS = mods["AUTH_MARKERS"]
+        open_folder = mods["open_folder"]
+        fetch_project_storage = mods["fetch_project_storage"]
+        _build_base = mods["_build_base"]
+        requests_retry_session = mods["requests_retry_session"]
+        CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
+        DownloadLogger = mods["DownloadLogger"]
+        mods["clear_console"]()
+    except Exception as exc:
+        print(f"Couldn't start downloader: {exc}")
+        traceback.print_exc()
+        input("\nPress Enter to close.")
+        sys.exit(1)
 
     # Create logger
     logger = DownloadLogger()
@@ -587,12 +623,8 @@ def main() -> None:
     # Show startup logo
     logger.logo_start(job_name=job_name, dest_dir=dest_dir)
 
-    # ─── Preflight checks (run early so user knows quickly if something's wrong) ───
-    # Import preflight utilities
-    addon_dir = Path(data["addon_dir"]).resolve()
-    pkg_name = addon_dir.name.replace("-", "_")
-    preflight_mod = importlib.import_module(f"{pkg_name}.utils.worker_utils")
-    run_preflight_checks = preflight_mod.run_preflight_checks
+    # Early preflight checks
+    run_preflight_checks = mods["run_preflight_checks"]
 
     # Estimate download size - use 1 GB as reasonable default for render output
     # The actual size varies, but we want to ensure there's reasonable space

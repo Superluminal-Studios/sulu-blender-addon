@@ -217,9 +217,9 @@ class MakeAbsoluteTest(unittest.TestCase):
                 my_dir / "blendfiles/Cube.btx",
                 make_absolute(Path("blendfiles/Cube.btx")),
             )
-        except Exception:
+        finally:
+            # Restore on success too; a leaked cwd breaks later tests.
             os.chdir(cwd)
-            raise
 
     @unittest.skipIf(platform.system() != "Windows", "This test uses drive letters")
     def test_relative_drive(self):

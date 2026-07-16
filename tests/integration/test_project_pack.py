@@ -25,7 +25,7 @@ _addon_dir = _tests_dir.parent
 if str(_addon_dir) not in sys.path:
     sys.path.insert(0, str(_addon_dir))
 
-from tests.utils import (
+from tests.helpers import (
     get_drive,
     relpath_safe,
     s3key_clean,

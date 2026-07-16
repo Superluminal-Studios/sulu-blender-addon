@@ -8,95 +8,112 @@ Calm, confident, concise.
 from __future__ import annotations
 
 import sys
-import time
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Callable, Optional
 
-from .worker_utils import format_size, supports_unicode
+from .worker_utils import format_size
 from .logger_utils import (
-    RICH_AVAILABLE,
-    Console,
     Table,
     Panel,
     Text,
-    Live,
     Align,
-    box,
     GLYPH_STAGE,
     GLYPH_OK,
-    GLYPH_FAIL,
-    GLYPH_WARN,
     GLYPH_INFO,
-    GLYPH_BULLET,
     GLYPH_HEX,
-    BAR_FULL,
-    BAR_EMPTY,
-    SULU_PANEL_BOX,
-    PANEL_PADDING,
-    get_console,
     get_logo_mark as _get_logo_mark,
     get_logo_tiny as _get_logo_tiny,
+    TranscriptLogger,
 )
 
-_UNICODE = supports_unicode()
-
-
-class DownloadLogger:
+class DownloadLogger(TranscriptLogger):
     """Scrolling transcript logger for download worker."""
+
+    MESSAGE_INDENT = "  "
+    LOG_STYLE = "sulu.muted"
+    PLAIN_MESSAGE_PREFIXES = {
+        "info": "",
+        "success": f"{GLYPH_OK} ",
+        "warning": "! ",
+        "error": "X ",
+        "log": "",
+    }
+    PLAIN_WARN_BLOCK_PREFIX = "\n"
+    LOGO_BG_GRADIENT = TranscriptLogger.LOGO_BG_GRADIENT[:20]
+    LOGO_EXTRA_TOP_LINES = 3
+    LOGO_EXTRA_BOTTOM_LINES = 2
+    PROGRESS_SEAMS = False
+    PROGRESS_STATUS_STYLE = "sulu.dim"
+    THROTTLE_PLAIN_PROGRESS = True
+    LIVE_INITIAL_CURRENT = False
+    LIVE_VERTICAL_CROP = False
+    LIVE_START_REFRESH = False
+    INLINE_PROGRESS_FALLBACK = False
 
     def __init__(
         self,
         log_fn: Optional[Callable[[str], None]] = None,
         input_fn: Optional[Callable[[str, str], str]] = None,
     ):
-        self.console = get_console() if RICH_AVAILABLE else None
-        self._log_fn = log_fn or print
-        self._input_fn = input_fn or (lambda prompt, default="": input(prompt))
-
+        super().__init__(log_fn=log_fn, input_fn=input_fn)
         self._dest_dir: str = ""
-        self._transfer_cur: int = 0
-        self._transfer_total: int = 0
 
-        # Live progress
-        self._live: Optional[Any] = None
-        self._last_progress_time: float = 0.0
+    def _compute_progress_bar_width(self) -> int:
+        return max(20, min(45, self._get_width() - 50))
 
-    def _get_width(self) -> int:
-        if self.console:
-            try:
-                return int(self.console.width or 80)
-            except Exception:
-                pass
-        return 80
+    def _progress_width(self, *, extended: bool) -> int:
+        return self._compute_progress_bar_width()
 
-    def _can_prompt(self) -> bool:
-        try:
-            return bool(sys.stdin) and bool(
-                getattr(sys.stdin, "isatty", lambda: False)()
-            )
-        except Exception:
-            return False
+    def _append_known_progress(
+        self, line, pct: float, cur: int, total: int
+    ) -> None:
+        line.append(f"  {pct * 100:5.1f}%", style="sulu.accent")
+        line.append(f"  {format_size(cur)}", style="sulu.fg")
+        line.append(f" / {format_size(total)}", style="sulu.muted")
 
-    def _panel(
+    def _append_unknown_progress(self, line, cur: int) -> None:
+        line.append(f"  {format_size(cur)}", style="sulu.fg")
+
+    def _progress_status_text(
         self,
-        body: Any,
-        *,
-        title: Any = None,
-        border: str = "sulu.stroke",
-        padding: Tuple[int, int] = PANEL_PADDING,
-    ) -> Any:
-        if Panel is None:
-            return body
-        return Panel(
-            body,
-            title=title,
-            title_align="left",
-            border_style=border,
-            padding=padding,
-            box=SULU_PANEL_BOX,
-            style="sulu.panel",
-        )
+        checks: int,
+        transfers: int,
+        status: str,
+        current_file: str,
+    ) -> str:
+        return f"Checking {checks} files" if status == "checking" else ""
 
-    # ─────────────────────── Logo ───────────────────────
+    def _plain_transfer_progress(self, cur: int, total: int) -> str:
+        if total > 0:
+            pct = (cur / max(total, 1)) * 100
+            return f"\r  {format_size(cur)} / {format_size(total)} ({pct:.1f}%) "
+        return f"\r  {format_size(cur)} "
+
+    def _plain_transfer_progress_ext(
+        self,
+        cur: int,
+        total: int,
+        checks: int,
+        transfers: int,
+        status: str,
+        current_file: str,
+    ) -> str:
+        status_text = f"Checking {checks} files" if status == "checking" else ""
+        suffix = f"  {status_text}" if status_text else ""
+        if total > 0:
+            pct = (cur / max(total, 1)) * 100
+            return (
+                f"\r  {format_size(cur)} / {format_size(total)} "
+                f"({pct:.1f}%){suffix} "
+            )
+        return f"\r  {format_size(cur)}{suffix} "
+
+    def _start_live(self) -> None:
+        self._start_live_progress()
+
+    def _stop_live(self) -> None:
+        self._stop_live_progress()
+
+    # Logo
 
     def logo_start(self, job_name: str = "", dest_dir: str = "") -> None:
         """Show startup logo with job info panel."""
@@ -104,30 +121,7 @@ class DownloadLogger:
         width = self._get_width()
 
         if self.console and Text is not None:
-            # Gradient logo
-            logo_str = _get_logo_mark(width)
-            if logo_str:
-                lines = logo_str.split("\n")
-                max_len = max(len(ln) for ln in lines) if lines else 0
-
-                lines = [""] * 3 + lines + [""] * 2
-                num_lines = len(lines)
-
-                bg_gradient = [
-                    "#000000", "#000000", "#010204", "#020408", "#03060c",
-                    "#040810", "#050a14", "#060c18", "#070e1c", "#081020",
-                    "#091224", "#0a1428", "#0b162c", "#0c1830", "#0d1a34",
-                    "#0e1c38", "#0f1e3c", "#102040", "#112244", "#122448",
-                ]
-
-                for i, line in enumerate(lines):
-                    pad = max(0, (width - max_len) // 2)
-                    padded = (" " * pad + line).ljust(width)
-                    idx = int((i / max(num_lines - 1, 1)) * (len(bg_gradient) - 1))
-                    t = Text(padded, style=f"#A0A8B8 on {bg_gradient[idx]}")
-                    t.no_wrap = True
-                    t.overflow = "crop"
-                    self.console.print(t)
+            self._print_logo(gradient_bg=True)
 
             # Job info panel
             if job_name or dest_dir:
@@ -157,7 +151,7 @@ class DownloadLogger:
             if dest_dir:
                 self._log_fn(f"To: {dest_dir}")
 
-    # ─────────────────────── Info panels ───────────────────────
+    # Info panels
 
     def auto_mode_info(self) -> None:
         """Show auto-download mode info panel."""
@@ -172,24 +166,17 @@ class DownloadLogger:
             body.append("Downloading frames as they render.\n", style="sulu.fg")
             body.append("Close anytime. Run again to resume.", style="sulu.muted")
 
-            panel = self._panel(body, title=title, border="sulu.accent", padding=(0, 2))
+            panel = self._panel(
+                body,
+                title=title,
+                border_style="sulu.accent",
+                padding=(0, 2),
+            )
             self.console.print(panel)
         else:
             self._log_fn("")
             self._log_fn("Auto-download: Downloading frames as they render.")
             self._log_fn("Close anytime. Run again to resume.")
-
-    def connection_complete(self) -> None:
-        """Show storage connection success in a panel."""
-        if self.console and Text is not None and Panel is not None:
-            body = Text()
-            body.append(f"{GLYPH_OK} ", style="sulu.ok_b")
-            body.append("Connected to storage", style="sulu.fg")
-
-            panel = self._panel(body, border="sulu.ok", padding=(0, 1))
-            self.console.print(panel)
-        else:
-            self._log_fn(f"{GLYPH_OK} Connected to storage")
 
     def resume_info(self, cached_count: int) -> None:
         """Show resume info panel when frames were previously downloaded."""
@@ -207,7 +194,12 @@ class DownloadLogger:
             body = Text()
             body.append(f"{cached_count} frames already downloaded", style="sulu.fg")
 
-            panel = self._panel(body, title=title, border="sulu.accent", padding=(0, 2))
+            panel = self._panel(
+                body,
+                title=title,
+                border_style="sulu.accent",
+                padding=(0, 2),
+            )
             self.console.print(panel)
 
             # Restart live after panel
@@ -215,59 +207,7 @@ class DownloadLogger:
         else:
             self._log_fn(f"  Resuming: {cached_count} frames already downloaded")
 
-    # ─────────────────────── Progress ───────────────────────
-
-    def _build_progress_line(self, cur: int, total: int, status: str = "") -> Any:
-        if not self.console or Text is None:
-            return ""
-
-        bar_width = max(20, min(45, self._get_width() - 50))
-        line = Text()
-        line.no_wrap = True
-        line.overflow = "crop"
-        line.append("  ", style="sulu.dim")
-
-        if total > 0:
-            pct = max(0.0, min(1.0, cur / max(total, 1)))
-            filled = int(bar_width * pct)
-            empty = bar_width - filled
-
-            line.append(BAR_FULL * filled, style="sulu.accent")
-            line.append(BAR_EMPTY * empty, style="sulu.stroke_subtle")
-            line.append(f"  {pct * 100:5.1f}%", style="sulu.accent")
-            line.append(f"  {format_size(cur)}", style="sulu.fg")
-            line.append(f" / {format_size(total)}", style="sulu.muted")
-        else:
-            line.append(BAR_EMPTY * bar_width, style="sulu.stroke_subtle")
-            line.append(f"  {format_size(cur)}", style="sulu.fg")
-
-        if status:
-            line.append(f"  {status}", style="sulu.dim")
-
-        return line
-
-    def _start_live(self) -> None:
-        if not self.console or Live is None or self._live is not None:
-            return
-        try:
-            self._live = Live(
-                self._build_progress_line(0, 0),
-                console=self.console,
-                refresh_per_second=10,
-                transient=True,
-                auto_refresh=False,
-            )
-            self._live.start()
-        except Exception:
-            self._live = None
-
-    def _stop_live(self) -> None:
-        if self._live:
-            try:
-                self._live.stop()
-            except Exception:
-                pass
-            self._live = None
+    # Progress
 
     def transfer_start(self, title: str = "Downloading") -> None:
         """Start a transfer with header."""
@@ -284,66 +224,6 @@ class DownloadLogger:
         else:
             self._log_fn(f"\n> {title}")
 
-    def transfer_progress(self, cur: int, total: int) -> None:
-        self._transfer_cur = cur
-        self._transfer_total = total
-
-        now = time.time()
-        if now - self._last_progress_time < 0.1:
-            return
-        self._last_progress_time = now
-
-        if self.console and Text is not None:
-            if self._live is None:
-                self._start_live()
-            if self._live:
-                try:
-                    self._live.update(self._build_progress_line(cur, total), refresh=True)
-                except Exception:
-                    pass
-        else:
-            if total > 0:
-                pct = (cur / max(total, 1)) * 100
-                sys.stderr.write(f"\r  {format_size(cur)} / {format_size(total)} ({pct:.1f}%) ")
-            else:
-                sys.stderr.write(f"\r  {format_size(cur)} ")
-            sys.stderr.flush()
-
-    def transfer_progress_ext(
-        self, cur: int, total: int,
-        checks: int = 0, transfers: int = 0,
-        status: str = "", current_file: str = "",
-    ) -> None:
-        self._transfer_cur = cur
-        self._transfer_total = total
-
-        now = time.time()
-        if now - self._last_progress_time < 0.1:
-            return
-        self._last_progress_time = now
-
-        # Build status text
-        status_text = ""
-        if status == "checking":
-            status_text = f"Checking {checks} files"
-
-        if self.console and Text is not None:
-            if self._live is None:
-                self._start_live()
-            if self._live:
-                try:
-                    self._live.update(self._build_progress_line(cur, total, status_text), refresh=True)
-                except Exception:
-                    pass
-        else:
-            suffix = f"  {status_text}" if status_text else ""
-            if total > 0:
-                pct = (cur / max(total, 1)) * 100
-                sys.stderr.write(f"\r  {format_size(cur)} / {format_size(total)} ({pct:.1f}%){suffix} ")
-            else:
-                sys.stderr.write(f"\r  {format_size(cur)}{suffix} ")
-            sys.stderr.flush()
-
     def transfer_complete(self, message: str = "Complete") -> None:
         self._stop_live()
 
@@ -359,42 +239,10 @@ class DownloadLogger:
             size = f"  {format_size(self._transfer_total)}" if self._transfer_total > 0 else ""
             self._log_fn(f"  {GLYPH_OK} {message}{size}")
 
-    # ─────────────────────── Messages ───────────────────────
-
-    def info(self, msg: str) -> None:
-        if self.console:
-            self.console.print(f"  [sulu.dim]{GLYPH_INFO}[/] [sulu.muted]{msg}[/]")
-        else:
-            self._log_fn(f"  {msg}")
-
-    def success(self, msg: str) -> None:
-        if self.console:
-            self.console.print(f"  [sulu.ok_b]{GLYPH_OK}[/] [sulu.fg]{msg}[/]")
-        else:
-            self._log_fn(f"  {GLYPH_OK} {msg}")
-
-    def warning(self, msg: str) -> None:
-        if self.console:
-            self.console.print(f"  [sulu.warn_b]{GLYPH_WARN}[/] [sulu.warn]{msg}[/]")
-        else:
-            self._log_fn(f"  ! {msg}")
-
-    def error(self, msg: str) -> None:
-        if self.console:
-            self.console.print(f"  [sulu.err_b]{GLYPH_FAIL}[/] [sulu.err]{msg}[/]")
-        else:
-            self._log_fn(f"  X {msg}")
-
-    def log(self, msg: str) -> None:
-        if self.console:
-            self.console.print(f"  [sulu.muted]{msg}[/]")
-        else:
-            self._log_fn(f"  {msg}")
-
     def __call__(self, msg: str) -> None:
         self.log(msg)
 
-    # ─────────────────────── End screen ───────────────────────
+    # End screen
 
     def logo_end(self, elapsed: Optional[float] = None, dest_dir: Optional[str] = None) -> str:
         """Show completion and prompt. Returns 'o' (open) or 'c' (close)."""
@@ -404,24 +252,7 @@ class DownloadLogger:
         if self.console and Text is not None and Panel is not None and Table is not None and Align is not None:
             self.console.print()
 
-            # Account for panel borders (2) + padding (4) + grid overhead (2) = 8 chars
-            inner_w = max(20, self._get_width() - 8)
-            logo_str = _get_logo_tiny()
-
-            logo_renderable = None
-            if logo_str:
-                # Build a grid with each line as a separate row
-                lines = logo_str.split("\n")
-                max_len = max(len(line) for line in lines) if lines else 0
-                padding = max(0, (inner_w - max_len) // 2)
-                logo_grid = Table.grid(padding=(0, 0))
-                logo_grid.add_column()
-                for line in lines:
-                    line_txt = Text(" " * padding + line, style="#FFFFFF")
-                    line_txt.no_wrap = True
-                    line_txt.overflow = "crop"
-                    logo_grid.add_row(line_txt)
-                logo_renderable = logo_grid
+            logo_renderable = self._centered_logo_grid(_get_logo_tiny())
 
             # Panel title with time
             panel_title = Text()
@@ -455,7 +286,12 @@ class DownloadLogger:
             body.add_row(Text(""))
             body.add_row(Align.center(actions))
 
-            panel = self._panel(body, title=panel_title, border="sulu.ok", padding=(1, 2))
+            panel = self._panel(
+                body,
+                title=panel_title,
+                border_style="sulu.ok",
+                padding=(1, 2),
+            )
             self.console.print(panel)
 
             if not self._can_prompt():
@@ -496,37 +332,6 @@ class DownloadLogger:
 
         s = (raw or "").strip().lower()
         return "o" if s in ("o", "open", "y", "yes") else "c"
-
-    # ─────────────────────── Errors ───────────────────────
-
-    def warn_block(self, message: str, severity: str = "warning") -> None:
-        self._stop_live()
-        if self.console and Panel is not None and Text is not None:
-            border = "sulu.warn" if severity == "warning" else "sulu.err"
-            glyph = GLYPH_WARN if severity == "warning" else GLYPH_FAIL
-            panel = Panel(
-                Text(message, style="sulu.fg"),
-                title=Text(f"{glyph}  {severity.title()}", style="sulu.muted"),
-                title_align="left",
-                border_style=border,
-                padding=(1, 2),
-                box=SULU_PANEL_BOX,
-                style="sulu.well",
-            )
-            self.console.print()
-            self.console.print(panel)
-        else:
-            self._log_fn(f"\n{severity.title()}: {message}")
-
-    def fatal(self, message: str) -> None:
-        self._stop_live()
-        self.warn_block(message, severity="error")
-        try:
-            self._input_fn("\nPress Enter to close.", "")
-        except Exception:
-            pass
-        sys.exit(1)
-
 
 def create_logger(
     log_fn: Optional[Callable[[str], None]] = None,

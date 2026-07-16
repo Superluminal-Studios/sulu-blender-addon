@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""
-Test script to verify path normalization consistency in bat_utils.py
-
-This verifies the fix for "files marked as missing when they exist" issue.
-
-Run with: python tests/test_path_normalization.py
-"""
+"""Verify path normalization consistency in bat_utils.py."""
+import importlib
 import sys
-import os
 from pathlib import Path
 
-# Add the addon to path
 addon_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(addon_dir))
 
 from blender_asset_tracer import bpathlib
+
+# bat_utils uses relative imports, so it must load in its package context;
+# the conftest stub provides the addon parent package without importing bpy.
+bat_utils = importlib.import_module(addon_dir.name + ".utils.bat_utils")
 
 
 def test_make_absolute_resolves_dotdot():
@@ -69,8 +66,7 @@ def test_normalization_consistency():
 
 def test_comparison_after_normalization():
     """
-    Verify the core fix: paths that resolve to the same file should be equal
-    after normalization.
+    Verify paths that resolve to the same file are equal after normalization.
     """
 
     # Two paths that refer to the same file
@@ -82,7 +78,7 @@ def test_comparison_after_normalization():
 
     assert norm1 == norm2, f"Paths should match after normalization:\n  {norm1}\n  {norm2}"
 
-    # Verify set membership works (the original bug)
+    # Normalized paths must behave identically in sets.
     missing_set = {norm1}
     assert norm2 in missing_set, "Set membership check failed after normalization"
 
@@ -116,33 +112,14 @@ def test_norm_path_comparison():
     Verify that _norm_path() (used in compute_project_root) produces
     consistent results when given paths already normalized by make_absolute().
     """
-    from utils.bat_utils import _norm_path
-
     # Path already normalized by make_absolute
     normalized = bpathlib.make_absolute(Path("/home/user/project/textures/file.png"))
 
     # Apply _norm_path (simulating compute_project_root behavior)
-    double_normalized = _norm_path(str(normalized))
+    double_normalized = bat_utils._norm_path(str(normalized))
 
     # Should be the same (idempotent)
     assert str(normalized).replace("\\", "/") == double_normalized.replace("\\", "/"), \
         f"Double normalization changed the path:\n  {normalized}\n  {double_normalized}"
 
     print("✓ _norm_path consistency verified")
-
-
-if __name__ == "__main__":
-    print("Testing path normalization consistency...\n")
-
-    test_make_absolute_resolves_dotdot()
-    test_make_absolute_windows_on_posix()
-    test_normalization_consistency()
-    test_comparison_after_normalization()
-    test_no_symlink_resolution()
-
-    try:
-        test_norm_path_comparison()
-    except ImportError as e:
-        print(f"⚠ Skipped _norm_path test (import issue): {e}")
-
-    print("\n✅ All path normalization tests passed!")

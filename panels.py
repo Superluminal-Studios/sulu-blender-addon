@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import bpy
 import addon_utils
-from bpy.types import UILayout
+import time
 
 from .utils.version_utils import get_blender_version_string
 from .constants import DEFAULT_ADDONS
@@ -12,7 +12,7 @@ from .preferences import draw_login
 from .icons import get_icon_id, get_fallback_icon
 
 from .utils.job_list import get_indexed_item
-from .utils.project_scan import quick_cross_drive_hint, human_shorten
+from .utils.project_scan import human_shorten, scan_dependencies_fast
 
 addons_to_send: list[str] = []
 
@@ -25,6 +25,44 @@ _addon_cache: dict = {
     "enabled_set": None,  # frozenset of enabled addon module names
     "addon_list": [],     # list of (module_name, pretty_label) tuples
 }
+
+_PROJECT_SCAN_INTERVAL_SECONDS = 2.0
+_project_scan_cache: dict = {
+    "blend_path": None,
+    "summary": None,
+    "updated_at": 0.0,
+}
+
+
+def _cached_project_scan():
+    blend_path = str(getattr(bpy.data, "filepath", "") or "")
+    if _project_scan_cache["blend_path"] != blend_path:
+        return None
+    if (
+        time.monotonic() - _project_scan_cache["updated_at"]
+        > _PROJECT_SCAN_INTERVAL_SECONDS * 1.5
+    ):
+        return None
+    return _project_scan_cache["summary"]
+
+
+def _refresh_project_scan_cache():
+    try:
+        scene = getattr(bpy.context, "scene", None)
+        props = getattr(scene, "superluminal_settings", None) if scene else None
+        if props is not None and props.upload_type == "PROJECT":
+            summary = scan_dependencies_fast()
+            _project_scan_cache["blend_path"] = str(bpy.data.filepath or "")
+            _project_scan_cache["summary"] = summary
+            _project_scan_cache["updated_at"] = time.monotonic()
+            for window in getattr(bpy.context.window_manager, "windows", []):
+                screen = getattr(window, "screen", None)
+                for area in getattr(screen, "areas", []):
+                    if area.type == "PROPERTIES":
+                        area.tag_redraw()
+    except Exception:
+        pass
+    return _PROJECT_SCAN_INTERVAL_SECONDS
 
 
 class SUPERLUMINAL_PG_AddonItem(bpy.types.PropertyGroup):
@@ -164,31 +202,6 @@ def _read_addons_from_scene(scene: bpy.types.Scene) -> None:
     addons_to_send.extend([m for m in props.included_addons.split(";") if m])
 
 
-def _addon_row(layout: UILayout, mod_name: str, pretty_name: str) -> None:
-    enabled = mod_name in addons_to_send
-    row = layout.row(align=True)
-    row.operator(
-        ToggleAddonSelectionOperator.bl_idname,
-        text="",
-        icon="CHECKBOX_HLT" if enabled else "CHECKBOX_DEHLT",
-        emboss=False,
-    ).addon_name = mod_name
-    row.label(text=pretty_name)
-
-
-def _value_row(layout: UILayout, *, align: bool = False) -> UILayout:
-    """
-    Return a row aligned with the *value* column when property split is on.
-    Use for tools that should visually align with property rows.
-    """
-    r = layout.row(align=align)
-    r.label(text="")  # occupy label column
-    sub = r.row(align=align)
-    sub.use_property_split = False
-    sub.use_property_decorate = False
-    return sub
-
-
 # Operators
 class ToggleAddonSelectionOperator(bpy.types.Operator):
     """Select or deselect an add-on for inclusion in the upload"""
@@ -259,9 +272,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
             row.operator("superluminal.open_projects_web_page", text="Create Project")
             row.operator("superluminal.fetch_projects", text="", icon="FILE_REFRESH")
 
-        logged_in = bool(Storage.data.get("user_token"))
-        projects_ok = len(Storage.data.get("projects", [])) > 0
-
         # Job name toggle + field
         box = layout.box()
         col = box.column()
@@ -315,10 +325,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         )
         op_anim.mode = "ANIMATION"
 
-        # Other info/warnings (plain rows)
-        if not logged_in:
-            return
-
         if using_video_format:
             r = layout.row()
             r.alert = True  # make warning red
@@ -367,15 +373,15 @@ class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
 
         # Cross-drive dependency warning (only relevant to Project uploads)
         if props.upload_type == "PROJECT":
-            has_cross, summary = quick_cross_drive_hint()
-            if not summary.blend_saved:
+            summary = _cached_project_scan()
+            if not bpy.data.is_saved:
                 info_row = layout.row()
                 info_row.alert = True  # treat as warning for visibility
                 info_row.label(
                     text="Save your .blend for accurate project root detection.",
                     icon="ERROR",
                 )
-            if has_cross:
+            if summary is not None and summary.cross_drive_count() > 0:
                 box = layout.box()
                 box.alert = True  # make warning red
                 box.label(
@@ -433,8 +439,7 @@ class SUPERLUMINAL_PT_IncludeAddons(bpy.types.Panel):
             layout.label(text="No add-ons enabled", icon="INFO")
             return
 
-        # Scrollable list (built-in search + sort controls appear automatically,
-        # and now work because SUPERLUMINAL_UL_addon_items implements filter_items).
+        # Blender supplies search and sort controls when filter_items is implemented.
         layout.template_list(
             "SUPERLUMINAL_UL_addon_items",
             "",
@@ -474,9 +479,6 @@ class SUPERLUMINAL_PT_RenderNode(bpy.types.Panel):
         sub = col.column()
         sub.active = not props.auto_determine_blender_version
         sub.prop(props, "blender_version", text="Blender Version")
-
-        # col = col.column()
-        # col.prop(props, "device_type", text="Device Type")
 
 
 class SUPERLUMINAL_PT_RenderNode_Experimental(bpy.types.Panel):
@@ -643,9 +645,21 @@ def register():
         default=0,
         options={"SKIP_SAVE"},
     )
+    if not bpy.app.timers.is_registered(_refresh_project_scan_cache):
+        bpy.app.timers.register(
+            _refresh_project_scan_cache,
+            first_interval=0.1,
+            persistent=True,
+        )
 
 
 def unregister():
+    if bpy.app.timers.is_registered(_refresh_project_scan_cache):
+        bpy.app.timers.unregister(_refresh_project_scan_cache)
+    _project_scan_cache["blend_path"] = None
+    _project_scan_cache["summary"] = None
+    _project_scan_cache["updated_at"] = 0.0
+
     # Remove WM properties first
     if hasattr(bpy.types.WindowManager, "superluminal_ui_addons"):
         del bpy.types.WindowManager.superluminal_ui_addons

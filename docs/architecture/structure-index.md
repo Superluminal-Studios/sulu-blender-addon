@@ -3,8 +3,8 @@
 - Schema: `structure-index-v1`
 - Repo Path: `sulu-blender-addon`
 - README Path: `sulu-blender-addon/README.md`
-- Source Fingerprint: `4535c5643082cfeeae04d8187c2f3b95cbbbfdb0d253388a357f626fa46fe6db`
-- Fingerprinted File Count: `246`
+- Source Fingerprint: `e328b256dc1dbc2bd2c73de8a714bb62f2d80ad22e2e308427669a74f248d390`
+- Fingerprinted File Count: `241`
 - Generator: `bin/generate-structure-index`
 
 ## Critical Paths
@@ -160,9 +160,7 @@
 │   ├── file_proxy.py
 │   └── ... (39 more entries)
 ├── scripts/
-│   ├── test_cloud_files.py
-│   ├── test_single_file.py
-│   └── test_trace_deps.py
+│   └── diagnose_cloud_files.py
 ├── tests/
 │   ├── bat/
 │   │   ├── blendfiles/
@@ -194,15 +192,14 @@
 │   │   └── test_scenarios.py
 │   ├── realworld/
 │   │   ├── __init__.py
+│   │   ├── reporting.py
 │   │   └── test_farm_upload.py
 │   ├── reports/
 │   │   └── .gitkeep
-│   ├── __init__.py
 │   ├── conftest.py
+│   ├── helpers.py
 │   ├── README.md
-│   ├── reporting.py
 │   ├── requirements-test.txt
-│   ├── run_tests.py
 │   ├── test_blend_compression.py
 │   ├── test_compression_theory.py
 │   ├── test_diagnostic_report.py
@@ -217,13 +214,11 @@
 │   ├── test_project_identity_guards.py
 │   ├── test_render_task_order.py
 │   ├── test_request_utils_jobs.py
-│   ├── test_run_tests_wrapper.py
 │   ├── test_scene_metadata.py
 │   ├── test_settings_schema.py
 │   ├── test_submit_worker_schema_sync.py
 │   ├── test_upload_logging.py
-│   ├── test_zipped_compression.py
-│   └── utils.py
+│   └── test_zipped_compression.py
 ├── transfers/
 │   ├── download/
 │   │   ├── download_operator.py
@@ -244,7 +239,6 @@
 │   ├── download_logger.py
 │   ├── job_list.py
 │   ├── logger_utils.py
-│   ├── logging.py
 │   ├── prefs.py
 │   ├── project_context.py
 │   ├── project_scan.py
@@ -265,6 +259,7 @@
 ├── pocketbase_auth.py
 ├── preferences.py
 ├── properties.py
+├── pytest.ini
 ├── README.md
 └── storage.py
 ```
@@ -277,11 +272,13 @@ No route signals detected from configured interface sources.
 
 Detected env/config keys from entrypoints, interface sources, and config files:
 
+- `AUTH_MARKERS`
 - `AUTH_REFRESH_INTERVAL_SECONDS`
 - `CLOUDFLARE_R2_DOMAIN`
 - `DEBUG_MODE`
 - `LINEAR`
 - `LIVE_JOB_OVERLAY_FIELDS`
+- `NOT_FOUND_MARKERS`
 - `PROJECT`
 - `PROPERTIES`
 - `SCENE`

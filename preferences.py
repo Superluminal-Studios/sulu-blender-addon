@@ -12,7 +12,6 @@ from .utils.job_list import (
     job_progress,
     job_type_label,
     sort_job_entries,
-    sort_job_item_indices,
     timestamp_value,
 )
 from .utils.project_context import (
@@ -36,13 +35,14 @@ COLUMN_ORDER = [
     "type",
 ]
 
+_jobs_collection_cache = {
+    "owner": None,
+    "fingerprint": None,
+}
+
 
 def get_project_items(self, context):
     return [(p["id"], p["name"], p["name"]) for p in Storage.data["projects"]]
-
-
-def get_job_items(self, context):
-    return [(jid, j["name"], j["name"]) for jid, j in Storage.data["jobs"].items()]
 
 
 def _clear_project_runtime_state(clear_jobs: bool = True) -> None:
@@ -148,7 +148,7 @@ class SUPERLUMINAL_OT_sort_jobs(bpy.types.Operator):
             # Toggle direction if same column clicked
             prefs.sort_ascending = not prefs.sort_ascending
         else:
-            # New column: default to descending for time columns, ascending for others
+            # Time columns default to descending; other columns default to ascending.
             prefs.sort_column = self.column
             prefs.sort_ascending = self.column not in (
                 "submission_time", "started_time", "finished_time"
@@ -179,15 +179,69 @@ def draw_header_row(layout, prefs):
             op.column = key
 
 
+def _jobs_collection_owner(prefs):
+    try:
+        return prefs.as_pointer()
+    except Exception:
+        return id(prefs)
+
+
+def _jobs_collection_fingerprint(prefs):
+    entries = []
+    for jid, job in iter_project_jobs(
+        Storage.data.get("jobs", {}),
+        Storage.data.get("projects", []),
+        prefs.project_id,
+    ):
+        tasks = job.get("tasks", {}) or {}
+        if not isinstance(tasks, dict):
+            tasks = {}
+        submit_time, _ = timestamp_value(job.get("submit_time"))
+        start_time, _ = timestamp_value(job.get("start_time"))
+        end_time, _ = timestamp_value(job.get("end_time"))
+        entries.append(
+            (
+                str(jid),
+                str(job.get("name", "")),
+                str(job.get("status", "")),
+                submit_time,
+                start_time,
+                end_time,
+                int_value(job.get("start"), 0),
+                int_value(job.get("end"), 0),
+                job_progress(job),
+                int_value(tasks.get("finished"), 0),
+                str(job.get("blender_version", "")),
+                job_type_label(job),
+            )
+        )
+    return (
+        str(prefs.project_id),
+        str(prefs.sort_column),
+        bool(prefs.sort_ascending),
+        frozenset(entries),
+    )
+
+
 def refresh_jobs_collection(prefs):
-    """Sync prefs.jobs ←→ Storage.data['jobs'] and format fields."""
+    """Sync prefs.jobs from Storage only when displayed job data changes."""
+    owner = _jobs_collection_owner(prefs)
+    fingerprint = _jobs_collection_fingerprint(prefs)
+    if (
+        _jobs_collection_cache["owner"] == owner
+        and _jobs_collection_cache["fingerprint"] == fingerprint
+    ):
+        return False
+
     active_job = get_indexed_item(prefs.jobs, prefs.active_job_index)
     active_job_id = getattr(active_job, "id", "") if active_job else ""
 
     prefs.jobs.clear()
 
-    if not Storage.data["projects"]:
-        return
+    if not Storage.data.get("projects", []):
+        _jobs_collection_cache["owner"] = owner
+        _jobs_collection_cache["fingerprint"] = fingerprint
+        return True
 
     entries = sort_job_entries(
         list(
@@ -237,6 +291,10 @@ def refresh_jobs_collection(prefs):
     elif prefs.active_job_index >= len(prefs.jobs):
         prefs.active_job_index = len(prefs.jobs) - 1
 
+    _jobs_collection_cache["owner"] = owner
+    _jobs_collection_cache["fingerprint"] = fingerprint
+    return True
+
 
 class SuperluminalJobItem(bpy.types.PropertyGroup):
     id:               bpy.props.StringProperty()
@@ -285,30 +343,12 @@ class SUPERLUMINAL_UL_job_items(bpy.types.UIList):
 
     def filter_items(self, context, data, propname):
         items = getattr(data, propname)
-        prefs = context.preferences.addons[__package__].preferences
-
         flt_flags = [self.bitflag_filter_item] * len(items)
-
-        flt_neworder = sort_job_item_indices(
-            items,
-            prefs.sort_column,
-            prefs.sort_ascending,
-        )
-        return flt_flags, flt_neworder
+        return flt_flags, []
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         prefs = context.preferences.addons[__package__].preferences
 
-        # ---- Header row -----------------------------------------------------
-        if index == -1:
-            for key in self.order:
-                if getattr(prefs, f"show_col_{key}"):
-                    text = "Prog." if key == "progress" else key.replace("_", " ").title()
-                    layout.label(text=text)
-            layout.menu("SUPERLUMINAL_MT_job_columns", icon='DOWNARROW_HLT', text="")
-            return
-
-        # ---- Data rows ------------------------------------------------------
         enabled_cols = [k for k in self.order if getattr(prefs, f"show_col_{k}")]
         cols = layout.column_flow(columns=len(enabled_cols))
 
@@ -350,14 +390,11 @@ def draw_login(layout):
         layout.operator("superluminal.logout", text="Log out")
         return
 
-    # 1) Sign in with browser (primary action)
     layout.operator(
         "superluminal.login_browser",
         text="Connect to Superluminal",
-        #icon_value=CustomIcons.icons["main"].get("SULU").icon_id,
     )
 
-    # 2) Collapsible password login (closed by default)
     prefs = bpy.context.preferences.addons[__package__].preferences
     layout.separator()
 
@@ -456,7 +493,7 @@ classes = (
     SuperluminalJobItem,
     SUPERLUMINAL_OT_sort_jobs,
     SUPERLUMINAL_MT_job_columns,
-    SUPERLUMINAL_UL_job_items := SUPERLUMINAL_UL_job_items,  # keep stable name in bpy
+    SUPERLUMINAL_UL_job_items,
     SuperluminalAddonPreferences,
 )
 
@@ -466,6 +503,8 @@ def register():
         register_class(c)
 
 def unregister():
+    _jobs_collection_cache["owner"] = None
+    _jobs_collection_cache["fingerprint"] = None
     from bpy.utils import unregister_class
     for c in reversed(classes):
         unregister_class(c)

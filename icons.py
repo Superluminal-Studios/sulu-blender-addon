@@ -64,7 +64,3 @@ def unregister():
     for pcoll in _preview_collections.values():
         bpy.utils.previews.remove(pcoll)
     _preview_collections.clear()
-
-
-# Legacy compatibility - keep icon_values for any code still using it
-icon_values = _FALLBACK_ICONS

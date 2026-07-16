@@ -4,16 +4,15 @@ PocketBase JWT helpers for the Superluminal Blender add-on
 
 • Stores the login token in prefs.user_token.
 • Adds the token to every HTTP request.
-• If the backend returns 401 (expired / revoked) it wipes the local
-  session and raises NotAuthenticated so callers can react.
+• Classifies authentication, missing-resource, and server failures separately.
 """
 
 from __future__ import annotations
 import requests
-from urllib.parse import urlparse
 
 from .constants import POCKETBASE_URL
 from .storage import Storage
+from .utils.worker_utils import _request_endpoint
 import time
 # ------------------------------------------------------------------
 #  Public API
@@ -22,16 +21,16 @@ class NotAuthenticated(RuntimeError):
     """Raised when the user is no longer logged in (token missing/invalid)."""
 
 
+class NotFound(RuntimeError):
+    """Raised when the requested backend resource does not exist."""
+
+
+class ServerError(RuntimeError):
+    """Raised when the backend returns a server-side failure."""
+
+
 DEBUG_MODE = False
 AUTH_REFRESH_INTERVAL_SECONDS = 8 * 60 * 60
-
-
-def _request_endpoint(url: str) -> str:
-    parsed = urlparse(url)
-    endpoint = parsed.path or url
-    if parsed.query:
-        endpoint = f"{endpoint}?{parsed.query}"
-    return endpoint
 
 
 def _print_request_timing(method: str, url: str, start_time: float, status_code=None) -> None:
@@ -64,6 +63,24 @@ def logged_session_request(session, method: str, url: str, **kwargs):
     return res
 
 
+def _raise_classified_status(res, *, clear_expired_session: bool = False) -> None:
+    status_code = int(res.status_code)
+    if status_code in (401, 403):
+        if clear_expired_session and status_code == 401:
+            Storage.clear()
+        message = (
+            "Session expired. Sign in again."
+            if status_code == 401
+            else "Not authorized to access this resource."
+        )
+        raise NotAuthenticated(message)
+    if status_code in (404, 410):
+        raise NotFound("Resource not found")
+    if status_code >= 500:
+        raise ServerError(f"Server request failed with status {status_code}")
+    res.raise_for_status()
+
+
 def authorized_request(
     method: str,
     url: str,
@@ -75,8 +92,7 @@ def authorized_request(
     1. Ensures a token is present; otherwise raises NotAuthenticated.
     2. Adds the `Authorization` header.
     3. Performs the request.
-    4. If the server replies 401 → clears the session and raises
-       NotAuthenticated.
+    4. Classifies authentication, missing-resource, and server failures.
     """
     if not Storage.data["user_token"]:
         raise NotAuthenticated("Not logged in")
@@ -105,7 +121,7 @@ def authorized_request(
                     headers["Authorization"] = token
                     
             else:
-                raise NotAuthenticated("Could not refresh token. Sign in again.")
+                _raise_classified_status(res)
     try:
         res = logged_session_request(
             Storage.session,
@@ -116,20 +132,9 @@ def authorized_request(
             **kwargs,
         )
 
-        if res.status_code == 401:
-            Storage.clear()
-            raise NotAuthenticated("Session expired. Sign in again.")
-
-        if res.status_code >= 404:
-            raise NotAuthenticated("Resource not found")
-
-        if res.text == "":
-            authorized_request("GET", f"{POCKETBASE_URL}/api/farm_status/{Storage.data['org_id']}", headers={"Auth-Token": Storage.data['user_key']})
-            print("Starting queue manager")
-        
-        res.raise_for_status()
+        _raise_classified_status(res, clear_expired_session=True)
         return res
 
     except requests.RequestException:
-        # Bubble up any network / HTTP errors unchanged
+        # Let callers handle network and HTTP errors.
         raise

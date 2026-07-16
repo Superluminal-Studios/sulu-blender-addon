@@ -18,24 +18,45 @@ import uuid
 import zipfile
 import os
 import subprocess
-from urllib3.util import Retry
-from requests.adapters import HTTPAdapter
-from requests import Session
 import sys
 import json
 import re
 import shutil
-import time
 from collections import deque
 from typing import List, Optional, Tuple, Any
-from urllib.parse import urlparse
 
-DEBUG_MODE = False
+from ..utils.worker_utils import format_size, requests_retry_session
 
 # Unicode glyphs (no emoji)
 _GLYPH_DOWN = "↓"
 _GLYPH_OK = "✓"
 _GLYPH_FAIL = "✕"
+
+NOT_FOUND_MARKERS = (
+    "directory not found",
+    "no such key",
+    "404",
+    "not exist",
+    "cannot find",
+)
+
+AUTH_MARKERS = (
+    "statuscode: 403",
+    " forbidden",
+    "accessdenied",
+    "unauthorized",
+    "invalidaccesskeyid",
+    "signaturedoesnotmatch",
+    "access denied",
+)
+
+
+class RcloneError(RuntimeError):
+    """A transfer failure with the category determined from rclone output."""
+
+    def __init__(self, message: str, category: str = "unknown") -> None:
+        super().__init__(message)
+        self.category = category
 
 
 def _call_logger(logger: Any, method: str, msg: str) -> None:
@@ -67,32 +88,6 @@ def _call_logger(logger: Any, method: str, msg: str) -> None:
         print(str(msg))
     except UnicodeEncodeError:
         print(str(msg).encode("ascii", errors="replace").decode("ascii"))
-
-
-def _request_endpoint(url: str) -> str:
-    parsed = urlparse(url)
-    endpoint = parsed.path or url
-    if parsed.query:
-        endpoint = f"{endpoint}?{parsed.query}"
-    return endpoint
-
-
-def _request_timing_logs_enabled() -> bool:
-    return DEBUG_MODE or os.environ.get("SULU_DEBUG", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
-
-
-def _timed_get(session: Session, url: str, **kwargs):
-    start = time.perf_counter()
-    response = session.get(url, **kwargs)
-    if _request_timing_logs_enabled():
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        print(f"GET {_request_endpoint(url)} -> {response.status_code} in {elapsed_ms:.0f} ms")
-    return response
 
 
 _UNIT = {
@@ -202,26 +197,10 @@ def download_with_bar(url: str, dest: Path, logger=None) -> None:
     """
     Download a file with a simple inline progress bar.
     """
-    s = Session()
-    retries = Retry(
-        total=3,
-        backoff_factor=0.4,
-        status_forcelist=[429, 502, 503, 504],
-        allowed_methods={
-            "POST",
-            "GET",
-            "HEAD",
-            "OPTIONS",
-            "PUT",
-            "DELETE",
-            "TRACE",
-            "CONNECT",
-        },
-    )
-    s.mount("https://", HTTPAdapter(max_retries=retries))
+    session = requests_retry_session()
 
     _call_logger(logger, "info", f"{_GLYPH_DOWN} Preparing rclone")
-    resp = _timed_get(s, url, stream=True, timeout=600)
+    resp = session.get(url, stream=True, timeout=600)
     resp.raise_for_status()
 
     total = int(resp.headers.get("Content-Length", 0)) or 0
@@ -280,18 +259,6 @@ def ensure_rclone(logger=None) -> Path:
 
     _call_logger(logger, "info", f"{_GLYPH_OK} rclone ready")
     return rclone_bin
-
-
-def _bytes_from_stats(obj):
-    """Extract bytes transferred from rclone stats JSON."""
-    s = obj.get("stats")
-    if not s:
-        return None
-    cur = s.get("bytes")
-    tot = s.get("totalBytes") or 0
-    if cur is None:
-        return None
-    return int(cur), int(tot)
 
 
 def _extract_stats_detail(obj):
@@ -373,7 +340,7 @@ def _rclone_supports_flag(rclone_exe: str, flag: str) -> bool:
 
 
 # -------------------------------------------------------------------
-#  Error classification + UX cleanup (unchanged logic, calmer text)
+# Error classification and user-facing messages
 # -------------------------------------------------------------------
 
 _WIN_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
@@ -401,20 +368,6 @@ def _looks_like_rclone_remote(p: str) -> bool:
     if s2.startswith(":"):
         return True
     return bool(re.match(r"^[A-Za-z0-9][A-Za-z0-9_-]*:", s2))
-
-
-def _human_bytes(n: int) -> str:
-    try:
-        n = int(n)
-    except Exception:
-        return "unknown"
-    if n < 0:
-        n = 0
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
-        if n < 1024 or unit == "TiB":
-            return f"{n} B" if unit == "B" else f"{n:.1f} {unit}"
-        n = n / 1024.0
-    return f"{n:.1f} TiB"
 
 
 def _free_space_bytes_for_path(p: str) -> Optional[int]:
@@ -596,7 +549,7 @@ def _classify_failure(
         if free is None:
             free = _free_space_bytes_for_path(tempfile.gettempdir())
 
-        free_str = _human_bytes(free) if free is not None else "unknown"
+        free_str = format_size(free) if free is not None else "unknown"
         return (
             "local_disk_full",
             f"Disk full ({free_str} available). "
@@ -640,29 +593,14 @@ def _classify_failure(
         )
 
     # ---- Not found ----
-    not_found_markers = (
-        "directory not found",
-        "no such key",
-        "404",
-        "not exist",
-        "cannot find",
-    )
-    if any(m in low for m in not_found_markers):
+    if any(m in low for m in NOT_FOUND_MARKERS):
         return (
             "not_found",
             f"Source not found. This can be normal if outputs haven't been produced yet.\n\n[{tech}]",
         )
 
     # ---- Permissions / auth (403 etc) ----
-    perm_markers = (
-        "statuscode: 403",
-        " forbidden",
-        "accessdenied",
-        "unauthorized",
-        "invalidaccesskeyid",
-        "signaturedoesnotmatch",
-    )
-    if any(m in low for m in perm_markers):
+    if any(m in low for m in AUTH_MARKERS):
         return (
             "forbidden",
             f"Access denied. Log out and back in to refresh credentials, then retry.\n\n[{tech}]",
@@ -671,7 +609,7 @@ def _classify_failure(
     return ("unknown", f"Transfer failed. Retry, or contact support if this persists.\n\n[{tech}]")
 
 
-# ────────────────────────── main runner ──────────────────────────
+# Main runner
 
 
 def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, total_bytes=None):
@@ -788,17 +726,8 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
         elif has_rich_progress:
             logger.transfer_progress(0, progress_total)
         else:
-            sys.stderr.write(f"  Preparing transfer ({_human_bytes(progress_total)})\r")
+            sys.stderr.write(f"  Preparing transfer ({format_size(progress_total)})\r")
             sys.stderr.flush()
-
-    def _fmt_bytes(n: int) -> str:
-        if n < 1024:
-            return f"{n} B"
-        if n < 1024 * 1024:
-            return f"{n / 1024:.1f} KB"
-        if n < 1024 * 1024 * 1024:
-            return f"{n / (1024 * 1024):.1f} MB"
-        return f"{n / (1024 * 1024 * 1024):.2f} GB"
 
     def _shorten_filename(name: str, max_len: int = 30) -> str:
         if len(name) <= max_len:
@@ -834,9 +763,9 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
             bar_w = 24
             filled = int(bar_w * progress_cur / max(progress_total, 1))
             bar = "█" * filled + "░" * (bar_w - filled)
-            line = f"  {bar} {pct:5.1f}%  {_fmt_bytes(progress_cur)} / {_fmt_bytes(progress_total)}{status_suffix}"
+            line = f"  {bar} {pct:5.1f}%  {format_size(progress_cur)} / {format_size(progress_total)}{status_suffix}"
         else:
-            line = f"  Transferred: {_fmt_bytes(progress_cur)}{status_suffix}"
+            line = f"  Transferred: {format_size(progress_cur)}{status_suffix}"
         pad = max(0, progress_last_len - len(line))
         sys.stderr.write("\r" + line + " " * pad)
         sys.stderr.flush()
@@ -887,19 +816,6 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
         else:
             _progress_render_simple()
 
-    def _progress_update(cur: int, tot: Optional[int] = None) -> None:
-        nonlocal progress_cur, progress_total, _stats_received
-        _stats_received = True
-        progress_cur = cur
-        if tot and tot > 0:
-            progress_total = max(progress_total, tot)
-        if not progress_started:
-            return
-        if has_rich_progress:
-            logger.transfer_progress(progress_cur, progress_total)
-        else:
-            _progress_render_simple()
-
     def _progress_stop() -> None:
         nonlocal progress_started
         if progress_started:
@@ -917,8 +833,6 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
         encoding="utf-8",
         errors="replace",
     ) as proc:
-        last_bytes = 0
-
         for raw in proc.stdout:
             fragments = raw.rstrip("\n").split("\r")
             for frag in fragments:
@@ -951,11 +865,9 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
                             if has_activity:
                                 _progress_start(total=tot if tot > 0 else None)
                             else:
-                                last_bytes = cur
                                 continue
 
                         _progress_update_ext(stats_detail)
-                        last_bytes = cur
                         continue
 
                     # Non-stats JSON: store NOTICE/WARN/ERROR lines for failure messages
@@ -997,7 +909,7 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
                 except Exception:
                     pass
 
-            raise RuntimeError(user_msg)
+            raise RcloneError(user_msg, category)
 
         tail_lines = list(tail)
         redacted_cmd = _redact_cmd(cmd)

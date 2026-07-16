@@ -7,7 +7,7 @@
 # - Unicode path handling
 # - Cross-platform scenarios
 
-from tests.utils import (
+from tests.helpers import (
     get_drive,
     is_win_drive_path,
     relpath_safe,

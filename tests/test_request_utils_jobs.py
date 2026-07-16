@@ -26,6 +26,7 @@ pkg.__file__ = str(_addon_dir / "__init__.py")
 sys.modules.setdefault("sulu_blender_addon", pkg)
 
 request_utils = importlib.import_module("sulu_blender_addon.utils.request_utils")
+pocketbase_auth = importlib.import_module("sulu_blender_addon.pocketbase_auth")
 
 
 class _FakeResponse:
@@ -41,7 +42,32 @@ class _FakePrefs:
         self.jobs = []
 
 
+class _StatusResponse:
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        raise AssertionError("Mapped statuses must not use the generic HTTP error")
+
+
 class TestRequestUtilsJobs(unittest.TestCase):
+    def test_pocketbase_status_exception_taxonomy(self):
+        cases = (
+            (401, pocketbase_auth.NotAuthenticated),
+            (403, pocketbase_auth.NotAuthenticated),
+            (404, pocketbase_auth.NotFound),
+            (410, pocketbase_auth.NotFound),
+            (500, pocketbase_auth.ServerError),
+            (503, pocketbase_auth.ServerError),
+        )
+
+        for status_code, expected_exception in cases:
+            with self.subTest(status_code=status_code):
+                with self.assertRaises(expected_exception):
+                    pocketbase_auth._raise_classified_status(
+                        _StatusResponse(status_code)
+                    )
+
     def test_fetch_projects_requests_every_pocketbase_page(self):
         payloads = [
             {
@@ -285,13 +311,22 @@ class TestRequestUtilsJobs(unittest.TestCase):
              patch.object(
                  request_utils,
                  "_request_stored_jobs",
-                 side_effect=request_utils.NotAuthenticated("Resource not found"),
+                 side_effect=request_utils.NotFound("Resource not found"),
              ), \
              patch.object(request_utils, "_request_live_jobs", return_value=live):
             jobs = request_utils.request_jobs("org-id", "user-key", "project-id")
 
         self.assertEqual(jobs, live)
         self.assertEqual(request_utils.Storage.data["jobs"], live)
+
+    def test_request_jobs_does_not_message_match_authentication_errors(self):
+        with patch.object(request_utils, "_request_stored_jobs", side_effect=(
+            request_utils.NotAuthenticated("Resource not found")
+        )), patch.object(request_utils, "_request_live_jobs") as live_request:
+            with self.assertRaises(request_utils.NotAuthenticated):
+                request_utils.request_jobs("org-id", "user-key", "project-id")
+
+        live_request.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
 from ..constants import POCKETBASE_URL
-from ..pocketbase_auth import NotAuthenticated, authorized_request
+from ..pocketbase_auth import NotAuthenticated, NotFound, authorized_request
 from ..storage import Storage
 from .project_context import ProjectContextError
+from .job_list import int_value as _int_value, job_project_ids, selected_project_ids
 from .prefs import get_prefs
 import time
 import threading
@@ -35,25 +36,27 @@ _PROJECTS_PER_PAGE = 100
 
 def _selected_project_identity(project_id: str) -> tuple[str, str]:
     """Return the selected project's stable id and public sqid when available."""
-    project_id = str(project_id or "").strip()
+    projects = Storage.data.get("projects", []) or []
+    ids = selected_project_ids(projects, project_id)
+    if not ids:
+        return "", ""
     for project in Storage.data.get("projects", []) or []:
-        if project.get("id") == project_id or project.get("sqid") == project_id:
+        project_identity = {
+            str(project.get("id") or "").strip(),
+            str(project.get("sqid") or "").strip(),
+        }
+        project_identity.discard("")
+        if project_identity == ids:
             return str(project.get("id") or "").strip(), str(project.get("sqid") or "").strip()
-    return project_id, ""
+    return "", ""
 
 
 def _job_matches_project(job: dict, project_id: str, project_sqid: str = "") -> bool:
-    if not project_id and not project_sqid:
+    project_ids = {str(project_id or "").strip(), str(project_sqid or "").strip()}
+    project_ids.discard("")
+    if not project_ids:
         return True
-    job_project_id = str(job.get("project_id") or "").strip()
-    job_project_sqid = str(job.get("project_sqid") or "").strip()
-    return (
-        bool(project_id)
-        and (job_project_id == project_id or job_project_sqid == project_id)
-    ) or (
-        bool(project_sqid)
-        and (job_project_id == project_sqid or job_project_sqid == project_sqid)
-    )
+    return not project_ids.isdisjoint(job_project_ids(job))
 
 
 def _filter_jobs_for_project(jobs: dict, project_id: str, project_sqid: str = "") -> dict:
@@ -64,15 +67,6 @@ def _filter_jobs_for_project(jobs: dict, project_id: str, project_sqid: str = ""
         for job_id, job in (jobs or {}).items()
         if isinstance(job, dict) and _job_matches_project(job, project_id, project_sqid)
     }
-
-
-def _int_value(value, default=0) -> int:
-    try:
-        if value is None or value == "":
-            return default
-        return int(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def _normalize_task_counts(job: dict) -> dict:
@@ -191,7 +185,21 @@ def _request_stored_jobs(org_id: str) -> dict:
     return {}
 
 
-def _request_live_jobs(org_id: str, user_key: str) -> dict:
+def _wake_queue_manager(org_id: str, user_key: str) -> None:
+    authorized_request(
+        "GET",
+        f"{POCKETBASE_URL}/api/farm_status/{org_id}",
+        headers={"Auth-Token": user_key},
+    )
+    print("Starting queue manager")
+
+
+def _request_live_jobs(
+    org_id: str,
+    user_key: str,
+    *,
+    allow_queue_manager_wake: bool = True,
+) -> dict:
     jobs_resp = authorized_request(
         "GET",
         f"{POCKETBASE_URL}/farm/{org_id}/api/job_list",
@@ -199,13 +207,19 @@ def _request_live_jobs(org_id: str, user_key: str) -> dict:
     )
     if jobs_resp.status_code == 200 and jobs_resp.text:
         return jobs_resp.json().get("body", {}) or {}
+    if jobs_resp.status_code == 200 and allow_queue_manager_wake:
+        _wake_queue_manager(org_id, user_key)
+        return _request_live_jobs(
+            org_id,
+            user_key,
+            allow_queue_manager_wake=False,
+        )
     return {}
 
 
 def request_jobs(org_id: str, user_key: str, project_id: str):
     """Return persisted project jobs with live farm state overlaid when available."""
-    prefs = get_prefs()
-    prefs.jobs.clear()
+    # Worker threads update Storage only; Blender collections are rebuilt on the main thread.
     selected_project_id, selected_project_sqid = _selected_project_identity(project_id)
 
     stored_jobs = {}
@@ -213,10 +227,10 @@ def request_jobs(org_id: str, user_key: str, project_id: str):
     try:
         stored_jobs = _request_stored_jobs(org_id)
         stored_jobs_available = True
-    except NotAuthenticated as exc:
-        if "Resource not found" not in str(exc):
-            raise
+    except NotFound as exc:
         print(f"Stored jobs endpoint unavailable, falling back to live job list: {exc}")
+    except NotAuthenticated:
+        raise
     except Exception as exc:
         print(f"Could not fetch stored jobs, falling back to live job list: {exc}")
 

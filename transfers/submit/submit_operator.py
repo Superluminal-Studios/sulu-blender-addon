@@ -1,9 +1,7 @@
-# operators/submit_job_operator.py
 from __future__ import annotations
 
 import bpy
 import addon_utils
-import json
 import sys
 import tempfile
 import uuid
@@ -11,7 +9,7 @@ from pathlib import Path
 from bpy.props import EnumProperty, IntProperty, BoolProperty
 import os
 
-from ...utils.worker_utils import launch_in_terminal
+from ...utils.worker_utils import launch_worker_secure
 from .addon_packer import bundle_addons
 from ...constants import POCKETBASE_URL, FARM_IP
 from ...utils.version_utils import resolved_worker_blender_value
@@ -33,17 +31,6 @@ from .settings_schema import (
 )
 
 
-def _blender_python_args() -> list[str]:
-    """
-    Blender's recommended Python flags (if available).
-    """
-    try:
-        args = getattr(bpy.app, "python_args", ())
-        return list(args) if args else []
-    except Exception:
-        return []
-
-
 def addon_version(addon_name: str):
     addon_utils.modules(refresh=False)
     for mod in addon_utils.addons_fake_modules.values():
@@ -58,7 +45,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
     bl_idname = "superluminal.submit_job"
     bl_label = "Submit Job to Superluminal"
 
-    # New: submission mode and still-frame popup controls
+    # Submission mode and still-frame popup controls
     mode: EnumProperty(
         name="Submission Mode",
         items=[
@@ -253,8 +240,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             # project upload controls
             "use_project_upload": (props.upload_type == "PROJECT"),
             "automatic_project_path": bool(props.automatic_project_path),
-            # IMPORTANT FIX:
-            # If the user left this blank, do NOT turn it into CWD via os.path.abspath("").
+            # Preserve an empty custom path instead of resolving it to the working directory.
             "custom_project_path": (
                 os.path.abspath(bpy.path.abspath(props.custom_project_path)).replace(
                     "\\", "/"
@@ -291,17 +277,14 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         worker = Path(__file__).with_name("submit_worker.py")
 
         handoff["packed_addons"] = bundle_addons(handoff["packed_addons_path"])
-        tmp_json = Path(tempfile.gettempdir()) / f"superluminal_{job_id}.json"
-        tmp_json.write_text(json.dumps(handoff), encoding="utf-8")
-
-        # --- launch the worker with Blender's Python, in isolated mode ---
-        # -I makes Python ignore PYTHON* env vars & user-site, preventing stdlib leakage.
-        pybin = sys.executable
-        pyargs = _blender_python_args()
-        cmd = [pybin, *pyargs, "-I", "-u", str(worker), str(tmp_json)]
-
         try:
-            launch_in_terminal(cmd)
+            launch_worker_secure(
+                worker,
+                handoff,
+                f"superluminal_{job_id}.json",
+                python_executable=sys.executable,
+                python_args=getattr(bpy.app, "python_args", ()),
+            )
         except Exception as e:
             self.report({"ERROR"}, f"Failed to launch submission: {e}")
             return {"CANCELLED"}

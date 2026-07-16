@@ -116,7 +116,7 @@ class _PanelInfo:
     __slots__ = (
         "name", "label", "parent", "context", "space", "engines", "order",
         "default_closed", "hide_header", "draw", "draw_header", "poll",
-        "bases", "is_panel", "skip", "lineno", "module", "methods",
+        "bases", "skip", "lineno", "module", "methods",
     )
 
     def __init__(self, name: str, module: str, lineno: int):
@@ -135,7 +135,6 @@ class _PanelInfo:
         self.draw_header: Optional[ast.FunctionDef] = None
         self.poll: Optional[ast.FunctionDef] = None
         self.bases: list[str] = []
-        self.is_panel = False
         self.skip = False
         # every method, for inlining self.X(...) / Class.X(...) draw helpers
         self.methods: dict[str, ast.FunctionDef] = {}

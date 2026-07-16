@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from tests.utils import (
+from tests.helpers import (
     s3key_clean,
     validate_s3_key,
     is_s3_safe,
@@ -174,11 +174,10 @@ class TestProcessForUpload(unittest.TestCase):
 
 class TestRegressionBATTempDir(unittest.TestCase):
     """
-    Regression test for BAT temp directory leak bug.
+    Ensure BAT file-map destinations never become S3 keys.
 
-    The bug was: BAT's file_map contains absolute paths to temp directories,
-    and these were being used directly as S3 keys instead of computing
-    relative paths from project root.
+    BAT's file_map may contain absolute paths to temporary directories; upload
+    keys must instead be relative to the project root.
     """
 
     def test_temp_dir_not_in_key(self):
@@ -199,7 +198,7 @@ class TestRegressionBATTempDir(unittest.TestCase):
 
     def test_wrong_key_detection(self):
         """Wrong key format should be detected by validation."""
-        # This is what the bug produced
+        # Known unsafe key containing a temporary directory
         wrong_key = "C:/Users/jonas/AppData/Local/Temp/bat_packroot_xbzwq30j/classroom.blend"
 
         issues = validate_s3_key(wrong_key)

@@ -1,4 +1,4 @@
-# utils/version_utils.py
+
 from __future__ import annotations
 import bpy
 from typing import Dict, List, Tuple

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import tempfile
 import uuid
@@ -15,75 +14,18 @@ from ..blender_asset_tracer.trace import file_sequence
 
 # Import cloud file utilities for handling OneDrive/Google Drive/iCloud placeholders
 from . import cloud_files
+from .worker_utils import (
+    get_drive as _drive,
+    is_win_drive_path as _is_win_drive_path,
+    norm_abs_for_detection as _norm_path,
+)
 
 import logging
 
 _log = logging.getLogger(__name__)
 
 
-# ─── Drive detection helpers (OS-agnostic) ───────────────────────────────────
-
-_WIN_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]+")
-
-
-def _is_win_drive_path(p: str) -> bool:
-    """Check if path looks like a Windows drive path (C:/ or C:\\)."""
-    return bool(_WIN_DRIVE_RE.match(str(p)))
-
-
-def _drive(path: str) -> str:
-    """
-    Return a drive token representing the path's root device for cross-drive checks.
-
-    - Windows letters: "C:", "D:", ...
-    - UNC: "UNC"
-    - macOS volumes: "/Volumes/NAME"
-    - Linux removable/media: "/media/USER/NAME" or "/mnt/NAME"
-    - Otherwise POSIX root "/"
-
-    Works correctly even when running on POSIX with Windows-style paths (for testing).
-    """
-    p = str(path).replace("\\", "/")
-    if _is_win_drive_path(p):
-        return (p[:2]).upper()  # "C:"
-    if p.startswith("//") or p.startswith("\\\\"):
-        return "UNC"
-    if os.name == "nt":
-        return os.path.splitdrive(p)[0].upper()
-
-    # macOS volumes
-    if p.startswith("/Volumes/"):
-        parts = p.split("/")
-        if len(parts) >= 3:
-            return "/Volumes/" + parts[2]
-        return "/Volumes"
-
-    # Linux common mounts
-    if p.startswith("/media/"):
-        parts = p.split("/")
-        if len(parts) >= 4:
-            return f"/media/{parts[2]}/{parts[3]}"
-        return "/media"
-
-    if p.startswith("/mnt/"):
-        parts = p.split("/")
-        if len(parts) >= 3:
-            return f"/mnt/{parts[2]}"
-        return "/mnt"
-
-    # Fallback: POSIX root
-    return "/"
-
-
-def _norm_path(path: str) -> str:
-    """Normalize path for comparison, preserving Windows-style paths on POSIX."""
-    p = str(path).replace("\\", "/")
-    if _is_win_drive_path(p) or p.startswith("//") or p.startswith("\\\\"):
-        return p
-    return os.path.normpath(os.path.abspath(p)).replace("\\", "/")
-
-
-# ─── Lightweight dependency tracing ──────────────────────────────────────────
+# Lightweight dependency tracing
 
 
 def _get_block_type(usage: Any) -> str:
@@ -319,7 +261,6 @@ def trace_dependencies(
                 ok, err = cloud_files.read_file_with_hydration(
                     str(file_path),
                     hydrate=hydrate,
-                    timeout_seconds=30,
                 )
 
                 if ok:
@@ -376,7 +317,7 @@ def trace_dependencies(
     return deps, missing, unreadable, raw_usages, optional
 
 
-# ─── Project root computation ────────────────────────────────────────────────
+# Project root computation
 
 
 def compute_project_root(
@@ -523,7 +464,7 @@ def pack_blend(
         temp files are copied into a persistent temp dir so they survive packer.close()
 
     ZIP:
-      - produces zip at target (existing behavior)
+      - produces a ZIP archive at target
       - if return_report=True, returns a dict with missing/unreadable details
 
     pre_traced_deps:

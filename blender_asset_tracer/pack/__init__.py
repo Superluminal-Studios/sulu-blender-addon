@@ -147,16 +147,16 @@ def _outside_project_relpath(path: pathlib.Path) -> pathlib.PurePosixPath:
         if drv.startswith("\\\\"):
             drv_clean = drv.lstrip("\\")
             comps = [c for c in drv_clean.split("\\") if c]
-            rest = list(p.parts[1:]) if len(p.parts) > 1 else []
-            parts = ["UNC", *comps, *rest]
+            rest_parts = list(p.parts[1:]) if len(p.parts) > 1 else []
+            parts = ["UNC", *comps, *rest_parts]
             parts = [_nfc(x) for x in parts if x and x not in (os.sep, "\\", "/")]
             return pathlib.PurePosixPath(*parts)
 
         # Drive letter on Windows: "C:"
         drive_letter = _nfc(drv[0].upper())
-        rest = list(p.parts[1:]) if len(p.parts) > 1 else []
-        rest = [_nfc(x) for x in rest if x and x not in (os.sep, "\\", "/")]
-        return pathlib.PurePosixPath(drive_letter, *rest)
+        rest_parts = list(p.parts[1:]) if len(p.parts) > 1 else []
+        rest_parts = [_nfc(x) for x in rest_parts if x and x not in (os.sep, "\\", "/")]
+        return pathlib.PurePosixPath(drive_letter, *rest_parts)
 
     # POSIX absolute
     parts = list(p.parts)
@@ -277,7 +277,7 @@ class Packer:
         self._aborted = threading.Event()
         self._abort_lock = threading.RLock()
         self._abort_reason = ""
-        self.file_map = {}
+        self.file_map: typing.Dict[pathlib.Path, pathlib.PurePath] = {}
 
         # Set this to a custom Callback() subclass instance before calling
         # strategise() to receive progress reports.

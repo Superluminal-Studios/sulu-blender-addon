@@ -28,7 +28,7 @@ from unittest.mock import MagicMock, patch
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-# ─── Worker bootstrap fakes ───────────────────────────────────────────────
+# Worker bootstrap fakes
 
 
 def _stub_addon_modules(pkg_name: str) -> None:
@@ -152,7 +152,7 @@ def _load_worker_module():
             __builtins__.input = orig_input
 
 
-# ─── Fake requests session helpers ────────────────────────────────────────
+# Fake requests session helpers
 
 
 class _FakeResponse:
@@ -180,7 +180,7 @@ def _make_session(response: _FakeResponse):
     return sess
 
 
-# ─── Tests ─────────────────────────────────────────────────────────────────
+# Tests
 
 
 class FetchJobDetailsTest(unittest.TestCase):
@@ -217,16 +217,15 @@ class FetchJobDetailsTest(unittest.TestCase):
             }
         }
 
-    # ── The NEW backend shape: structured placeholder for missing jobs ──
+    # Structured placeholder for missing jobs
 
     def test_missing_job_placeholder_returns_unknown_with_zeros(self):
-        """The backend fix returns
+        """The backend returns
         `{"status":"success","body":{"status":"unknown","tasks":{zeros},
         "total_tasks":0,"missing":true}}` for jobs not yet in
         Database.jobs. The worker must return that shape unchanged AND
-        log nothing — this is the steady state during the sync window
-        and on every poll after a job has aged out, so any log noise
-        compounds into the spam the user reported."""
+        log nothing. This is the steady state during the sync window
+        and on every poll after a job has aged out."""
         body = {
             "status": "unknown",
             "tasks": {"queued": 0, "running": 0, "finished": 0, "error": 0, "paused": 0},
@@ -257,28 +256,21 @@ class FetchJobDetailsTest(unittest.TestCase):
             self.worker._fetch_job_details()
         self.assertEqual(self.fake_logger.warnings, [])
 
-    # ── The OLD (broken) shape we still need to tolerate ──
+    # Bare null response tolerated for compatibility
 
     def test_bare_null_body_falls_back_silently(self):
-        """If an old backend version still returns `null` for missing
-        jobs, `resp.json()` returns the Python value `None`. The worker
-        used to crash here with `'NoneType' object has no attribute
-        'get'`. After the defensive fix it falls back to the handoff
-        snapshot and logs at most one warning."""
+        """A `null` missing-job body becomes Python `None`; the worker
+        falls back to the handoff snapshot and logs at most one warning."""
         self.worker.session = _make_session(_FakeResponse(body_obj=None))
         result = self.worker._fetch_job_details()
         self.assertEqual(result, ("queued", 0, 5))
-        # We don't insist on zero warnings here — older bare-null
-        # responses look like a server bug and one warning is fine —
-        # but it must not be the crash message AND it must not spam.
+        # Bare null responses may log one warning but must not repeat it.
         for w in self.fake_logger.warnings:
             self.assertNotIn("NoneType", w)
         self.assertLessEqual(len(self.fake_logger.warnings), 1)
 
     def test_wrapped_null_body_falls_back_silently(self):
-        """The pre-fix backend response `{"status":"success","body":null}`.
-        Old worker called `.get` on None and crashed. Must now fall back
-        cleanly."""
+        """A wrapped null body falls back to the handoff snapshot."""
         self.worker.session = _make_session(
             _FakeResponse(body_obj={"status": "success", "body": None})
         )
@@ -295,7 +287,7 @@ class FetchJobDetailsTest(unittest.TestCase):
         result = self.worker._fetch_job_details()
         self.assertEqual(result, ("queued", 0, 5))
 
-    # ── Real running-job response shape ──
+    # Running-job response shape
 
     def test_running_job_returns_live_counts(self):
         body = {
@@ -322,7 +314,7 @@ class FetchJobDetailsTest(unittest.TestCase):
         result = self.worker._fetch_job_details()
         self.assertEqual(result, ("finished", 100, 100))
 
-    # ── Network-level failures ──
+    # Network-level failures
 
     def test_non_200_falls_back(self):
         self.worker.session = _make_session(
@@ -363,7 +355,7 @@ class FetchJobDetailsTest(unittest.TestCase):
         result = self.worker._fetch_job_details()
         self.assertEqual(result, ("queued", 0, 5))
 
-    # ── Configuration edge cases ──
+    # Configuration edge cases
 
     def test_no_sarfis_url_falls_back_without_network(self):
         self.worker.sarfis_url = None

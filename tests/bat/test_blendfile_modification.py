@@ -13,7 +13,7 @@ class ModifyUncompressedTest(AbstractBlendFileTest):
 
         copyfile(
             str(self.orig), str(self.to_modify)
-        )  # TODO: when requiring Python 3.6+, remove str()
+        )
         self.bf = blendfile.BlendFile(self.to_modify, mode="r+b")
 
         self.assertFalse(self.bf.is_compressed)
@@ -67,7 +67,7 @@ class ModifyCompressedTest(AbstractBlendFileTest):
 
         copyfile(
             str(self.orig), str(self.to_modify)
-        )  # TODO: when requiring Python 3.6+, remove str()
+        )
         self.bf = blendfile.BlendFile(self.to_modify, mode="r+b")
 
         self.assertTrue(self.bf.is_compressed)

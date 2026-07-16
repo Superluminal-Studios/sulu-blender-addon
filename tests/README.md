@@ -1,15 +1,15 @@
 # Sulu + BAT Test Suite
 
-Comprehensive test suite combining Sulu addon tests with Blender Asset Tracer (BAT) tests.
+Comprehensive test suite combining Sulu addon tests with Blender Asset Tracer
+(BAT) tests. The canonical runner is pytest, configured by the repo-root
+`pytest.ini`.
 
 ## Structure
 
 ```
 tests/
-├── __init__.py           # Package init with structure overview
-├── conftest.py           # pytest fixtures and configuration
-├── run_tests.py          # Master test runner script
-├── utils.py              # Shared test utilities (path logic, validators)
+├── conftest.py           # pytest fixtures and path/package setup
+├── helpers.py            # Shared test helpers (re-exports production path logic)
 ├── README.md             # This file
 │
 ├── bat/                  # Blender Asset Tracer core tests
@@ -31,61 +31,55 @@ tests/
 │   ├── __init__.py
 │   └── test_project_pack.py      # Full pipeline tests
 │
-└── fixtures/             # Test fixture generation
+├── fixtures/             # Test fixture generation
+│   ├── __init__.py
+│   └── production_structures.py  # Realistic project structures
+│
+└── realworld/            # Live-farm scripts (NOT collected by pytest)
     ├── __init__.py
-    └── production_structures.py  # Realistic project structures
+    ├── reporting.py              # Report generation for farm runs
+    └── test_farm_upload.py       # Real farm upload verification
 ```
+
+There is intentionally no `tests/__init__.py`: the addon root is itself a
+package whose `__init__.py` imports `bpy`, and keeping `tests/` out of that
+package lets pytest import test modules without touching Blender.
 
 ## Running Tests
 
-### Canonical Focused Checks
-
 ```bash
-python -m unittest tests.test_project_context tests.test_project_identity_guards
-python -m unittest tests.test_upload_logging
+python -m pytest                       # full suite
+python -m pytest tests/paths           # one directory
+python -m pytest tests/test_layout_parser.py            # one file
+python -m pytest tests/paths/test_s3_keys.py::TestS3KeyValidation  # one class
+python -m pytest -m paths              # by marker (see pytest.ini)
+python -m pytest -v                    # verbose
 ```
 
-### Expanded Local-Only Runners
-
-```bash
-python tests/run_tests.py
-python tests/run_tests.py --category paths
-python tests/run_tests.py --category bat
-python tests/run_tests.py --category integration
-```
+CI runs `python -m pytest` (see `.github/workflows/`).
 
 ### Real Farm Upload Checks
 
-`tests/realworld/test_farm_upload.py` defaults to dry-run mode. Real job
-creation requires an explicit live flag:
+`tests/realworld/` talks to the live farm and is excluded from unit runs via
+`--ignore=tests/realworld` in `pytest.ini`. `test_farm_upload.py` defaults to
+dry-run mode; real job creation requires an explicit live flag:
 
 ```bash
 python tests/realworld/test_farm_upload.py
 python tests/realworld/test_farm_upload.py --live-upload
 ```
 
-Manual farm verification guidance is owned by the superrepo:
+Never run `--live-upload` casually: it creates real jobs and uploads real
+data. Manual farm verification guidance is owned by the superrepo:
 
 - <https://github.com/Superluminal-Studios/sulu-super-repo/blob/main/docs/repos/sulu-blender-addon/testing/farm-verification.md>
-
-### Direct unittest Usage
-
-```bash
-python -m unittest discover tests/paths/
-python -m unittest tests.paths.test_drive_detection
-python -m unittest tests.paths.test_drive_detection.TestWindowsDriveDetection
-python -m unittest tests.paths.test_s3_keys.TestS3KeyValidation.test_valid_keys
-```
-
-### pytest
-
-`pytest` is optional and useful for broader local sweeps, but it is not the canonical
-CI or operator path because importing the add-on package can pull in `bpy`.
 
 ## Test Categories
 
 ### paths/
-Tests for path handling, drive detection, and S3 key generation.
+Tests for path handling, drive detection, and S3 key generation. These import
+the production implementations from `utils/worker_utils.py` via
+`tests/helpers.py`, so they exercise the exact code the workers run.
 
 - **test_drive_detection.py**: Cross-platform drive/volume detection
   - Windows drive letters (C:, D:)
@@ -112,6 +106,7 @@ Blender Asset Tracer core functionality tests.
 - **test_bpathlib.py**: BlendPath class and path utilities
 - **test_pack.py**: Pack/rewrite operations
 - **test_tracer.py**: Dependency tracing
+- **test_mypy.py**: Type-checks the vendored BAT fork
 - Other specialized tests
 
 ### integration/
@@ -150,7 +145,7 @@ Add to `tests/paths/` with `test_` prefix:
 ```python
 # tests/paths/test_my_feature.py
 import unittest
-from tests.utils import get_drive, s3key_clean, is_s3_safe
+from tests.helpers import get_drive, s3key_clean, is_s3_safe
 
 class TestMyFeature(unittest.TestCase):
     def test_something(self):
@@ -175,7 +170,7 @@ Add to `tests/integration/`:
 ```python
 # tests/integration/test_my_integration.py
 from tests.fixtures import create_simple_project
-from tests.utils import process_for_upload, is_s3_safe
+from tests.helpers import process_for_upload, is_s3_safe
 
 class TestMyIntegration(unittest.TestCase):
     def test_end_to_end(self):
@@ -192,5 +187,7 @@ class TestMyIntegration(unittest.TestCase):
 
 - Python 3.9+
 - BAT (vendored in addon)
-- Optional: pytest (for better output)
+- pytest (canonical runner, see `tests/requirements-test.txt`)
+- requests (imported by `utils/worker_utils.py`, which `tests/helpers.py` re-exports)
+- Optional: mypy (for `tests/bat/test_mypy.py`; skipped when absent)
 - Optional: zstandard (for compressed blend files)
