@@ -58,9 +58,35 @@ Repository map:
 │   ├── submit/submit_operator.py         # Submit UI handoff
 │   ├── submit/submit_worker.py           # Packaging, upload, job registration
 │   └── download/download_worker.py       # Output download worker
+├── extensions/
+│   └── sulu_market_bridge/               # Independent Market asset extension package
 ├── utils/project_context.py              # Project identity and org/user-key guards
 └── docs/architecture/structure-index.md # Generated structure index
 ```
+
+## Independent Blender Extensions
+
+`extensions/sulu_market_bridge/` is a standalone Blender 5.2 extension for
+secure browser-to-Blender Market asset imports. It is not imported by this
+render-farm add-on and is explicitly excluded from `SuperluminalRender.zip`.
+The extension owns its own manifest, versioned descriptor/redemption schemas,
+pure tests, package build, and official-Blender E2E harness.
+
+Version 1 supports exactly one marked `OBJECT` asset using `APPEND`. The signed
+artifact type/name must also match the datablock's immutable
+`sulu_market_asset_id` custom property.
+
+```bash
+cd extensions/sulu_market_bridge
+python -m unittest discover -v
+python scripts/validate.py \
+  --blender /Volumes/Blender/Blender.app/Contents/MacOS/Blender
+```
+
+The second command validates, builds, installs, and enables the packaged
+extension in isolated Blender user resources, then runs the local mock Market
+fixture E2E. See `extensions/sulu_market_bridge/README.md` for the security
+contract and packaging details.
 
 ## Structure Index and Critical Code Paths
 
@@ -120,6 +146,7 @@ Canonical verification commands:
 cd sulu-blender-addon
 python -m unittest tests.test_project_context tests.test_project_identity_guards
 python -m unittest tests.test_upload_logging
+python -m unittest tests.test_deploy_extension_exclusion
 ```
 
 ## Testing and Verification

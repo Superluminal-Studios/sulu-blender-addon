@@ -1,0 +1,36 @@
+schema_version = "1.0.0"
+
+id = "sulu_market_bridge"
+version = "0.1.1"
+name = "Sulu Market Bridge"
+tagline = "Securely import purchased Sulu Market assets"
+maintainer = "Sulu <support@superlumin.al>"
+type = "add-on"
+tags = ["Import-Export", "3D View"]
+blender_version_min = "5.2.0"
+blender_version_max = "5.3.0"
+website = "https://superlumin.al"
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+[permissions]
+network = "Redeem tickets and download purchased Sulu Market assets"
+files = "Read asset descriptors and maintain a verified local asset cache"
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  "/.git/",
+  "/.pytest_cache/",
+  "/.ruff_cache/",
+  "/tests/",
+  "/scripts/",
+  "/docs/",
+  "/schemas/",
+  "/README.md",
+  "/pyproject.toml",
+  "/.gitignore",
+  "/*.zip",
+  "/*.dmg",
+]

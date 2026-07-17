@@ -11,8 +11,11 @@ ADDON_NAME = "SuperluminalRender"
 
 EXCLUDE = {
     # directories
-    "__pycache__", ".pytest_cache", ".mypy_cache", ".venv", ".git", ".github", ".claude", "tests", "reports", "rclone",
+    "__pycache__", ".pytest_cache", ".mypy_cache", ".venv", ".git", ".github", ".claude", "tests", "reports", "releases", "rclone",
     "docs", "scripts",
+    # Independently packaged Blender extensions must never be nested inside
+    # the legacy SuperluminalRender add-on release.
+    "extensions",
     # files
     ".gitignore", ".gitkeep", ".gitattributes",
     "README.md", "AGENTS.md", "CLAUDE.md", "pytest.ini",
