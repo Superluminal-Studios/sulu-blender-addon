@@ -19,8 +19,6 @@ Superrepo skill: `../docs/agents/skills/sulu-blender-addon-engineer/SKILL.md`
 - `transfers/download/`: download handoff and worker
 - `transfers/rclone.py`, `utils/worker_utils.py`: transfer/runtime helpers
 - `utils/project_scan.py`, `utils/bat_utils.py`: dependency scanning and BAT
-- `extensions/sulu_market_bridge/`: independently packaged Market asset bridge;
-  it has its own manifest, contract, tests, and release artifact
 - `blender_asset_tracer/`: vendored BAT internals
 - `../docs/repos/sulu-blender-addon/architecture.md`: superrepo-owned architecture summary
 - `../docs/repos/sulu-blender-addon/testing/farm-verification.md`: manual live farm verification guide
@@ -38,8 +36,6 @@ Superrepo skill: `../docs/agents/skills/sulu-blender-addon-engineer/SKILL.md`
 - New handoff fields are optional and default safely.
 - ZIP remains portable and self-contained. PROJECT remains project-root based;
   if off-drive dependency behavior changes, update UI warnings and docs.
-- Keep packages under `extensions/` independent from the legacy render-farm
-  add-on runtime and exclude them from `SuperluminalRender.zip`.
 
 ## Validation
 
@@ -47,9 +43,6 @@ Superrepo skill: `../docs/agents/skills/sulu-blender-addon-engineer/SKILL.md`
 python -m compileall .
 python -m pytest
 
-cd extensions/sulu_market_bridge
-python -m unittest discover -v
-python scripts/validate.py --blender /Volumes/Blender/Blender.app/Contents/MacOS/Blender
 ```
 
 For UI, submit/download, dependency packing, or release changes, add a manual

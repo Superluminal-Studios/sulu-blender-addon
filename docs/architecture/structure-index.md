@@ -3,8 +3,8 @@
 - Schema: `structure-index-v1`
 - Repo Path: `sulu-blender-addon`
 - README Path: `sulu-blender-addon/README.md`
-- Source Fingerprint: `9a3071e5c70d6d9d8fce727245e9a97bec27b695836864cb9925b924ed9e94a9`
-- Fingerprinted File Count: `290`
+- Source Fingerprint: `c9ef771568ba53f1f5c89178ae2ae9039b0e89dde0b9f5738ae69a261d1a6962`
+- Fingerprinted File Count: `245`
 - Generator: `bin/generate-structure-index`
 
 ## Critical Paths
@@ -91,13 +91,7 @@
 │       ├── schemas/
 │       ├── scripts/
 │       ├── sulu_bridge/
-│       ├── tests/
-│       ├── .gitignore
-│       ├── __init__.py
-│       ├── addon.py
-│       ├── blender_manifest.toml
-│       ├── pyproject.toml
-│       └── README.md
+│       └── tests/
 ├── icons/
 │   ├── error.png
 │   ├── finished.png
