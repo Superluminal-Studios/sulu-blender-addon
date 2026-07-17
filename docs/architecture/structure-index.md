@@ -85,13 +85,6 @@
 │   └── py.typed
 ├── docs/
 │   └── architecture/
-├── extensions/
-│   └── sulu_market_bridge/
-│       ├── docs/
-│       ├── schemas/
-│       ├── scripts/
-│       ├── sulu_bridge/
-│       └── tests/
 ├── icons/
 │   ├── error.png
 │   ├── finished.png
