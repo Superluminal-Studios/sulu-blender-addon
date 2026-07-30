@@ -273,6 +273,28 @@ def _expand_node_tree(block: blendfile.BlendFileBlock):
     yield from _expand_generic_nodetree(block)
 
 
+def _get_nodes_modifier_node_group(
+    block_mod: blendfile.BlendFileBlock,
+) -> typing.Optional[blendfile.BlendFileBlock]:
+    """Return a geometry-nodes group when its saved pointer is resolvable.
+
+    Linked and library-overridden files can retain a node-group address that
+    Blender fixes up while loading all libraries together. BAT reads each
+    blend file independently, so that address can legitimately be absent from
+    the file's block table. Treat it like Blender's unresolved ``None`` value
+    instead of aborting the entire dependency trace.
+    """
+    try:
+        return block_mod.get_pointer(b"node_group")
+    except blendfile.exceptions.SegmentationFault as ex:
+        log.debug(
+            "Ignoring unresolved NodesModifierData.node_group pointer 0x%x in %s",
+            ex.address,
+            block_mod.bfile.filepath,
+        )
+        return None
+
+
 @dna_code("OB")
 def _expand_object(block: blendfile.BlendFileBlock):
     yield from _expand_generic_animdata(block)
@@ -309,7 +331,7 @@ def _expand_object(block: blendfile.BlendFileBlock):
         # to more types, something more intelligent than this should be made.
         if mod_type == cdefs.eModifierType_Nodes:
             yield from _expand_generic_idprops(block_mod)
-            yield block_mod.get_pointer(b"node_group")
+            yield _get_nodes_modifier_node_group(block_mod)
 
 
 @dna_code("PA")
