@@ -697,6 +697,9 @@ class AutoDownloaderTest(unittest.TestCase):
         cls.worker = _load_worker_module()
 
     def setUp(self):
+        self.worker.base_cmd = ["rclone", "--s3-access-key-id", "AKIA"]
+        self.worker.bucket = "render-test"
+        self.worker.job_id = "job-1"
         self.worker.logger = MagicMock()
         self.worker.run_rclone = MagicMock()
         self.worker._SKIPPED_OUTPUTS_WARNED = False
@@ -705,6 +708,33 @@ class AutoDownloaderTest(unittest.TestCase):
         return (
             patch.object(self.worker.time, "monotonic", side_effect=clock.monotonic),
             patch.object(self.worker.time, "sleep", side_effect=clock.sleep),
+        )
+
+    def test_auto_dispatch_does_not_bypass_terminal_settling(self):
+        self.worker.data = {
+            "job": {
+                "status": "finished",
+                "tasks": {"finished": 1},
+                "total_tasks": 1,
+            }
+        }
+        with (
+            patch.object(self.worker, "_fetch_job_details") as fetch_details,
+            patch.object(self.worker, "single_downloader") as single,
+            patch.object(self.worker, "auto_downloader") as automatic,
+        ):
+            self.worker._run_selected_downloader(
+                "/tmp/download",
+                "auto",
+                "https://farm.example",
+                "token",
+            )
+
+        fetch_details.assert_not_called()
+        single.assert_not_called()
+        automatic.assert_called_once_with(
+            "/tmp/download",
+            poll_seconds=self.worker._AUTO_POLL_SECONDS,
         )
 
     def test_polling_uses_deadlines_instead_of_sleeping_after_work(self):
@@ -842,6 +872,90 @@ class AutoDownloaderTest(unittest.TestCase):
         self.assertEqual(fetch.call_count, 3)
         self.assertEqual(list_files.call_count, 4)
         self.assertEqual(self.worker.run_rclone.call_count, 4)
+        self.worker.logger.success.assert_called_once_with("3 frames downloaded")
+
+    def test_multiple_outputs_for_one_frame_do_not_suppress_next_poll(self):
+        clock = _FakeClock()
+        batches = []
+        statuses = iter(
+            [
+                ("running", 2, 3),
+                ("running", 2, 3),
+                ("finished", 3, 3),
+            ]
+        )
+        listings = iter(
+            [
+                (["beauty/0001.png", "normal/0001.png"], []),
+                (
+                    [
+                        "beauty/0001.png",
+                        "normal/0001.png",
+                        "beauty/0002.png",
+                        "normal/0002.png",
+                    ],
+                    [],
+                ),
+                (
+                    [
+                        "beauty/0001.png",
+                        "normal/0001.png",
+                        "beauty/0002.png",
+                        "normal/0002.png",
+                        "beauty/0003.png",
+                        "normal/0003.png",
+                    ],
+                    [],
+                ),
+                (
+                    [
+                        "beauty/0001.png",
+                        "normal/0001.png",
+                        "beauty/0002.png",
+                        "normal/0002.png",
+                        "beauty/0003.png",
+                        "normal/0003.png",
+                    ],
+                    [],
+                ),
+            ]
+        )
+
+        monotonic_patch, sleep_patch = self._clock_patches(clock)
+        with (
+            tempfile.TemporaryDirectory() as dest_dir,
+            monotonic_patch,
+            sleep_patch,
+            patch.object(
+                self.worker,
+                "_fetch_job_details",
+                side_effect=lambda: next(statuses),
+            ),
+            patch.object(
+                self.worker,
+                "_rclone_list_output_files",
+                side_effect=lambda _remote: next(listings),
+            ) as list_files,
+            patch.object(
+                self.worker,
+                "_write_files_from_list",
+                side_effect=lambda files: batches.append(list(files))
+                or f"/tmp/sulu-multi-output-{len(batches)}.txt",
+            ),
+            patch.object(self.worker.os, "unlink"),
+        ):
+            self.worker.auto_downloader(
+                dest_dir,
+                poll_seconds=2,
+                batch_frames=1,
+                terminal_stable_passes=1,
+            )
+
+        self.assertEqual(list_files.call_count, 4)
+        self.assertEqual(
+            batches[1],
+            ["beauty/0002.png", "normal/0002.png"],
+        )
         self.worker.logger.success.assert_called_once_with("3 frames downloaded")
 
     def test_resume_reconciles_existing_files_only_at_terminal_boundary(self):

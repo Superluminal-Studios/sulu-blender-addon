@@ -281,6 +281,16 @@ class TestRcloneFinalizingProgress(unittest.TestCase):
             (400, "transferring"),
         )
 
+    def test_progress_helper_clamps_near_total_before_rounding_to_100(self):
+        current, status = _rclone_utils._progress_while_process_is_running(
+            9999,
+            10000,
+            "transferring",
+        )
+
+        self.assertEqual((current, status), (9990, "transferring"))
+        self.assertEqual(f"{(current / 10000) * 100.0:.1f}", "99.9")
+
     def test_failed_process_never_emits_terminal_100_percent(self):
         lines = [
             json.dumps(

@@ -321,9 +321,13 @@ def _progress_while_process_is_running(
     """
     current = max(0, int(current or 0))
     total = max(0, int(total or 0))
-    if total > 0 and current >= total:
+    if total > 0:
         holdback = max(1, (total + 999) // 1000)
-        return max(0, total - holdback), "finalizing"
+        maximum_in_flight = max(0, total - holdback)
+        display_current = min(current, maximum_in_flight)
+        if current >= total:
+            return display_current, "finalizing"
+        return display_current, status
     return current, status
 
 

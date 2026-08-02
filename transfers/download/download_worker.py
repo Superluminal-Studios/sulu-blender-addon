@@ -627,6 +627,27 @@ _AUTO_TERMINAL_SETTLE_SECONDS = 30.0
 _AUTO_TERMINAL_QUIET_SECONDS = 10.0
 
 
+def _run_selected_downloader(
+    dest_dir: str,
+    mode: str,
+    status_url: Optional[str],
+    status_token: Optional[str],
+) -> None:
+    """Dispatch without bypassing terminal object-visibility reconciliation."""
+    if mode == "single":
+        single_downloader(dest_dir)
+    elif not status_url or not status_token:
+        logger.warning(
+            "Can't track job progress. Downloading available frames only."
+        )
+        single_downloader(dest_dir)
+    else:
+        # Always enter the settling loop in auto mode, including when the
+        # first status snapshot is already terminal. Queue completion can
+        # precede visibility of the final R2 objects.
+        auto_downloader(dest_dir, poll_seconds=_AUTO_POLL_SECONDS)
+
+
 def _next_poll_deadline(previous: float, interval: float, now: float) -> float:
     """Advance a fixed polling cadence, skipping deadlines missed by slow work."""
     deadline = previous + interval
@@ -728,12 +749,14 @@ def auto_downloader(
             sync_finished_at = time.monotonic()
             if ok:
                 next_refresh = sync_finished_at + refresh_interval
-                # Each frame produces at least one valid output in the normal
-                # pipeline. This lower bound keeps visibility lag pending while
-                # still allowing arbitrary compositor outputs per frame.
+                # Count distinct Blender frame suffixes, not objects. A
+                # compositor can publish several outputs for one frame; using
+                # the object count would suppress polling while a later frame
+                # is still becoming visible. Unknown naming stays conservative
+                # and keeps polling until the terminal quiet-window fallback.
                 last_synced_finished = max(
                     last_synced_finished,
-                    min(finished, copy_state.last_visible_count),
+                    min(finished, len(copy_state.visible_frame_numbers)),
                 )
                 if last_synced_finished >= finished:
                     pending_since = None
@@ -915,17 +938,12 @@ def main() -> None:
 
     # Run selected mode
     try:
-        job_data = _fetch_job_details()
-        if download_type == "single" or job_data[0] in ["finished", "paused", "error"]:
-            single_downloader(dest_dir)
-        else:
-            if not sarfis_url or not sarfis_token:
-                logger.warning(
-                    "Can't track job progress. Downloading available frames only."
-                )
-                single_downloader(dest_dir)
-            else:
-                auto_downloader(dest_dir, poll_seconds=_AUTO_POLL_SECONDS)
+        _run_selected_downloader(
+            dest_dir,
+            download_type,
+            sarfis_url,
+            sarfis_token,
+        )
 
         elapsed = time.perf_counter() - t_start
 
