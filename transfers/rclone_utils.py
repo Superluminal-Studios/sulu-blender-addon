@@ -22,6 +22,7 @@ import sys
 import json
 import re
 import shutil
+import time
 from collections import deque
 from typing import List, Optional, Tuple, Any
 
@@ -302,6 +303,28 @@ def _extract_stats_detail(obj):
         "checking": _extract_names(s.get("checking")),
         "transferring": _extract_names(s.get("transferring")),
     }
+
+
+def _progress_while_process_is_running(
+    current: int,
+    total: int,
+    status: str = "",
+) -> Tuple[int, str]:
+    """Keep an in-flight transfer below 100% until rclone exits successfully.
+
+    The S3 backend counts a multipart chunk once it has been buffered by the
+    AWS SDK, not once the remote has committed it.  In particular, a large
+    ``--s3-chunk-size`` can therefore make the byte counter reach the total
+    while rclone is still uploading parts or completing the multipart upload.
+    Hold back one tenth of a percent while the process is alive so 100% remains
+    a truthful terminal state.
+    """
+    current = max(0, int(current or 0))
+    total = max(0, int(total or 0))
+    if total > 0 and current >= total:
+        holdback = max(1, (total + 999) // 1000)
+        return max(0, total - holdback), "finalizing"
+    return current, status
 
 
 # -------------------------------------------------------------------
@@ -619,7 +642,9 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
 
     Returns:
         dict: Transfer stats dict with keys: bytes_transferred, total_bytes,
-            checks, transfers, errors, elapsed_time, stats_received, tail_lines.
+            checks, transfers, errors, elapsed_time, process_elapsed_time,
+            reported_bytes_complete_time, finalization_time, stats_received,
+            and tail_lines.
             When rclone emits no stats (e.g. very fast operation or silent failure),
             stats_received is False and numeric fields are 0.
 
@@ -641,6 +666,10 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
     extra = list(extra or [])
     src = str(src).replace("\\", "/")
     dst = str(dst).replace("\\", "/")
+    is_remote_upload = (
+        _looks_like_rclone_remote(dst)
+        and not _looks_like_rclone_remote(src)
+    )
 
     if not isinstance(base, (list, tuple)) or not base:
         raise RuntimeError("Invalid rclone base command.")
@@ -703,6 +732,7 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
     _stats_received = False  # True once at least one rclone stats line is processed
     _last_stats_detail = None  # Last full stats dict for final return
     progress_current_file = ""
+    reported_bytes_complete_at = None
 
     # Check if logger has transfer_progress method (rich UI)
     has_rich_progress = (
@@ -745,13 +775,20 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
         else:
             _progress_render_simple()
 
-    def _progress_render_simple() -> None:
+    def _progress_render_simple(
+        display_cur: Optional[int] = None,
+        display_status: Optional[str] = None,
+    ) -> None:
         nonlocal progress_last_len
+        render_cur = progress_cur if display_cur is None else display_cur
+        render_status = progress_status if display_status is None else display_status
         # Build status suffix
         status_suffix = ""
-        if progress_status == "checking" and progress_current_file:
+        if render_status == "finalizing":
+            status_suffix = "  Finalizing upload"
+        elif render_status == "checking" and progress_current_file:
             status_suffix = f"  Verifying: {_shorten_filename(progress_current_file, 25)}"
-        elif progress_status == "checking":
+        elif render_status == "checking":
             status_suffix = f"  Verifying ({progress_checks} checked)"
         elif progress_transfers > 0 and progress_checks > progress_transfers:
             # More checks than transfers = some files skipped
@@ -759,13 +796,13 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
             status_suffix = f"  ({skipped} unchanged)"
 
         if progress_total > 0:
-            pct = (progress_cur / max(progress_total, 1)) * 100.0
+            pct = (render_cur / max(progress_total, 1)) * 100.0
             bar_w = 24
-            filled = int(bar_w * progress_cur / max(progress_total, 1))
+            filled = int(bar_w * render_cur / max(progress_total, 1))
             bar = "█" * filled + "░" * (bar_w - filled)
-            line = f"  {bar} {pct:5.1f}%  {format_size(progress_cur)} / {format_size(progress_total)}{status_suffix}"
+            line = f"  {bar} {pct:5.1f}%  {format_size(render_cur)} / {format_size(progress_total)}{status_suffix}"
         else:
-            line = f"  Transferred: {format_size(progress_cur)}{status_suffix}"
+            line = f"  Transferred: {format_size(render_cur)}{status_suffix}"
         pad = max(0, progress_last_len - len(line))
         sys.stderr.write("\r" + line + " " * pad)
         sys.stderr.flush()
@@ -774,6 +811,7 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
     def _progress_update_ext(stats: dict) -> None:
         nonlocal progress_cur, progress_total, progress_checks, progress_transfers
         nonlocal progress_status, progress_current_file, _stats_received, _last_stats_detail
+        nonlocal reported_bytes_complete_at
 
         _stats_received = True
         _last_stats_detail = stats
@@ -799,22 +837,39 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
             progress_status = ""
             progress_current_file = ""
 
+        if (
+            is_remote_upload
+            and reported_bytes_complete_at is None
+            and progress_total > 0
+            and progress_cur >= progress_total
+        ):
+            reported_bytes_complete_at = time.perf_counter()
+
         if not progress_started:
             return
 
-        if has_rich_progress_ext:
-            logger.transfer_progress_ext(
+        if is_remote_upload:
+            display_cur, display_status = _progress_while_process_is_running(
                 progress_cur,
                 progress_total,
-                status=progress_status,
+                progress_status,
+            )
+        else:
+            display_cur, display_status = progress_cur, progress_status
+
+        if has_rich_progress_ext:
+            logger.transfer_progress_ext(
+                display_cur,
+                progress_total,
+                status=display_status,
                 current_file=progress_current_file,
                 checks=progress_checks,
                 transfers=progress_transfers,
             )
         elif has_rich_progress:
-            logger.transfer_progress(progress_cur, progress_total)
+            logger.transfer_progress(display_cur, progress_total)
         else:
-            _progress_render_simple()
+            _progress_render_simple(display_cur, display_status)
 
     def _progress_stop() -> None:
         nonlocal progress_started
@@ -824,6 +879,7 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
                 sys.stderr.flush()
             progress_started = False
 
+    process_started_at = time.perf_counter()
     with subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -886,6 +942,29 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
                     print(line)
 
         code = proc.wait()
+        process_finished_at = time.perf_counter()
+
+        # Only render the terminal 100% state once process success confirms that
+        # remote finalization and rclone's post-upload checks have completed.
+        if (
+            code == 0
+            and is_remote_upload
+            and progress_started
+            and progress_total > 0
+        ):
+            if has_rich_progress_ext:
+                logger.transfer_progress_ext(
+                    progress_total,
+                    progress_total,
+                    status="complete",
+                    current_file="",
+                    checks=progress_checks,
+                    transfers=progress_transfers,
+                )
+            elif has_rich_progress:
+                logger.transfer_progress(progress_total, progress_total)
+            else:
+                _progress_render_simple(progress_total, "complete")
 
         _progress_stop()
 
@@ -913,6 +992,18 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
 
         tail_lines = list(tail)
         redacted_cmd = _redact_cmd(cmd)
+        process_elapsed_time = max(0.0, process_finished_at - process_started_at)
+        reported_bytes_complete_time = None
+        finalization_time = None
+        if reported_bytes_complete_at is not None:
+            reported_bytes_complete_time = max(
+                0.0,
+                reported_bytes_complete_at - process_started_at,
+            )
+            finalization_time = max(
+                0.0,
+                process_finished_at - reported_bytes_complete_at,
+            )
 
         if not _stats_received:
             return {
@@ -922,6 +1013,9 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
                 "transfers": 0,
                 "errors": 0,
                 "elapsed_time": 0,
+                "process_elapsed_time": process_elapsed_time,
+                "reported_bytes_complete_time": reported_bytes_complete_time,
+                "finalization_time": finalization_time,
                 "stats_received": False,
                 "tail_lines": tail_lines,
                 "command": redacted_cmd,
@@ -933,6 +1027,9 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
             "transfers": _last_stats_detail.get("transfers", 0) if _last_stats_detail else 0,
             "errors": _last_stats_detail.get("errors", 0) if _last_stats_detail else 0,
             "elapsed_time": _last_stats_detail.get("elapsedTime", 0) if _last_stats_detail else 0,
+            "process_elapsed_time": process_elapsed_time,
+            "reported_bytes_complete_time": reported_bytes_complete_time,
+            "finalization_time": finalization_time,
             "stats_received": True,
             "tail_lines": tail_lines,
             "command": redacted_cmd,

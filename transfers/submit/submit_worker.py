@@ -48,6 +48,63 @@ def _default_logger(msg: str) -> None:
 
 _LOG = _default_logger
 _UPLOAD_RESULT_PREFIX = "SULU_UPLOAD_RESULT "
+_PHASE_TIMING_PREFIX = "SULU_PHASE_TIMING "
+
+
+def _build_rclone_upload_settings(
+    *,
+    single_zip_archive: bool = False,
+) -> List[str]:
+    """Build bounded-memory S3 settings for the requested upload shape.
+
+    ZIP submissions upload one known-size archive.  Keep archives up to 100 MiB
+    on S3's single-PUT path, then use 16 MiB multipart chunks so concurrency is
+    useful for larger archives without the 64 MiB progress/memory lead observed
+    in the benchmark runs.  Other upload shapes retain their established
+    settings until they have their own live A/B evidence.
+    """
+    if single_zip_archive:
+        transfers = "1"
+        checkers = "1"
+        chunk_size = "16M"
+        upload_cutoff = "100M"
+        upload_concurrency = "8"
+        buffer_size = "16M"
+    else:
+        transfers = "4"
+        checkers = "4"
+        chunk_size = "64M"
+        upload_cutoff = "64M"
+        upload_concurrency = "4"
+        buffer_size = "64M"
+
+    return [
+        "--transfers",
+        transfers,
+        "--checkers",
+        checkers,
+        "--s3-chunk-size",
+        chunk_size,
+        "--s3-upload-cutoff",
+        upload_cutoff,
+        "--s3-upload-concurrency",
+        upload_concurrency,
+        "--buffer-size",
+        buffer_size,
+        "--retries",
+        "20",
+        "--low-level-retries",
+        "20",
+        "--retries-sleep",
+        "5s",
+        "--timeout",
+        "5m",
+        "--contimeout",
+        "30s",
+        "--no-traverse",
+        "--stats",
+        "0.1s",
+    ]
 
 
 def _set_logger(fn) -> None:
@@ -513,11 +570,13 @@ def _load_handoff_from_argv(argv: List[str]) -> Dict[str, object]:
             "Example: submit_worker.py /path/to/handoff.json"
         )
     handoff_path = Path(argv[1]).resolve(strict=True)
-    data = json.loads(handoff_path.read_text("utf-8"))
     try:
-        handoff_path.unlink()
-    except OSError:
-        pass
+        data = json.loads(handoff_path.read_text("utf-8"))
+    finally:
+        try:
+            handoff_path.unlink()
+        except OSError:
+            pass
     return data
 
 
@@ -655,6 +714,81 @@ class _SubmitContext:
     common_path: str = ""
     main_blend_s3: str = ""
     project_root_str: str = ""
+    phase_timings: Dict[str, Dict[str, object]] = field(default_factory=dict)
+
+
+def _record_phase_timing(
+    ctx: _SubmitContext,
+    phase: str,
+    duration_ms: float,
+    **details: object,
+) -> None:
+    """Persist and optionally log a monotonic phase duration.
+
+    Detail values are deliberately bounded scalars so the structured record
+    cannot accidentally absorb request bodies, credentials, or large IDs.
+    """
+    entry: Dict[str, object] = {
+        "duration_ms": round(max(0.0, float(duration_ms)), 3),
+    }
+    for key, value in details.items():
+        if isinstance(value, bool):
+            entry[str(key)] = value
+        elif isinstance(value, (int, float)):
+            entry[str(key)] = round(float(value), 3)
+        elif value is not None:
+            entry[str(key)] = str(value)[:80]
+
+    phase_timings = getattr(ctx, "phase_timings", None)
+    if not isinstance(phase_timings, dict):
+        phase_timings = {}
+        setattr(ctx, "phase_timings", phase_timings)
+    phase_timings[str(phase)] = entry
+
+    set_metadata = getattr(getattr(ctx, "report", None), "set_metadata", None)
+    if callable(set_metadata):
+        set_metadata(
+            "phase_timings",
+            {name: dict(values) for name, values in phase_timings.items()},
+        )
+
+    if _debug_enabled and _debug_enabled():
+        _LOG(
+            _PHASE_TIMING_PREFIX
+            + json.dumps(
+                {"phase": str(phase), **entry},
+                sort_keys=True,
+            )
+        )
+
+
+def _record_archive_rclone_timings(ctx: _SubmitContext, result: object) -> None:
+    """Record rclone's process and post-byte-count finalization boundaries."""
+    if not isinstance(result, dict):
+        return
+
+    process_seconds = result.get("process_elapsed_time")
+    if isinstance(process_seconds, (int, float)):
+        reported_seconds = result.get("reported_bytes_complete_time")
+        _record_phase_timing(
+            ctx,
+            "archive_upload",
+            float(process_seconds) * 1000.0,
+            reported_bytes_complete_ms=(
+                float(reported_seconds) * 1000.0
+                if isinstance(reported_seconds, (int, float))
+                else None
+            ),
+        )
+
+    finalization_seconds = result.get("finalization_time")
+    if isinstance(finalization_seconds, (int, float)):
+        _record_phase_timing(
+            ctx,
+            "archive_finalization",
+            float(finalization_seconds) * 1000.0,
+            boundary="reported_bytes_complete_to_process_exit",
+        )
 
 
 def _preflight(ctx: _SubmitContext) -> None:
@@ -1488,6 +1622,7 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
 
 
 def _upload(ctx: _SubmitContext) -> None:
+    upload_started_at = time.perf_counter()
     data = ctx.data
     mods = ctx.mods
     logger = ctx.logger
@@ -1530,33 +1665,8 @@ def _upload(ctx: _SubmitContext) -> None:
 
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
 
-    rclone_settings = [
-        "--transfers",
-        "4",
-        "--checkers",
-        "4",
-        "--s3-chunk-size",
-        "64M",
-        "--s3-upload-cutoff",
-        "64M",
-        "--s3-upload-concurrency",
-        "4",
-        "--buffer-size",
-        "64M",
-        "--retries",
-        "20",
-        "--low-level-retries",
-        "20",
-        "--retries-sleep",
-        "5s",
-        "--timeout",
-        "5m",
-        "--contimeout",
-        "30s",
-        "--no-traverse",
-        "--stats",
-        "0.1s",
-    ]
+    rclone_settings = _build_rclone_upload_settings()
+    zip_archive_settings = _build_rclone_upload_settings(single_zip_archive=True)
 
     has_addons = data.get("packed_addons") and len(data["packed_addons"]) > 0
 
@@ -1580,10 +1690,11 @@ def _upload(ctx: _SubmitContext) -> None:
                 "move",
                 str(zip_file),
                 f":s3:{bucket}/",
-                extra=rclone_settings,
+                extra=zip_archive_settings,
                 logger=logger,
                 total_bytes=required_storage,
             )
+            _record_archive_rclone_timings(ctx, rclone_result)
             if required_storage > 0 and logger._transfer_total == 0:
                 logger._transfer_total = required_storage
             logger.upload_complete("Archive uploaded")
@@ -1618,8 +1729,6 @@ def _upload(ctx: _SubmitContext) -> None:
                     bytes_transferred=_rclone_bytes(rclone_result),
                     rclone_stats=_rclone_stats(rclone_result),
                 )
-
-            report.complete_stage("upload")
 
         else:
             # Project upload
@@ -1902,9 +2011,21 @@ def _upload(ctx: _SubmitContext) -> None:
                 )
 
         report.complete_stage("upload")
+        _record_phase_timing(
+            ctx,
+            "upload",
+            (time.perf_counter() - upload_started_at) * 1000.0,
+            outcome="completed",
+        )
 
     except RuntimeError as exc:
         report.set_status("failed")
+        _record_phase_timing(
+            ctx,
+            "upload",
+            (time.perf_counter() - upload_started_at) * 1000.0,
+            outcome="failed",
+        )
         logger.fatal(
             f"Upload stopped. Check your connection and try again.\nDetails: {exc}"
         )
@@ -1918,6 +2039,7 @@ def _upload(ctx: _SubmitContext) -> None:
 
 
 def _register_job(ctx: _SubmitContext) -> None:
+    registration_started_at = time.perf_counter()
     data = ctx.data
     logger = ctx.logger
     session = ctx.session
@@ -1940,7 +2062,9 @@ def _register_job(ctx: _SubmitContext) -> None:
     )
 
     # Register the dumped settings schema (deduped by key; best effort).
+    schema_sync_started_at = time.perf_counter()
     _sync_settings_schema(session, data, headers)
+    schema_sync_ms = (time.perf_counter() - schema_sync_started_at) * 1000.0
 
     payload: Dict[str, object] = {
         "job_data": {
@@ -1987,6 +2111,7 @@ def _register_job(ctx: _SubmitContext) -> None:
     if settings_schema_key:
         payload["job_data"]["settings_schema_key"] = settings_schema_key
 
+    job_post_started_at = time.perf_counter()
     try:
         post_resp = session.post(
             f"{data['pocketbase_url']}/api/farm/{org_id}/jobs",
@@ -1996,10 +2121,29 @@ def _register_job(ctx: _SubmitContext) -> None:
         )
         post_resp.raise_for_status()
     except requests.RequestException as exc:
+        registration_finished_at = time.perf_counter()
+        _record_phase_timing(
+            ctx,
+            "registration",
+            (registration_finished_at - registration_started_at) * 1000.0,
+            schema_sync_ms=schema_sync_ms,
+            job_post_ms=(registration_finished_at - job_post_started_at) * 1000.0,
+            outcome="failed",
+        )
         report.set_status("failed")
         logger.fatal(
             "Couldn't register job. Check your connection and try again.\n"
             f"Details: {_request_exception_details(exc)}"
+        )
+    else:
+        registration_finished_at = time.perf_counter()
+        _record_phase_timing(
+            ctx,
+            "registration",
+            (registration_finished_at - registration_started_at) * 1000.0,
+            schema_sync_ms=schema_sync_ms,
+            job_post_ms=(registration_finished_at - job_post_started_at) * 1000.0,
+            outcome="completed",
         )
 
 

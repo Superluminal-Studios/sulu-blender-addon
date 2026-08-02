@@ -606,6 +606,12 @@ class TranscriptLogger:
         status: str,
         current_file: str,
     ) -> str:
+        if status == "finalizing":
+            return f"Finalizing upload{ELLIPSIS}"
+        if status == "complete":
+            # upload_complete() immediately replaces the live region with the
+            # durable success panel, so no second completion label is needed.
+            return ""
         if status == "checking":
             return f"Checking {checks} existing files"
         if transfers > 0 and checks > transfers:
@@ -843,7 +849,11 @@ class TranscriptLogger:
         current_file: str,
     ) -> str:
         status_suffix = ""
-        if status == "checking":
+        if status == "finalizing":
+            status_suffix = f"  Finalizing upload{ELLIPSIS}"
+        elif status == "complete":
+            status_suffix = ""
+        elif status == "checking":
             status_suffix = f"  Checking {checks} existing files"
         elif transfers > 0 and checks > transfers:
             status_suffix = f"  ({checks - transfers} unchanged)"

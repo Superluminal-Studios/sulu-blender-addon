@@ -8,12 +8,17 @@ PocketBase JWT helpers for the Superluminal Blender add-on
 """
 
 from __future__ import annotations
+
+import threading
+import time
+
 import requests
+from requests.adapters import HTTPAdapter
 
 from .constants import POCKETBASE_URL
 from .storage import Storage
 from .utils.worker_utils import _request_endpoint
-import time
+
 # ------------------------------------------------------------------
 #  Public API
 # ------------------------------------------------------------------
@@ -31,6 +36,7 @@ class ServerError(RuntimeError):
 
 DEBUG_MODE = False
 AUTH_REFRESH_INTERVAL_SECONDS = 8 * 60 * 60
+_auth_refresh_lock = threading.Lock()
 
 
 def _print_request_timing(method: str, url: str, start_time: float, status_code=None) -> None:
@@ -57,10 +63,70 @@ def request_timing_logs_enabled() -> bool:
 
 def logged_session_request(session, method: str, url: str, **kwargs):
     start = time.perf_counter()
-    with Storage.session_lock:
+    if session is Storage.session:
+        with Storage.session_lock:
+            res = session.request(method, url, **kwargs)
+    else:
         res = session.request(method, url, **kwargs)
     _print_request_timing(method, url, start, res.status_code)
     return res
+
+
+def _new_isolated_session() -> requests.Session:
+    """Return a retry-configured session safe for one concurrent request path."""
+    session = requests.Session()
+    session.mount("http://", HTTPAdapter(max_retries=Storage.retries))
+    session.mount("https://", HTTPAdapter(max_retries=Storage.retries))
+    return session
+
+
+def _token_refresh_due() -> bool:
+    token_time = Storage.data.get("user_token_time")
+    if not token_time:
+        return False
+    return int(time.time()) - int(token_time) > AUTH_REFRESH_INTERVAL_SECONDS
+
+
+def _refresh_token_if_due() -> str:
+    """Refresh an expired token once, even when independent requests race."""
+    token = str(Storage.data.get("user_token") or "")
+    if not token:
+        raise NotAuthenticated("Not logged in")
+    if not _token_refresh_due():
+        return token
+
+    with _auth_refresh_lock:
+        token = str(Storage.data.get("user_token") or "")
+        if not token:
+            raise NotAuthenticated("Not logged in")
+        if not _token_refresh_due():
+            return token
+
+        refresh_url = f"{POCKETBASE_URL}/api/collections/users/auth-refresh"
+        res = logged_session_request(
+            Storage.session,
+            "POST",
+            refresh_url,
+            headers={"Authorization": token},
+            timeout=Storage.timeout,
+        )
+        if res.status_code != 200:
+            _raise_classified_status(res)
+            return token
+
+        refreshed_token = str((res.json() or {}).get("token") or "")
+        if refreshed_token:
+            current_token = str(Storage.data.get("user_token") or "")
+            if current_token != token:
+                if not current_token:
+                    raise NotAuthenticated("Not logged in")
+                return current_token
+            Storage.data["user_token"] = refreshed_token
+            Storage.data["user_token_time"] = int(time.time())
+            Storage.save()
+            token = refreshed_token
+
+    return token
 
 
 def _raise_classified_status(res, *, clear_expired_session: bool = False) -> None:
@@ -84,6 +150,8 @@ def _raise_classified_status(res, *, clear_expired_session: bool = False) -> Non
 def authorized_request(
     method: str,
     url: str,
+    *,
+    isolated_session: bool = False,
     **kwargs,
 ):
     """
@@ -98,33 +166,12 @@ def authorized_request(
         raise NotAuthenticated("Not logged in")
 
     headers = (kwargs.pop("headers", {}) or {}).copy()
-    headers["Authorization"] = Storage.data["user_token"]
+    headers["Authorization"] = _refresh_token_if_due()
 
-    if Storage.data.get('user_token_time', None):
-        if int(time.time()) - int(Storage.data['user_token_time']) > AUTH_REFRESH_INTERVAL_SECONDS:
-
-            refresh_url = f"{POCKETBASE_URL}/api/collections/users/auth-refresh"
-            res = logged_session_request(
-                Storage.session,
-                "POST",
-                refresh_url,
-                headers=headers,
-                timeout=Storage.timeout,
-                **kwargs)
-            
-            if res.status_code == 200:
-                token = res.json().get('token', None)
-                if token:
-                    Storage.data["user_token"] = token
-                    Storage.data["user_token_time"] = int(time.time())
-                    Storage.save()
-                    headers["Authorization"] = token
-                    
-            else:
-                _raise_classified_status(res)
+    request_session = _new_isolated_session() if isolated_session else Storage.session
     try:
         res = logged_session_request(
-            Storage.session,
+            request_session,
             method,
             url,
             headers=headers,
@@ -138,3 +185,6 @@ def authorized_request(
     except requests.RequestException:
         # Let callers handle network and HTTP errors.
         raise
+    finally:
+        if isolated_session:
+            request_session.close()

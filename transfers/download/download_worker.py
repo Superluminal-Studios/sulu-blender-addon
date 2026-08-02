@@ -4,7 +4,7 @@ Relies on generic helpers defined in worker_utils.py.
 
 Modes:
 - "single": one-time download of everything currently available
-- "auto"  : periodically pulls new/updated frames as they appear
+- "auto"  : periodically pulls newly published frame files as they appear
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import tempfile
 import time
 import types
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 import traceback
 import requests
 
@@ -33,11 +33,13 @@ def _load_handoff_from_argv(argv: List[str]) -> Dict[str, object]:
             "Example: download_worker.py /path/to/handoff.json"
         )
     handoff_path = Path(argv[1]).resolve(strict=True)
-    data = json.loads(handoff_path.read_text("utf-8"))
     try:
-        handoff_path.unlink()
-    except OSError:
-        pass
+        data = json.loads(handoff_path.read_text("utf-8"))
+    finally:
+        try:
+            handoff_path.unlink()
+        except OSError:
+            pass
     return data
 
 
@@ -118,14 +120,30 @@ def _ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
-def _count_existing_files(path: str) -> int:
-    """Count files already in destination (for resume detection)."""
+def _existing_relative_files(path: str) -> Set[str]:
+    """Return destination files using the same slash-separated paths as rclone."""
     if not os.path.isdir(path):
-        return 0
-    count = 0
+        return set()
+
+    existing: Set[str] = set()
     for root, _, files in os.walk(path):
-        count += len(files)
-    return count
+        for filename in files:
+            absolute = os.path.join(root, filename)
+            relative = os.path.relpath(absolute, path).replace(os.sep, "/")
+            existing.add(relative)
+    return existing
+
+
+class _OutputCopyState:
+    """Per-worker cache used to copy each immutable output key only once."""
+
+    def __init__(self, downloaded_files: Optional[Set[str]] = None) -> None:
+        self.downloaded_files: Set[str] = set(downloaded_files or ())
+        self.last_visible_count = 0
+        self.visible_frame_numbers: Set[int] = set()
+        self.last_copy_count = 0
+        self.listing_passes = 0
+        self.reported_empty = False
 
 
 def _build_rclone_base() -> List[str]:
@@ -330,14 +348,55 @@ def _warn_skipped_outputs(skipped: List[Tuple[str, str]]) -> None:
     )
 
 
-def _run_output_copy(dest_dir: str) -> None:
+def _output_frame_numbers(files: List[str]) -> Set[int]:
+    """Extract ordinary Blender frame suffixes without assuming one output per frame."""
+    frames: Set[int] = set()
+    for path in files:
+        stem = Path(path).stem
+        match = re.search(r"(\d+)$", stem)
+        if match:
+            frames.add(int(match.group(1)))
+    return frames
+
+
+def _run_output_copy(
+    dest_dir: str,
+    state: Optional[_OutputCopyState] = None,
+    progress_label: Optional[str] = None,
+    *,
+    reconcile_existing: bool = False,
+) -> int:
     remote = f":s3:{bucket}/{job_id}/output/"
     local = dest_dir.rstrip("/") + "/"
+    if state is not None:
+        state.last_copy_count = 0
+
     files, skipped = _rclone_list_output_files(remote)
     _warn_skipped_outputs(skipped)
+    if state is not None:
+        state.listing_passes += 1
+        state.last_visible_count = len(files)
+        state.visible_frame_numbers = _output_frame_numbers(files)
+
     if not files:
-        logger.info("No downloadable frame files found yet")
-        return
+        if state is None or not state.reported_empty:
+            logger.info("No downloadable frame files found yet")
+        if state is not None:
+            state.reported_empty = True
+        return 0
+
+    if state is not None:
+        state.reported_empty = False
+        new_files = [path for path in files if path not in state.downloaded_files]
+        if not reconcile_existing:
+            files = new_files
+        if not files:
+            return 0
+    else:
+        new_files = files
+
+    if progress_label:
+        logger.transfer_start(progress_label)
 
     files_from = _write_files_from_list(files)
     rclone_args = [
@@ -350,7 +409,6 @@ def _run_output_copy(dest_dir: str) -> None:
         "8",
         "--checkers",
         "8",
-        "--size-only",
         "--retries",
         "10",
         "--low-level-retries",
@@ -358,9 +416,11 @@ def _run_output_copy(dest_dir: str) -> None:
         "--retries-sleep",
         "5s",
     ]
+    if not reconcile_existing:
+        rclone_args.append("--size-only")
 
     try:
-        run_rclone(
+        rclone_result = run_rclone(
             base_cmd,
             "copy",
             remote,
@@ -368,6 +428,16 @@ def _run_output_copy(dest_dir: str) -> None:
             rclone_args,
             logger=logger,
         )
+        changed_count = len(new_files)
+        if reconcile_existing and isinstance(rclone_result, dict):
+            changed_count = max(
+                changed_count,
+                max(0, _int_value(rclone_result.get("transfers"))),
+            )
+        if state is not None:
+            state.downloaded_files.update(files)
+            state.last_copy_count = changed_count
+        return changed_count
     finally:
         try:
             os.unlink(files_from)
@@ -476,13 +546,24 @@ def _fetch_job_details() -> Tuple[str, int, int]:
     return (status, finished, total)
 
 
-def _rclone_copy_output(dest_dir: str) -> bool:
+def _rclone_copy_output(
+    dest_dir: str,
+    state: Optional[_OutputCopyState] = None,
+    progress_label: Optional[str] = None,
+    *,
+    reconcile_existing: bool = False,
+) -> bool:
     """
     Copy job output from remote to dest_dir.
     Returns True if copy succeeded (even if nothing new), False if remote likely doesn't exist yet.
     """
     try:
-        _run_output_copy(dest_dir)
+        _run_output_copy(
+            dest_dir,
+            state,
+            progress_label,
+            reconcile_existing=reconcile_existing,
+        )
         return True
     except RuntimeError as exc:
         category = _failure_category(exc)
@@ -495,7 +576,12 @@ def _rclone_copy_output(dest_dir: str) -> bool:
                 force_renew=True,
             )
             try:
-                _run_output_copy(dest_dir)
+                _run_output_copy(
+                    dest_dir,
+                    state,
+                    progress_label,
+                    reconcile_existing=reconcile_existing,
+                )
                 return True
             except RuntimeError as retry_exc:
                 if _failure_category(retry_exc) == "not_found":
@@ -511,71 +597,227 @@ def single_downloader(dest_dir: str) -> None:
     _ensure_dir(dest_dir)
 
     # Check for existing files (resuming previous download)
-    existing = _count_existing_files(dest_dir)
-    if existing > 0:
-        logger.resume_info(existing)
+    existing_files = _existing_relative_files(dest_dir)
+    if existing_files:
+        logger.resume_info(len(existing_files))
+
+    # A manual retry must also revalidate existing paths so a rerendered frame
+    # can replace a same-name local file.  Keeping listing state additionally
+    # lets us distinguish a successful empty listing from a real download.
+    copy_state = _OutputCopyState(existing_files)
 
     logger.transfer_start("Downloading")
-    ok = _rclone_copy_output(dest_dir)
-    if ok:
+    ok = _rclone_copy_output(
+        dest_dir,
+        copy_state,
+        reconcile_existing=True,
+    )
+    if ok and copy_state.last_visible_count > 0:
         logger.transfer_complete("Downloaded")
     else:
         logger.warning("No frames ready yet. Run again later to download.")
 
 
-def auto_downloader(dest_dir: str, poll_seconds: int = 5) -> None:
-    """Poll for new frames and download as they become available."""
+_AUTO_BATCH_FRAMES = 1
+_AUTO_BATCH_SECONDS = 5.0
+_AUTO_POLL_SECONDS = 2
+_AUTO_REFRESH_SECONDS = 60.0
+_AUTO_TERMINAL_STABLE_PASSES = 1
+_AUTO_TERMINAL_SETTLE_SECONDS = 30.0
+_AUTO_TERMINAL_QUIET_SECONDS = 10.0
+
+
+def _next_poll_deadline(previous: float, interval: float, now: float) -> float:
+    """Advance a fixed polling cadence, skipping deadlines missed by slow work."""
+    deadline = previous + interval
+    if deadline < now:
+        missed = int((now - deadline) // interval)
+        deadline += missed * interval
+        if deadline < now:
+            deadline += interval
+    return deadline
+
+
+def auto_downloader(
+    dest_dir: str,
+    poll_seconds: int = _AUTO_POLL_SECONDS,
+    *,
+    batch_frames: int = _AUTO_BATCH_FRAMES,
+    batch_seconds: float = _AUTO_BATCH_SECONDS,
+    refresh_seconds: float = _AUTO_REFRESH_SECONDS,
+    terminal_stable_passes: int = _AUTO_TERMINAL_STABLE_PASSES,
+    terminal_settle_seconds: float = _AUTO_TERMINAL_SETTLE_SECONDS,
+    terminal_quiet_seconds: float = _AUTO_TERMINAL_QUIET_SECONDS,
+) -> None:
+    """Poll for new frames, copying newly discovered output keys in batches."""
     _ensure_dir(dest_dir)
 
-    # Check for existing files (resuming previous download)
-    existing = _count_existing_files(dest_dir)
-    if existing > 0:
-        logger.resume_info(existing)
+    # Files already present are completed work from an earlier downloader. Seed
+    # the key cache so a resumed run asks rclone only for missing outputs.
+    existing_files = _existing_relative_files(dest_dir)
+    if existing_files:
+        logger.resume_info(len(existing_files))
 
-    last_downloaded = 0
-    last_refresh = 0.0
-    refresh_interval = 60  # Check storage every 60s even if API shows no change
+    copy_state = _OutputCopyState(existing_files)
+    poll_interval = max(1.0, float(poll_seconds))
+    batch_size = max(1, int(batch_frames))
+    batch_wait = max(0.0, float(batch_seconds))
+    refresh_interval = max(poll_interval, float(refresh_seconds))
+    stable_pass_target = max(1, int(terminal_stable_passes))
+    settle_interval = max(poll_interval, float(terminal_settle_seconds))
+    fallback_quiet_interval = max(poll_interval, float(terminal_quiet_seconds))
+
+    now = time.monotonic()
+    next_poll = now
+    next_refresh = now + refresh_interval
+    last_synced_finished = 0
+    pending_since: Optional[float] = None
     shown_waiting = False
+    terminal_status: Optional[str] = None
+    terminal_finished = 0
+    terminal_deadline: Optional[float] = None
+    terminal_listing_passes = 0
+    stable_terminal_passes = 0
+    terminal_last_change_at: Optional[float] = None
 
     logger.auto_mode_info()
 
     while True:
-        job_status, finished, total = _fetch_job_details()
+        quiet_wake_at: Optional[float] = None
+        if terminal_status is None:
+            job_status, finished, total = _fetch_job_details()
+        else:
+            # Queue state is terminal; only storage visibility can still change.
+            job_status, finished, total = terminal_status, terminal_finished, 0
 
-        # Download if: new frames available, or periodic refresh, or first run
-        new_count = finished - last_downloaded
-        time_to_refresh = (time.monotonic() - last_refresh) >= refresh_interval
-        should_download = new_count > 0 or time_to_refresh or last_downloaded == 0
+        now = time.monotonic()
+        if terminal_status is None and job_status in {"finished", "paused", "error"}:
+            terminal_status = job_status
+            terminal_finished = finished
+            terminal_deadline = now + settle_interval
+            terminal_last_change_at = now
 
-        if should_download and finished > 0:
-            if new_count > 0 and last_downloaded > 0:
-                logger.transfer_start(f"{new_count} new frames")
+        new_count = max(0, finished - last_synced_finished)
+        if new_count > 0 and pending_since is None:
+            pending_since = now
+        elif new_count == 0:
+            pending_since = None
+
+        first_sync = copy_state.listing_passes == 0 and finished > 0
+        batch_due = new_count >= batch_size
+        wait_due = pending_since is not None and (now - pending_since) >= batch_wait
+        refresh_due = finished > 0 and now >= next_refresh
+        terminal_sync = terminal_status is not None
+        should_sync = first_sync or batch_due or wait_due or refresh_due or terminal_sync
+
+        if should_sync:
+            if copy_state.listing_passes == 0 and finished > 0:
+                progress_label = f"{finished} frames"
+            elif new_count > 0:
+                progress_label = f"{new_count} new frames"
             else:
-                logger.transfer_start(f"{finished} frames")
+                progress_label = "Checking final frame files"
 
-            last_refresh = time.monotonic()
-            ok = _rclone_copy_output(dest_dir)
+            reconcile_existing = refresh_due or terminal_sync
+            ok = _rclone_copy_output(
+                dest_dir,
+                copy_state,
+                progress_label,
+                reconcile_existing=reconcile_existing,
+            )
+            sync_finished_at = time.monotonic()
             if ok:
+                next_refresh = sync_finished_at + refresh_interval
+                # Each frame produces at least one valid output in the normal
+                # pipeline. This lower bound keeps visibility lag pending while
+                # still allowing arbitrary compositor outputs per frame.
+                last_synced_finished = max(
+                    last_synced_finished,
+                    min(finished, copy_state.last_visible_count),
+                )
+                if last_synced_finished >= finished:
+                    pending_since = None
+                elif pending_since is None:
+                    pending_since = sync_finished_at
+
+            if ok and copy_state.last_copy_count > 0:
                 logger.transfer_complete("Downloaded")
-                last_downloaded = finished
-        elif finished == 0 and not shown_waiting:
+                if terminal_status is not None:
+                    terminal_last_change_at = sync_finished_at
+
+        elif finished == 0 and terminal_status is None and not shown_waiting:
             logger.info("Waiting for first frame")
             shown_waiting = True
 
-        # Job complete?
-        if job_status in {"finished", "paused", "error"}:
-            # One final sync
-            _rclone_copy_output(dest_dir)
-
-            if job_status == "finished":
-                logger.success(f"{finished} frames downloaded")
-            elif job_status == "paused":
-                logger.warning(f"Job paused. {finished} frames saved.")
+        if terminal_status is not None:
+            terminal_listing_passes += 1
+            # The entry pass is the terminal reconciliation itself. Later
+            # no-change passes establish a quiet window. Ordinary frame-numbered
+            # output can finish after one cadence; arbitrary compositor names
+            # use the longer fallback window without assuming object count maps
+            # to frame count.
+            if (
+                terminal_listing_passes > 1
+                and ok
+                and copy_state.last_copy_count == 0
+            ):
+                stable_terminal_passes += 1
             else:
-                logger.warning(f"Job stopped with errors. {finished} frames saved.")
-            break
+                stable_terminal_passes = 0
 
-        time.sleep(max(1, int(poll_seconds)))
+            now = time.monotonic()
+            frame_set_complete = terminal_finished <= 0 or (
+                len(copy_state.visible_frame_numbers) >= terminal_finished
+            )
+            has_expected_output = terminal_finished <= 0 or bool(
+                copy_state.downloaded_files
+            )
+            required_quiet = (
+                poll_interval if frame_set_complete else fallback_quiet_interval
+            )
+            change_anchor = (
+                terminal_last_change_at
+                if terminal_last_change_at is not None
+                else now
+            )
+            quiet_for = max(0.0, now - change_anchor)
+            if has_expected_output:
+                quiet_wake_at = change_anchor + required_quiet
+            settled = (
+                has_expected_output
+                and stable_terminal_passes >= stable_pass_target
+                and quiet_for >= required_quiet
+            )
+            timed_out = bool(terminal_deadline is not None and now >= terminal_deadline)
+            if settled or timed_out:
+                if not settled:
+                    logger.warning(
+                        "Final output visibility did not stabilize within "
+                        f"{settle_interval:g}s. "
+                        f"{len(copy_state.downloaded_files)} output files are saved; "
+                        "run the downloader again to resume."
+                    )
+
+                if terminal_status == "finished" and settled:
+                    logger.success(f"{terminal_finished} frames downloaded")
+                elif terminal_status == "paused":
+                    logger.warning(f"Job paused. {terminal_finished} frames saved.")
+                elif terminal_status == "error":
+                    logger.warning(
+                        f"Job stopped with errors. {terminal_finished} frames saved."
+                    )
+                break
+
+        now = time.monotonic()
+        next_poll = _next_poll_deadline(next_poll, poll_interval, now)
+        wake_at = next_poll
+        if terminal_deadline is not None:
+            wake_at = min(wake_at, terminal_deadline)
+        if quiet_wake_at is not None and quiet_wake_at > now:
+            wake_at = min(wake_at, quiet_wake_at)
+        delay = max(0.0, wake_at - now)
+        if delay > 0:
+            time.sleep(delay)
 
 
 def main() -> None:
@@ -683,7 +925,7 @@ def main() -> None:
                 )
                 single_downloader(dest_dir)
             else:
-                auto_downloader(dest_dir, poll_seconds=5)
+                auto_downloader(dest_dir, poll_seconds=_AUTO_POLL_SECONDS)
 
         elapsed = time.perf_counter() - t_start
 

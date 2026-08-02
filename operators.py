@@ -11,7 +11,11 @@ import threading
 from .constants import POCKETBASE_URL
 from .pocketbase_auth import logged_session_request
 from .storage import Storage
-from .utils.request_utils import fetch_projects
+from .utils.request_utils import (
+    _ensure_pulse_timer,
+    fetch_projects,
+    invalidate_job_refresh_context,
+)
 from .utils.project_context import ProjectContextError
 from .preferences import apply_project_context
 
@@ -63,6 +67,7 @@ def _start_background_job_refresh(project_id: str) -> None:
 
     Storage.jobs_updating = True
     Storage.last_refresh_error = ""
+    _ensure_pulse_timer()
     _redraw_properties_ui()
     result = {"message": "Jobs updated."}
 
@@ -141,6 +146,9 @@ def _fetch_user_email_for_token(token: str) -> str:
 
 
 def first_login(token, user_email: str = ""):
+    Storage.enable_job_thread = False
+    invalidate_job_refresh_context()
+    _ensure_pulse_timer()
     Storage.data["user_token"] = token
     Storage.data["user_token_time"] = int(time.time())
     Storage.data["user_email"] = (user_email or _fetch_user_email_for_token(token)).strip().lower()
@@ -228,6 +236,8 @@ class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
     bl_label = "Sign Out"
 
     def execute(self, context):
+        Storage.enable_job_thread = False
+        invalidate_job_refresh_context()
         Storage.clear()
         _flush_wm_credentials(context.window_manager)
         self.report({"INFO"}, "Signed out.")
@@ -329,6 +339,7 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
         Storage.projects_updating = True
         Storage.jobs_updating = True
         Storage.last_refresh_error = ""
+        _ensure_pulse_timer()
         _redraw_properties_ui()
         result = {"selected_project_id": "", "message": "Projects updated."}
 

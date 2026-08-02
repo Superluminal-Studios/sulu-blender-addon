@@ -38,6 +38,9 @@ COLUMN_ORDER = [
 _jobs_collection_cache = {
     "owner": None,
     "fingerprint": None,
+    "input_key": None,
+    "jobs_source": None,
+    "projects_source": None,
 }
 
 
@@ -70,7 +73,7 @@ def apply_project_context(project_id: str, *, refresh_jobs: bool = True) -> dict
         and cached_user_key
     ):
         if refresh_jobs:
-            Storage.data["jobs"] = fetch_jobs(cached_org_id, cached_user_key, project_id) or {}
+            fetch_jobs(cached_org_id, cached_user_key, project_id)
         Storage.save()
         return next(
             (p for p in Storage.data.get("projects", []) if p.get("id") == project_id),
@@ -106,7 +109,7 @@ def apply_project_context(project_id: str, *, refresh_jobs: bool = True) -> dict
     Storage.data["org_id"] = org_id
     Storage.data["user_key"] = user_key
     if refresh_jobs:
-        Storage.data["jobs"] = fetch_jobs(org_id, user_key, project_id) or {}
+        fetch_jobs(org_id, user_key, project_id)
     Storage.save()
     return project
 
@@ -186,11 +189,17 @@ def _jobs_collection_owner(prefs):
         return id(prefs)
 
 
-def _jobs_collection_fingerprint(prefs):
+def _jobs_collection_snapshot(prefs, jobs_source=None, projects_source=None):
+    if jobs_source is None:
+        jobs_source = Storage.data.get("jobs", {})
+    if projects_source is None:
+        projects_source = Storage.data.get("projects", [])
+
     entries = []
+    fingerprint_entries = []
     for jid, job in iter_project_jobs(
-        Storage.data.get("jobs", {}),
-        Storage.data.get("projects", []),
+        jobs_source,
+        projects_source,
         prefs.project_id,
     ):
         tasks = job.get("tasks", {}) or {}
@@ -199,7 +208,8 @@ def _jobs_collection_fingerprint(prefs):
         submit_time, _ = timestamp_value(job.get("submit_time"))
         start_time, _ = timestamp_value(job.get("start_time"))
         end_time, _ = timestamp_value(job.get("end_time"))
-        entries.append(
+        entries.append((jid, job))
+        fingerprint_entries.append(
             (
                 str(jid),
                 str(job.get("name", "")),
@@ -215,22 +225,72 @@ def _jobs_collection_fingerprint(prefs):
                 job_type_label(job),
             )
         )
+    fingerprint = (
+        str(prefs.project_id),
+        str(prefs.sort_column),
+        bool(prefs.sort_ascending),
+        frozenset(fingerprint_entries),
+    )
+    return fingerprint, entries
+
+
+def _jobs_collection_fingerprint(prefs):
+    fingerprint, _ = _jobs_collection_snapshot(prefs)
+    return fingerprint
+
+
+def _jobs_collection_input_key(prefs):
     return (
         str(prefs.project_id),
         str(prefs.sort_column),
         bool(prefs.sort_ascending),
-        frozenset(entries),
     )
+
+
+def _update_jobs_collection_cache(
+    owner,
+    fingerprint,
+    input_key,
+    jobs_source,
+    projects_source,
+) -> None:
+    _jobs_collection_cache["owner"] = owner
+    _jobs_collection_cache["fingerprint"] = fingerprint
+    _jobs_collection_cache["input_key"] = input_key
+    _jobs_collection_cache["jobs_source"] = jobs_source
+    _jobs_collection_cache["projects_source"] = projects_source
 
 
 def refresh_jobs_collection(prefs):
     """Sync prefs.jobs from Storage only when displayed job data changes."""
     owner = _jobs_collection_owner(prefs)
-    fingerprint = _jobs_collection_fingerprint(prefs)
+    input_key = _jobs_collection_input_key(prefs)
+    jobs_source = Storage.data.get("jobs", {})
+    projects_source = Storage.data.get("projects", [])
+    if (
+        _jobs_collection_cache["owner"] == owner
+        and _jobs_collection_cache["input_key"] == input_key
+        and _jobs_collection_cache["jobs_source"] is jobs_source
+        and _jobs_collection_cache["projects_source"] is projects_source
+    ):
+        return False
+
+    fingerprint, entries = _jobs_collection_snapshot(
+        prefs,
+        jobs_source,
+        projects_source,
+    )
     if (
         _jobs_collection_cache["owner"] == owner
         and _jobs_collection_cache["fingerprint"] == fingerprint
     ):
+        _update_jobs_collection_cache(
+            owner,
+            fingerprint,
+            input_key,
+            jobs_source,
+            projects_source,
+        )
         return False
 
     active_job = get_indexed_item(prefs.jobs, prefs.active_job_index)
@@ -238,19 +298,18 @@ def refresh_jobs_collection(prefs):
 
     prefs.jobs.clear()
 
-    if not Storage.data.get("projects", []):
-        _jobs_collection_cache["owner"] = owner
-        _jobs_collection_cache["fingerprint"] = fingerprint
+    if not projects_source:
+        _update_jobs_collection_cache(
+            owner,
+            fingerprint,
+            input_key,
+            jobs_source,
+            projects_source,
+        )
         return True
 
     entries = sort_job_entries(
-        list(
-            iter_project_jobs(
-                Storage.data["jobs"],
-                Storage.data["projects"],
-                prefs.project_id,
-            )
-        ),
+        entries,
         prefs.sort_column,
         prefs.sort_ascending,
     )
@@ -291,8 +350,13 @@ def refresh_jobs_collection(prefs):
     elif prefs.active_job_index >= len(prefs.jobs):
         prefs.active_job_index = len(prefs.jobs) - 1
 
-    _jobs_collection_cache["owner"] = owner
-    _jobs_collection_cache["fingerprint"] = fingerprint
+    _update_jobs_collection_cache(
+        owner,
+        fingerprint,
+        input_key,
+        jobs_source,
+        projects_source,
+    )
     return True
 
 
@@ -505,6 +569,9 @@ def register():
 def unregister():
     _jobs_collection_cache["owner"] = None
     _jobs_collection_cache["fingerprint"] = None
+    _jobs_collection_cache["input_key"] = None
+    _jobs_collection_cache["jobs_source"] = None
+    _jobs_collection_cache["projects_source"] = None
     from bpy.utils import unregister_class
     for c in reversed(classes):
         unregister_class(c)

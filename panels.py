@@ -253,8 +253,6 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         prefs = context.preferences.addons[__package__].preferences
         props = scene.superluminal_settings
 
-        refresh_jobs_collection(prefs)
-
         logged_in = bool(Storage.data.get("user_token"))
         projects_ok = len(Storage.data.get("projects", [])) > 0
 

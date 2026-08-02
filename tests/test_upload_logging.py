@@ -23,6 +23,7 @@ import types
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 _tests_dir = Path(__file__).parent
 _addon_dir = _tests_dir.parent
@@ -59,6 +60,7 @@ def _synthesize_addon_package() -> str:
 
 _pkg_name = _synthesize_addon_package()
 _diagnostic_report = importlib.import_module(f"{_pkg_name}.utils.diagnostic_report")
+_logger_utils = importlib.import_module(f"{_pkg_name}.utils.logger_utils")
 _rclone_utils = importlib.import_module(f"{_pkg_name}.transfers.rclone_utils")
 _submit_worker = importlib.import_module(
     f"{_pkg_name}.transfers.submit.submit_worker"
@@ -66,6 +68,420 @@ _submit_worker = importlib.import_module(
 _farm_upload_harness = _load_module_directly(
     "farm_upload_harness", _addon_dir / "tests" / "realworld" / "test_farm_upload.py"
 )
+
+
+def _settings_by_flag(settings):
+    """Return flag/value pairs from the upload settings under test."""
+    result = {}
+    index = 0
+    while index < len(settings):
+        flag = settings[index]
+        if flag == "--no-traverse":
+            result[flag] = True
+            index += 1
+        else:
+            result[flag] = settings[index + 1]
+            index += 2
+    return result
+
+
+class TestZipUploadTuning(unittest.TestCase):
+    """ZIP archives use Cloudflare-oriented single/multipart boundaries."""
+
+    def test_small_medium_zip_uses_single_put_cutoff(self):
+        values = _settings_by_flag(
+            _submit_worker._build_rclone_upload_settings(
+                single_zip_archive=True,
+            )
+        )
+
+        self.assertEqual(values["--s3-upload-cutoff"], "100M")
+        self.assertEqual(values["--s3-chunk-size"], "16M")
+        self.assertEqual(values["--s3-upload-concurrency"], "8")
+        self.assertEqual(values["--buffer-size"], "16M")
+        self.assertEqual(values["--transfers"], "1")
+        self.assertEqual(values["--checkers"], "1")
+
+    def test_non_zip_upload_settings_remain_unchanged(self):
+        values = _settings_by_flag(
+            _submit_worker._build_rclone_upload_settings()
+        )
+
+        self.assertEqual(values["--s3-upload-cutoff"], "64M")
+        self.assertEqual(values["--s3-chunk-size"], "64M")
+        self.assertEqual(values["--s3-upload-concurrency"], "4")
+        self.assertEqual(values["--buffer-size"], "64M")
+
+
+class TestSubmitHandoffCleanup(unittest.TestCase):
+    def test_malformed_handoff_is_still_removed(self):
+        with tempfile.NamedTemporaryFile(
+            prefix="sulu_bad_submit_handoff_",
+            suffix=".json",
+            delete=False,
+        ) as handoff:
+            handoff_path = Path(handoff.name)
+        handoff_path.write_text("{", encoding="utf-8")
+
+        with self.assertRaises(json.JSONDecodeError):
+            _submit_worker._load_handoff_from_argv(
+                ["submit_worker.py", str(handoff_path)]
+            )
+
+        self.assertFalse(handoff_path.exists())
+
+
+class TestFinalizingStatusRendering(unittest.TestCase):
+    """The upload-only finalizing state is visible in rich and plain output."""
+
+    def test_rich_status_text_names_finalization(self):
+        text = _logger_utils.TranscriptLogger._progress_status_text(
+            None,
+            checks=0,
+            transfers=0,
+            status="finalizing",
+            current_file="archive.zip",
+        )
+        self.assertEqual(text, f"Finalizing upload{_logger_utils.ELLIPSIS}")
+
+    def test_plain_progress_names_finalization(self):
+        text = _logger_utils.TranscriptLogger._plain_transfer_progress_ext(
+            None,
+            cur=999,
+            total=1000,
+            checks=0,
+            transfers=0,
+            status="finalizing",
+            current_file="archive.zip",
+        )
+        self.assertIn("99.9%", text)
+        self.assertIn(f"Finalizing upload{_logger_utils.ELLIPSIS}", text)
+
+    def test_complete_status_defers_to_upload_complete_panel(self):
+        rich_status = _logger_utils.TranscriptLogger._progress_status_text(
+            None,
+            checks=1,
+            transfers=1,
+            status="complete",
+            current_file="",
+        )
+        plain = _logger_utils.TranscriptLogger._plain_transfer_progress_ext(
+            None,
+            cur=1000,
+            total=1000,
+            checks=1,
+            transfers=1,
+            status="complete",
+            current_file="",
+        )
+        self.assertEqual(rich_status, "")
+        self.assertNotIn("Finalizing", plain)
+        self.assertNotIn("Complete", plain)
+
+    def test_existing_checking_status_is_unchanged(self):
+        text = _logger_utils.TranscriptLogger._progress_status_text(
+            None,
+            checks=3,
+            transfers=0,
+            status="checking",
+            current_file="",
+        )
+        self.assertEqual(text, "Checking 3 existing files")
+
+
+class TestRcloneFinalizingProgress(unittest.TestCase):
+    """100% is emitted only after the rclone process confirms success."""
+
+    class _Logger:
+        def __init__(self):
+            self.calls = []
+
+        def transfer_progress(self, current, total):
+            self.calls.append((current, total, ""))
+
+        def transfer_progress_ext(
+            self,
+            current,
+            total,
+            *,
+            status="",
+            current_file="",
+            checks=0,
+            transfers=0,
+        ):
+            self.calls.append((current, total, status))
+
+    class _Process:
+        def __init__(self, lines, exit_code=0):
+            self.stdout = lines
+            self.exit_code = exit_code
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def wait(self):
+            return self.exit_code
+
+    def test_holds_at_99_9_until_process_exit_and_records_boundary(self):
+        stats_line = json.dumps(
+            {
+                "stats": {
+                    "bytes": 1000,
+                    "totalBytes": 1000,
+                    "checks": 1,
+                    "transfers": 1,
+                    "errors": 0,
+                    "elapsedTime": 2.0,
+                    "transferring": ["archive.zip"],
+                }
+            }
+        )
+        process = self._Process([stats_line + "\n"])
+        logger = self._Logger()
+
+        with mock.patch.object(
+            _rclone_utils,
+            "_rclone_supports_flag",
+            return_value=False,
+        ), mock.patch.object(
+            _rclone_utils.subprocess,
+            "Popen",
+            return_value=process,
+        ), mock.patch.object(
+            _rclone_utils.time,
+            "perf_counter",
+            side_effect=[10.0, 12.0, 15.0],
+        ):
+            result = _rclone_utils.run_rclone(
+                ["rclone"],
+                "move",
+                "/tmp/archive.zip",
+                ":s3:bucket/",
+                logger=logger,
+                total_bytes=1000,
+            )
+
+        self.assertIn((999, 1000, "finalizing"), logger.calls)
+        self.assertEqual(logger.calls[-1], (1000, 1000, "complete"))
+        self.assertEqual(result["bytes_transferred"], 1000)
+        self.assertEqual(result["process_elapsed_time"], 5.0)
+        self.assertEqual(result["reported_bytes_complete_time"], 2.0)
+        self.assertEqual(result["finalization_time"], 3.0)
+
+    def test_progress_helper_preserves_in_flight_values(self):
+        self.assertEqual(
+            _rclone_utils._progress_while_process_is_running(
+                400,
+                1000,
+                "transferring",
+            ),
+            (400, "transferring"),
+        )
+
+    def test_failed_process_never_emits_terminal_100_percent(self):
+        lines = [
+            json.dumps(
+                {
+                    "stats": {
+                        "bytes": 1000,
+                        "totalBytes": 1000,
+                        "checks": 0,
+                        "transfers": 0,
+                        "errors": 1,
+                        "elapsedTime": 2.0,
+                    }
+                }
+            )
+            + "\n",
+            json.dumps(
+                {
+                    "level": "error",
+                    "msg": "connection reset by peer",
+                }
+            )
+            + "\n",
+        ]
+        process = self._Process(lines, exit_code=1)
+        logger = self._Logger()
+
+        with mock.patch.object(
+            _rclone_utils,
+            "_rclone_supports_flag",
+            return_value=False,
+        ), mock.patch.object(
+            _rclone_utils.subprocess,
+            "Popen",
+            return_value=process,
+        ), mock.patch.object(
+            _rclone_utils.time,
+            "perf_counter",
+            side_effect=[10.0, 12.0, 15.0],
+        ):
+            with self.assertRaises(_rclone_utils.RcloneError):
+                _rclone_utils.run_rclone(
+                    ["rclone"],
+                    "move",
+                    "/tmp/archive.zip",
+                    ":s3:bucket/",
+                    logger=logger,
+                    total_bytes=1000,
+                )
+
+        self.assertIn((999, 1000, "finalizing"), logger.calls)
+        self.assertNotIn((1000, 1000, "complete"), logger.calls)
+
+    def test_download_progress_is_not_changed_by_upload_finalization_guard(self):
+        stats_line = json.dumps(
+            {
+                "stats": {
+                    "bytes": 1000,
+                    "totalBytes": 1000,
+                    "checks": 1,
+                    "transfers": 1,
+                    "errors": 0,
+                    "elapsedTime": 2.0,
+                }
+            }
+        )
+        process = self._Process([stats_line + "\n"])
+        logger = self._Logger()
+
+        with mock.patch.object(
+            _rclone_utils,
+            "_rclone_supports_flag",
+            return_value=False,
+        ), mock.patch.object(
+            _rclone_utils.subprocess,
+            "Popen",
+            return_value=process,
+        ), mock.patch.object(
+            _rclone_utils.time,
+            "perf_counter",
+            side_effect=[10.0, 15.0],
+        ):
+            result = _rclone_utils.run_rclone(
+                ["rclone"],
+                "copy",
+                ":s3:bucket/results/",
+                "/tmp/results",
+                logger=logger,
+                total_bytes=1000,
+            )
+
+        self.assertIn((1000, 1000, ""), logger.calls)
+        self.assertNotIn((999, 1000, "finalizing"), logger.calls)
+        self.assertIsNone(result["reported_bytes_complete_time"])
+        self.assertIsNone(result["finalization_time"])
+
+
+class TestSubmitPhaseTimings(unittest.TestCase):
+    """Monotonic durations are persisted as bounded structured metadata."""
+
+    class _Report:
+        def __init__(self):
+            self.values = {}
+
+        def set_metadata(self, key, value):
+            self.values[key] = value
+
+    def test_archive_and_finalization_timings_are_separate(self):
+        report = self._Report()
+        ctx = types.SimpleNamespace(phase_timings={}, report=report)
+
+        original_debug = _submit_worker._debug_enabled
+        _submit_worker._debug_enabled = lambda: False
+        try:
+            _submit_worker._record_archive_rclone_timings(
+                ctx,
+                {
+                    "process_elapsed_time": 5.0,
+                    "reported_bytes_complete_time": 2.0,
+                    "finalization_time": 3.0,
+                },
+            )
+        finally:
+            _submit_worker._debug_enabled = original_debug
+
+        timings = report.values["phase_timings"]
+        self.assertEqual(timings["archive_upload"]["duration_ms"], 5000.0)
+        self.assertEqual(
+            timings["archive_upload"]["reported_bytes_complete_ms"],
+            2000.0,
+        )
+        self.assertEqual(
+            timings["archive_finalization"]["duration_ms"],
+            3000.0,
+        )
+        self.assertEqual(
+            timings["archive_finalization"]["boundary"],
+            "reported_bytes_complete_to_process_exit",
+        )
+
+    def test_registration_records_schema_and_job_post_durations(self):
+        report = self._Report()
+        response = mock.MagicMock()
+        response.raise_for_status.return_value = None
+        session = mock.MagicMock()
+        session.post.return_value = response
+        ctx = types.SimpleNamespace(
+            data={
+                "job_id": "job-1",
+                "project": {"id": "project-1"},
+                "packed_addons": [],
+                "job_name": "Timing test",
+                "start_frame": 1,
+                "image_format": "PNG",
+                "render_engine": "CYCLES",
+                "blender_version": "blender51",
+                "ignore_errors": False,
+                "use_bserver": False,
+                "farm_url": "https://farm.invalid",
+                "pocketbase_url": "https://api.invalid",
+            },
+            logger=mock.MagicMock(),
+            session=session,
+            report=report,
+            headers={"Authorization": "redacted"},
+            blend_path="/tmp/project/scene.blend",
+            use_project=False,
+            org_id="org-1",
+            project_name="project",
+            project_root_str="/tmp/project",
+            main_blend_s3="scene.blend",
+            effective_end_frame=1,
+            frame_step_val=1,
+            render_order="LINEAR",
+            render_tasks=[1],
+            required_storage=1000,
+            phase_timings={},
+        )
+
+        with mock.patch.object(
+            _submit_worker,
+            "_sync_settings_schema",
+        ), mock.patch.object(
+            _submit_worker,
+            "_nfc",
+            side_effect=lambda value: value,
+        ), mock.patch.object(
+            _submit_worker,
+            "_s3key_clean",
+            side_effect=lambda value: value,
+        ), mock.patch.object(
+            _submit_worker,
+            "_debug_enabled",
+            return_value=False,
+        ):
+            _submit_worker._register_job(ctx)
+
+        registration = report.values["phase_timings"]["registration"]
+        self.assertEqual(registration["outcome"], "completed")
+        self.assertGreaterEqual(registration["duration_ms"], 0)
+        self.assertGreaterEqual(registration["schema_sync_ms"], 0)
+        self.assertGreaterEqual(registration["job_post_ms"], 0)
 
 
 # DiagnosticReport warning generation

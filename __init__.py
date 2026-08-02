@@ -23,6 +23,10 @@ from .transfers.submit import submit_operator
 from .transfers.download import download_operator
 from . import panels
 from . import operators
+from .utils.request_utils import (
+    register_job_refresh_infrastructure,
+    unregister_job_refresh_infrastructure,
+)
 
 
 # atexit handlers persist across addon reloads; register only once per process.
@@ -42,9 +46,11 @@ def register():
     download_operator.register()
     panels.register()
     operators.register()
+    register_job_refresh_infrastructure()
     
 
 def unregister():
+    unregister_job_refresh_infrastructure()
     operators.unregister()
     panels.unregister()
     download_operator.unregister()

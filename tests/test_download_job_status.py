@@ -441,6 +441,28 @@ class StorageCredentialsTest(unittest.TestCase):
         self.assertEqual(params["force_renew"], "1")
 
 
+class HandoffCleanupTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.worker = _load_worker_module()
+
+    def test_malformed_handoff_is_still_removed(self):
+        with tempfile.NamedTemporaryFile(
+            prefix="sulu_bad_download_handoff_",
+            suffix=".json",
+            delete=False,
+        ) as handoff:
+            handoff_path = Path(handoff.name)
+        handoff_path.write_text("{", encoding="utf-8")
+
+        with self.assertRaises(json.JSONDecodeError):
+            self.worker._load_handoff_from_argv(
+                ["download_worker.py", str(handoff_path)]
+            )
+
+        self.assertFalse(handoff_path.exists())
+
+
 class OutputListingTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -534,6 +556,468 @@ class OutputListingTest(unittest.TestCase):
         self.assertNotIn("thumbnails/**", rclone_args)
         self.worker.logger.warning.assert_called_once()
         unlink.assert_called_once_with("/tmp/sulu-files.txt")
+
+    def test_run_output_copy_caches_completed_keys_and_copies_only_each_delta(self):
+        self.worker.run_rclone = MagicMock()
+        state = self.worker._OutputCopyState({"composite/0001.png"})
+        batches = []
+
+        def record_batch(files):
+            batches.append(list(files))
+            return f"/tmp/sulu-files-{len(batches)}.txt"
+
+        with (
+            patch.object(
+                self.worker,
+                "_rclone_list_output_files",
+                side_effect=[
+                    (["composite/0001.png", "composite/0002.png"], []),
+                    (
+                        [
+                            "composite/0001.png",
+                            "composite/0002.png",
+                            "composite/0003.png",
+                        ],
+                        [],
+                    ),
+                ],
+            ),
+            patch.object(
+                self.worker,
+                "_write_files_from_list",
+                side_effect=record_batch,
+            ),
+            patch.object(self.worker.os, "unlink"),
+        ):
+            first_count = self.worker._run_output_copy("/tmp/download", state)
+            second_count = self.worker._run_output_copy("/tmp/download", state)
+
+        self.assertEqual(first_count, 1)
+        self.assertEqual(second_count, 1)
+        self.assertEqual(
+            batches,
+            [["composite/0002.png"], ["composite/0003.png"]],
+        )
+        self.assertEqual(self.worker.run_rclone.call_count, 2)
+        self.assertEqual(
+            state.downloaded_files,
+            {
+                "composite/0001.png",
+                "composite/0002.png",
+                "composite/0003.png",
+            },
+        )
+
+    def test_reconciliation_rechecks_known_path_and_allows_replacement(self):
+        self.worker.run_rclone = MagicMock(return_value={"transfers": 1})
+        state = self.worker._OutputCopyState({"composite/0001.png"})
+        batches = []
+
+        with (
+            patch.object(
+                self.worker,
+                "_rclone_list_output_files",
+                return_value=(["composite/0001.png"], []),
+            ),
+            patch.object(
+                self.worker,
+                "_write_files_from_list",
+                side_effect=lambda files: batches.append(list(files))
+                or "/tmp/sulu-reconcile-files.txt",
+            ),
+            patch.object(self.worker.os, "unlink"),
+        ):
+            changed = self.worker._run_output_copy(
+                "/tmp/download",
+                state,
+                reconcile_existing=True,
+            )
+
+        self.assertEqual(changed, 1)
+        self.assertEqual(batches, [["composite/0001.png"]])
+        rclone_args = self.worker.run_rclone.call_args.args[4]
+        self.assertNotIn("--size-only", rclone_args)
+
+    def test_single_download_does_not_report_empty_listing_as_complete(self):
+        def empty_listing(_dest_dir, state, **_kwargs):
+            state.last_visible_count = 0
+            return True
+
+        with (
+            patch.object(self.worker, "_existing_relative_files", return_value=set()),
+            patch.object(self.worker, "_rclone_copy_output", side_effect=empty_listing),
+        ):
+            self.worker.single_downloader("/tmp/download")
+
+        self.worker.logger.transfer_complete.assert_not_called()
+        self.worker.logger.warning.assert_called_once_with(
+            "No frames ready yet. Run again later to download."
+        )
+
+    def test_single_download_reconciles_existing_outputs(self):
+        def visible_listing(_dest_dir, state, **kwargs):
+            self.assertTrue(kwargs["reconcile_existing"])
+            self.assertEqual(state.downloaded_files, {"composite/0001.png"})
+            state.last_visible_count = 1
+            return True
+
+        with (
+            patch.object(
+                self.worker,
+                "_existing_relative_files",
+                return_value={"composite/0001.png"},
+            ),
+            patch.object(self.worker, "_rclone_copy_output", side_effect=visible_listing),
+        ):
+            self.worker.single_downloader("/tmp/download")
+
+        self.worker.logger.resume_info.assert_called_once_with(1)
+        self.worker.logger.transfer_complete.assert_called_once_with("Downloaded")
+
+
+class _FakeClock:
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+    def advance(self, seconds):
+        self.now += seconds
+
+
+class AutoDownloaderTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.worker = _load_worker_module()
+
+    def setUp(self):
+        self.worker.logger = MagicMock()
+        self.worker.run_rclone = MagicMock()
+        self.worker._SKIPPED_OUTPUTS_WARNED = False
+
+    def _clock_patches(self, clock):
+        return (
+            patch.object(self.worker.time, "monotonic", side_effect=clock.monotonic),
+            patch.object(self.worker.time, "sleep", side_effect=clock.sleep),
+        )
+
+    def test_polling_uses_deadlines_instead_of_sleeping_after_work(self):
+        clock = _FakeClock()
+        statuses = iter(
+            [
+                ("running", 0, 1),
+                ("finished", 0, 1),
+            ]
+        )
+
+        def fetch_with_two_seconds_of_work():
+            clock.advance(2.0)
+            return next(statuses)
+
+        monotonic_patch, sleep_patch = self._clock_patches(clock)
+        with (
+            tempfile.TemporaryDirectory() as dest_dir,
+            monotonic_patch,
+            sleep_patch,
+            patch.object(
+                self.worker,
+                "_fetch_job_details",
+                side_effect=fetch_with_two_seconds_of_work,
+            ),
+            patch.object(
+                self.worker,
+                "_rclone_list_output_files",
+                return_value=([], []),
+            ),
+        ):
+            self.worker.auto_downloader(
+                dest_dir,
+                poll_seconds=5,
+                terminal_stable_passes=1,
+            )
+
+        self.assertEqual(clock.sleeps, [3.0, 3.0, 2.0])
+
+    def test_poll_deadline_skips_only_deadlines_that_are_already_past(self):
+        self.assertEqual(self.worker._next_poll_deadline(0.0, 5.0, 10.0), 10.0)
+        self.assertEqual(self.worker._next_poll_deadline(0.0, 5.0, 10.1), 15.0)
+
+    def test_default_batching_does_not_delay_a_single_finished_frame(self):
+        self.assertEqual(self.worker._AUTO_BATCH_FRAMES, 1)
+        self.assertLessEqual(self.worker._AUTO_BATCH_SECONDS, 5.0)
+        self.assertEqual(self.worker._AUTO_POLL_SECONDS, 2)
+
+    def test_batches_only_new_keys_and_settles_after_late_terminal_visibility(self):
+        clock = _FakeClock()
+        batches = []
+        statuses = iter(
+            [
+                ("running", 1, 3),
+                ("running", 2, 3),
+                ("finished", 3, 3),
+            ]
+        )
+        listings = iter(
+            [
+                (["composite/0001.png"], []),
+                (["composite/0001.png", "composite/0002.png"], []),
+                (
+                    [
+                        "composite/0001.png",
+                        "composite/0002.png",
+                        "composite/0003.png",
+                    ],
+                    [],
+                ),
+                (
+                    [
+                        "composite/0001.png",
+                        "composite/0002.png",
+                        "composite/0003.png",
+                    ],
+                    [],
+                ),
+            ]
+        )
+
+        def record_batch(files):
+            batches.append(list(files))
+            return f"/tmp/sulu-auto-files-{len(batches)}.txt"
+
+        monotonic_patch, sleep_patch = self._clock_patches(clock)
+        with (
+            tempfile.TemporaryDirectory() as dest_dir,
+            monotonic_patch,
+            sleep_patch,
+            patch.object(
+                self.worker,
+                "_fetch_job_details",
+                side_effect=lambda: next(statuses),
+            ) as fetch,
+            patch.object(
+                self.worker,
+                "_rclone_list_output_files",
+                side_effect=lambda remote: next(listings),
+            ) as list_files,
+            patch.object(
+                self.worker,
+                "_write_files_from_list",
+                side_effect=record_batch,
+            ),
+            patch.object(self.worker.os, "unlink"),
+        ):
+            self.worker.auto_downloader(
+                dest_dir,
+                poll_seconds=5,
+                batch_frames=2,
+                batch_seconds=60,
+                refresh_seconds=60,
+                terminal_stable_passes=1,
+                terminal_settle_seconds=30,
+            )
+
+        self.assertEqual(
+            batches,
+            [
+                ["composite/0001.png"],
+                ["composite/0001.png", "composite/0002.png"],
+                [
+                    "composite/0001.png",
+                    "composite/0002.png",
+                    "composite/0003.png",
+                ],
+                [
+                    "composite/0001.png",
+                    "composite/0002.png",
+                    "composite/0003.png",
+                ],
+            ],
+        )
+        self.assertEqual(fetch.call_count, 3)
+        self.assertEqual(list_files.call_count, 4)
+        self.assertEqual(self.worker.run_rclone.call_count, 4)
+        self.worker.logger.success.assert_called_once_with("3 frames downloaded")
+
+    def test_resume_reconciles_existing_files_only_at_terminal_boundary(self):
+        clock = _FakeClock()
+        batches = []
+
+        def record_batch(files):
+            batches.append(list(files))
+            return "/tmp/sulu-resume-files.txt"
+
+        monotonic_patch, sleep_patch = self._clock_patches(clock)
+        with tempfile.TemporaryDirectory() as dest_dir:
+            existing = Path(dest_dir) / "composite" / "0001.png"
+            existing.parent.mkdir()
+            existing.write_bytes(b"complete")
+
+            with (
+                monotonic_patch,
+                sleep_patch,
+                patch.object(
+                    self.worker,
+                    "_fetch_job_details",
+                    return_value=("finished", 2, 2),
+                ),
+                patch.object(
+                    self.worker,
+                    "_rclone_list_output_files",
+                    side_effect=[
+                        (
+                            ["composite/0001.png", "composite/0002.png"],
+                            [],
+                        ),
+                        (
+                            ["composite/0001.png", "composite/0002.png"],
+                            [],
+                        ),
+                    ],
+                ),
+                patch.object(
+                    self.worker,
+                    "_write_files_from_list",
+                    side_effect=record_batch,
+                ),
+                patch.object(self.worker.os, "unlink"),
+            ):
+                self.worker.auto_downloader(
+                    dest_dir,
+                    poll_seconds=5,
+                    terminal_stable_passes=1,
+                )
+
+        self.assertEqual(
+            batches,
+            [
+                ["composite/0001.png", "composite/0002.png"],
+                ["composite/0001.png", "composite/0002.png"],
+            ],
+        )
+        self.worker.logger.resume_info.assert_called_once_with(1)
+        self.worker.logger.success.assert_called_once_with("2 frames downloaded")
+
+    def test_terminal_quiet_window_survives_empty_gap_before_late_key(self):
+        clock = _FakeClock()
+        batches = []
+        listings = iter(
+            [
+                (["composite/0001.png"], []),
+                (["composite/0001.png"], []),
+                (["composite/0001.png"], []),
+                (["composite/0001.png", "composite/0002.png"], []),
+                (["composite/0001.png", "composite/0002.png"], []),
+            ]
+        )
+
+        monotonic_patch, sleep_patch = self._clock_patches(clock)
+        with (
+            tempfile.TemporaryDirectory() as dest_dir,
+            monotonic_patch,
+            sleep_patch,
+            patch.object(
+                self.worker,
+                "_fetch_job_details",
+                return_value=("finished", 2, 2),
+            ),
+            patch.object(
+                self.worker,
+                "_rclone_list_output_files",
+                side_effect=lambda _remote: next(listings),
+            ) as list_files,
+            patch.object(
+                self.worker,
+                "_write_files_from_list",
+                side_effect=lambda files: batches.append(list(files))
+                or f"/tmp/sulu-gap-{len(batches)}.txt",
+            ),
+            patch.object(self.worker.os, "unlink"),
+        ):
+            self.worker.auto_downloader(
+                dest_dir,
+                poll_seconds=2,
+                terminal_stable_passes=1,
+                terminal_settle_seconds=30,
+                terminal_quiet_seconds=10,
+            )
+
+        self.assertEqual(list_files.call_count, 5)
+        self.assertIn("composite/0002.png", batches[-1])
+        self.worker.logger.success.assert_called_once_with("2 frames downloaded")
+
+    def test_terminal_visibility_wait_is_bounded(self):
+        clock = _FakeClock()
+        monotonic_patch, sleep_patch = self._clock_patches(clock)
+        with (
+            tempfile.TemporaryDirectory() as dest_dir,
+            monotonic_patch,
+            sleep_patch,
+            patch.object(
+                self.worker,
+                "_fetch_job_details",
+                return_value=("finished", 1, 1),
+            ),
+            patch.object(
+                self.worker,
+                "_rclone_list_output_files",
+                return_value=([], []),
+            ) as list_files,
+        ):
+            self.worker.auto_downloader(
+                dest_dir,
+                poll_seconds=5,
+                terminal_stable_passes=2,
+                terminal_settle_seconds=12,
+            )
+
+        self.assertEqual(clock.sleeps, [5.0, 5.0, 2.0])
+        self.assertEqual(list_files.call_count, 4)
+        warning_messages = [call.args[0] for call in self.worker.logger.warning.call_args_list]
+        self.assertTrue(
+            any("did not stabilize within 12s" in message for message in warning_messages)
+        )
+        self.worker.logger.success.assert_not_called()
+
+    def test_finished_paused_and_error_terminal_messages(self):
+        expected = {
+            "finished": ("success", "0 frames downloaded"),
+            "paused": ("warning", "Job paused. 0 frames saved."),
+            "error": ("warning", "Job stopped with errors. 0 frames saved."),
+        }
+
+        for status, (method, message) in expected.items():
+            with self.subTest(status=status):
+                self.worker.logger = MagicMock()
+                clock = _FakeClock()
+                monotonic_patch, sleep_patch = self._clock_patches(clock)
+                with (
+                    tempfile.TemporaryDirectory() as dest_dir,
+                    monotonic_patch,
+                    sleep_patch,
+                    patch.object(
+                        self.worker,
+                        "_fetch_job_details",
+                        return_value=(status, 0, 0),
+                    ),
+                    patch.object(
+                        self.worker,
+                        "_rclone_list_output_files",
+                        return_value=([], []),
+                    ),
+                ):
+                    self.worker.auto_downloader(
+                        dest_dir,
+                        poll_seconds=5,
+                        terminal_stable_passes=1,
+                    )
+
+                getattr(self.worker.logger, method).assert_called_with(message)
 
 
 if __name__ == "__main__":
