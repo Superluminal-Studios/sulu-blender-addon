@@ -31,6 +31,11 @@ from . import progress
 
 log = logging.getLogger(__name__)
 
+# Keep producer/consumer hand-off responsive without burning CPU.  The previous
+# 0.5 second waits were visible twice at the end of every archive, even after
+# all work had already finished.
+_QUEUE_POLL_SECONDS = 0.05
+
 
 class FileTransferError(IOError):
     """Raised when one or more files could not be transferred."""
@@ -184,7 +189,7 @@ class FileTransferer(threading.Thread, metaclass=abc.ABCMeta):
                 return
 
             try:
-                src, dst, action = self.queue.get(timeout=0.5)
+                src, dst, action = self.queue.get(timeout=_QUEUE_POLL_SECONDS)
                 self.progress_cb.transfer_file(src, dst)
                 yield src, dst, action
             except queue.Empty:
@@ -194,22 +199,28 @@ class FileTransferer(threading.Thread, metaclass=abc.ABCMeta):
     def join(self, timeout: Optional[float] = None) -> None:
         """Wait for the transfer to finish/stop."""
 
-        if timeout:
-            run_until = time.time() + timeout
+        if timeout is not None:
+            run_until = time.monotonic() + max(0.0, timeout)
         else:
             run_until = float("inf")
 
-        # We can't simply block the thread, we have to keep watching the
-        # progress queue.
+        # Drain callbacks without adding an artificial blocking delay, then
+        # use the real Thread.join() in short slices so the worker wakes this
+        # thread immediately when it exits.
         while self.is_alive():
-            if time.time() > run_until:
+            if time.monotonic() > run_until:
                 self.log.warning("Timeout while waiting for transfer to finish")
                 return
+            self.progress_cb.flush(timeout=0)
+            remaining = run_until - time.monotonic()
+            wait_for = _QUEUE_POLL_SECONDS
+            if remaining != float("inf"):
+                wait_for = max(0.0, min(wait_for, remaining))
+            super().join(timeout=wait_for)
 
-            self.progress_cb.flush(timeout=0.5)
-
-        # Since Thread.join() neither returns anything nor raises any exception
-        # when timing out, we don't even have to call it any more.
+        # Deliver callbacks queued between the last drain and worker exit.
+        self.progress_cb.flush(timeout=0)
+        super().join(timeout=0)
 
     def delete_file(self, path: pathlib.Path):
         """Deletes a file, only logging a warning if deletion fails."""

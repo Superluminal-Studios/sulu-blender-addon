@@ -149,12 +149,16 @@ def set_emit(fn=None, entry_cb=None, done_cb=None) -> None:
 #   SULU_ZIP_VERBOSE=1            (prints per-file lines; slower)
 #   SULU_ZIP_NO_COMPRESS=1        (store everything; fastest; biggest zip)
 #   SULU_ZIP_PRINT_INTERVAL=secs  (default 0.2)
+#   SULU_BLEND_ZSTD_LEVEL=1..22   (default 9; measured size/time optimum)
+#   SULU_BLEND_ZSTD_THREADS=-1..N (default -1 = all available CPU cores)
 #
 ZIP_COMPRESSLEVEL = max(0, min(_env_int("SULU_ZIP_COMPRESSLEVEL", 1), 9))
 ZIP_IO_BUFSIZE = max(64 * 1024, _env_int("SULU_ZIP_IO_BUFSIZE", 1024 * 1024))
 ZIP_VERBOSE = _env_bool("SULU_ZIP_VERBOSE", False)
 ZIP_NO_COMPRESS = _env_bool("SULU_ZIP_NO_COMPRESS", False)
 ZIP_PRINT_INTERVAL = max(0.05, _env_float("SULU_ZIP_PRINT_INTERVAL", 0.2))
+BLEND_ZSTD_LEVEL = max(1, min(_env_int("SULU_BLEND_ZSTD_LEVEL", 9), 22))
+BLEND_ZSTD_THREADS = max(-1, _env_int("SULU_BLEND_ZSTD_THREADS", -1))
 
 _store_big_mb = _env_int("SULU_ZIP_STORE_BIG_FILES_MB", 256)
 ZIP_STORE_BIG_FILES_BYTES = 0 if _store_big_mb <= 0 else int(_store_big_mb) * 1024 * 1024
@@ -196,6 +200,20 @@ COMPRESS_ICONS = {
     8: "[C]",
     9: "[C]",
 }
+
+
+def _set_zipinfo_compress_level(info, level: int) -> None:
+    """Set per-member DEFLATE level across Python 3.11-3.13."""
+    try:
+        info.compress_level = level
+    except AttributeError:
+        info._compresslevel = level
+
+
+def _zip_entry_label(compress_type: int, zipfile_mod) -> str:
+    if compress_type == zipfile_mod.ZIP_STORED:
+        return COMPRESSION_LEVELS[0]
+    return COMPRESSION_LEVELS.get(ZIP_COMPRESSLEVEL, str(ZIP_COMPRESSLEVEL))
 
 
 class ZipPacker(Packer):
@@ -386,15 +404,21 @@ class ZipTransferrer(transfer.FileTransferer):
 
                             # For .blend we potentially apply our own Zstd layer.
                             # Keep the ZIP entry stored to avoid double-compressing.
-                            if arcname.endswith(".blend"):
+                            is_blend_entry = arcname.lower().endswith(".blend")
+                            if is_blend_entry:
                                 zi.compress_type = zipfile.ZIP_STORED
                             else:
                                 zi.compress_type = compress_type
+                                # Passing a hand-built ZipInfo bypasses the
+                                # ZipFile-level compresslevel. Set the entry
+                                # explicitly so "fast compression" really is
+                                # level 1 instead of zlib's slower default.
+                                _set_zipinfo_compress_level(zi, ZIP_COMPRESSLEVEL)
 
                             # Write file data with a large buffer (faster)
                             with open(src, "rb") as fp:
                                 with outzip.open(zi, mode="w", force_zip64=True) as zf:
-                                    if arcname.endswith(".blend"):
+                                    if is_blend_entry:
                                         # Read 7 bytes to detect format (longest magic is "BLENDER")
                                         head = b""
                                         try:
@@ -431,9 +455,22 @@ class ZipTransferrer(transfer.FileTransferer):
                                             _entry_label = "Store (gzip)"
                                             shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
                                         elif head[:7] == _BLENDFILE_MAGIC:
-                                            # Uncompressed .blend - apply Zstd compression
-                                            _entry_label = "Zstd"
-                                            zstd_compressor = zstd.ZstdCompressor(level=1)
+                                            # Uncompressed .blend: level 9 with
+                                            # multithreading was the measured
+                                            # click-to-receipt optimum on the
+                                            # canonical Classroom and Junkshop
+                                            # scenes. Fall back for older zstd
+                                            # wheels without thread support.
+                                            _entry_label = f"Zstd-{BLEND_ZSTD_LEVEL}"
+                                            try:
+                                                zstd_compressor = zstd.ZstdCompressor(
+                                                    level=BLEND_ZSTD_LEVEL,
+                                                    threads=BLEND_ZSTD_THREADS,
+                                                )
+                                            except TypeError:
+                                                zstd_compressor = zstd.ZstdCompressor(
+                                                    level=BLEND_ZSTD_LEVEL
+                                                )
                                             zstd_compressor.copy_stream(fp, zf, read_size=ZIP_IO_BUFSIZE)
                                         else:
                                             # Unknown format - store as-is to avoid corruption
@@ -447,12 +484,19 @@ class ZipTransferrer(transfer.FileTransferer):
                                             _icon = "[S]" if _entry_label.startswith("Store") else "[C]"
                                             _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files} {_icon} {_entry_label}: {shorten_path(arcname)}")
                                     else:
-                                        _entry_label = COMPRESSION_LEVELS.get(compress_type, str(compress_type))
+                                        _entry_label = _zip_entry_label(
+                                            compress_type, zipfile
+                                        )
                                         shutil.copyfileobj(fp, zf, length=ZIP_IO_BUFSIZE)
                                         if _zip_entry_cb:
                                             _zip_entry_cb(idx, total_files, arcname, size, _entry_label)
                                         else:
-                                            _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files}{COMPRESS_ICONS.get(compress_type, '')} {_entry_label}: {shorten_path(arcname)}")
+                                            _icon_level = (
+                                                0
+                                                if compress_type == zipfile.ZIP_STORED
+                                                else ZIP_COMPRESSLEVEL
+                                            )
+                                            _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files}{COMPRESS_ICONS.get(_icon_level, '')} {_entry_label}: {shorten_path(arcname)}")
 
                         # Delete source if MOVE
                         if act == transfer.Action.MOVE:

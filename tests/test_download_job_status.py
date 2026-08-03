@@ -781,7 +781,7 @@ class AutoDownloaderTest(unittest.TestCase):
     def test_default_batching_does_not_delay_a_single_finished_frame(self):
         self.assertEqual(self.worker._AUTO_BATCH_FRAMES, 1)
         self.assertLessEqual(self.worker._AUTO_BATCH_SECONDS, 5.0)
-        self.assertEqual(self.worker._AUTO_POLL_SECONDS, 2)
+        self.assertEqual(self.worker._AUTO_POLL_SECONDS, 1)
 
     def test_batches_only_new_keys_and_settles_after_late_terminal_visibility(self):
         clock = _FakeClock()

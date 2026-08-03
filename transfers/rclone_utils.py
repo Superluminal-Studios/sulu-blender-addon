@@ -23,6 +23,7 @@ import json
 import re
 import shutil
 import time
+import hashlib
 from collections import deque
 from typing import List, Optional, Tuple, Any
 
@@ -130,6 +131,38 @@ SUPPORTED_PLATFORMS = {
     ("solaris", "amd64"): "solaris-amd64",
 }
 
+# Keep downloads reproducible and security fixes deterministic.  v1.75.0
+# includes fixes for S3 redirects that could otherwise forward credentials to
+# an untrusted host.  These are the official ZIP digests published in
+# https://downloads.rclone.org/v1.75.0/SHA256SUMS.
+RCLONE_VERSION = "1.75.0"
+RCLONE_MIN_VERSION = (1, 75, 0)
+RCLONE_SHA256_BY_SUFFIX = {
+    "windows-386": "dee1882a2a4277e42bd8b572b8e0e6676a491e3ec0e238ea16dc0e0e619cdc84",
+    "windows-amd64": "203581f0a7baeae873f2347483a798c79e2eaf5c384a4e9d866aa374f1c89ac0",
+    "windows-arm64": "bcf628fa6bb3b6ae9fdf105d04acafb40ec77841f686dc6dd7d126dde04c5f6a",
+    "osx-amd64": "19edbb8e5e73096eb66e92a42abbc5c34bfa8981ea3986a53872c7eef85a22f4",
+    "osx-arm64": "35e8f2a666ce789b29111db0dd843ddabc0d59c6b609d07bcaae5d1a07cba6f8",
+    "linux-386": "0cd6d0a18cf50004851e23f97dbcad5ebd16047590a704daebfbfe402425aefe",
+    "linux-amd64": "aa2804e08f48250e71009c727124b6341cd0288465804a9a09d14663cabafbaa",
+    "linux-arm": "17f3f07cfa17e065f0c3329149ba702bbaafdb87e7f00230830488d5391362f2",
+    "linux-arm-v6": "4507fa57e8a9031c09be15e3c506f293522c95d488485db2174ae0444f9dd7c8",
+    "linux-arm-v7": "8fcfdd4121348b79b485b40c52dc22f3d26ee167ec78105e15f5dbe2246eee97",
+    "linux-arm64": "d0ad88ba4c8e285b7c9efa591e0ab643280a91741e13c27f3a9c0957ccfa5203",
+    "linux-mips": "954cd1d8fd54cdc82b246b6cc8a439b820180545fe48d3587ae2a4e5b67d8f31",
+    "linux-mipsle": "ebfa68a9c5d5a1d971811b6d946a4cd1d63ccfbc60b625bd6bc0cc4ac4e81967",
+    "freebsd-386": "f55db6da010fa3aacd8373d7af06c8074f801ca642d8967b4d78323e558f2288",
+    "freebsd-amd64": "c4b440b01ad46782e213758f2d3c10b15990bc71def5c9657d206992c74a7ecc",
+    "freebsd-arm": "0b01cf0cc4144110230bef541a87f279220e8d0a8b75437ace44970462cec7fe",
+    "openbsd-386": "517a68144e6ce2185be2b0ca72627db9f4da54d31b920cce35b3d23dd21560d8",
+    "openbsd-amd64": "6ab36915cfa6f48ca17de294c67e18a6e84e22fceaa637633c261e6684ed6e4a",
+    "netbsd-386": "4c78453d7c3af9242e7d1b95b1bfcac3d2b6fff81d4da2e383cbfd21a90195a8",
+    "netbsd-amd64": "2b0dc941a279aa9ff6c58c580aba51a4fa1528d31859ff1f651aed41f0d45351",
+    "plan9-386": "c80691e1273559c57778e86d8a98e63827c4b212db7a06a3d58274aa540bf4a1",
+    "plan9-amd64": "adfbd843175e8d9e4beeddbdf89341d2986288d20dad08778c90a7256547e1ad",
+    "solaris-amd64": "06375436e50bac7169c4eb30d9bf54917ec390bab8903c3782add0f3df55084c",
+}
+
 
 # -------------------------------------------------------------------
 #  Rclone Download Helpers
@@ -180,7 +213,10 @@ def get_platform_suffix() -> str:
 
 def get_rclone_url() -> str:
     suffix = get_platform_suffix()
-    return f"https://downloads.rclone.org/rclone-current-{suffix}.zip"
+    return (
+        f"https://downloads.rclone.org/v{RCLONE_VERSION}/"
+        f"rclone-v{RCLONE_VERSION}-{suffix}.zip"
+    )
 
 
 def get_rclone_platform_dir(suffix: str) -> Path:
@@ -223,42 +259,123 @@ def download_with_bar(url: str, dest: Path, logger=None) -> None:
         sys.stderr.flush()
 
 
+_RCLONE_VERSION_RE = re.compile(
+    r"(?im)^rclone\s+v(\d+)\.(\d+)\.(\d+)(?=\D|$)"
+)
+
+
+def _installed_rclone_version(rclone_bin: Path) -> Optional[Tuple[int, int, int]]:
+    """Return the installed numeric rclone version, or None if it is unusable."""
+    try:
+        result = subprocess.run(
+            [str(rclone_bin), "version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    if result.returncode != 0:
+        return None
+    match = _RCLONE_VERSION_RE.search(result.stdout or "")
+    if match is None:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fp:
+        for chunk in iter(lambda: fp.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_rclone_archive(archive: Path, suffix: str) -> None:
+    expected = RCLONE_SHA256_BY_SUFFIX.get(suffix)
+    if expected is None:
+        raise RuntimeError(f"No trusted rclone checksum for platform {suffix}.")
+    if _sha256_file(archive) != expected:
+        raise RuntimeError(
+            "Downloaded rclone archive failed SHA-256 verification; "
+            "the existing binary was not changed."
+        )
+
+
+def _extract_rclone_binary(archive: Path, destination: Path, bin_name: str) -> None:
+    """Copy the one expected binary out of the verified archive."""
+    with zipfile.ZipFile(archive) as zf:
+        members = [
+            member
+            for member in zf.infolist()
+            if not member.is_dir()
+            and member.filename.replace("\\", "/").rsplit("/", 1)[-1].lower()
+            == bin_name.lower()
+        ]
+        if len(members) != 1:
+            raise RuntimeError(
+                "Verified rclone archive did not contain exactly one rclone binary."
+            )
+
+        with zf.open(members[0], "r") as source, destination.open("xb") as target:
+            shutil.copyfileobj(source, target, length=1024 * 1024)
+            target.flush()
+            os.fsync(target.fileno())
+
+
 def ensure_rclone(logger=None) -> Path:
     suf = get_platform_suffix()
     bin_name = "rclone.exe" if suf.startswith("windows") else "rclone"
     rclone_bin = get_rclone_platform_dir(suf) / bin_name
 
     if rclone_bin.exists():
-        return rclone_bin
+        installed_version = _installed_rclone_version(rclone_bin)
+        if installed_version is not None and installed_version >= RCLONE_MIN_VERSION:
+            return rclone_bin
+        if installed_version is None:
+            reason = "unusable or has an unknown version"
+        else:
+            reason = ".".join(str(part) for part in installed_version)
+        _call_logger(
+            logger,
+            "info",
+            f"Updating rclone ({reason}) to v{RCLONE_VERSION}",
+        )
 
     rclone_bin.parent.mkdir(parents=True, exist_ok=True)
-
-    tmp_zip = Path(tempfile.gettempdir()) / f"rclone_{uuid.uuid4()}.zip"
     url = get_rclone_url()
-    download_with_bar(url, tmp_zip, logger=logger)
 
-    _call_logger(logger, "info", "Extracting rclone")
-    with zipfile.ZipFile(tmp_zip) as zf:
-        target_written = False
-        for m in zf.infolist():
-            if m.filename.lower().endswith(("rclone.exe", "rclone")) and not m.is_dir():
-                m.filename = os.path.basename(m.filename)
-                zf.extract(m, rclone_bin.parent)
-                (rclone_bin.parent / m.filename).rename(rclone_bin)
-                target_written = True
-                break
-    tmp_zip.unlink(missing_ok=True)
+    # Extract beside the destination so os.replace() is a same-filesystem,
+    # atomic operation.  Any failure leaves an older installation untouched.
+    with tempfile.TemporaryDirectory(
+        prefix=".rclone-install-", dir=str(rclone_bin.parent)
+    ) as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
+        tmp_zip = temp_dir / f"rclone-v{RCLONE_VERSION}-{suf}.zip"
+        tmp_bin = temp_dir / bin_name
 
-    if not target_written or not rclone_bin.exists():
-        raise RuntimeError("Failed to extract rclone binary.")
+        download_with_bar(url, tmp_zip, logger=logger)
+        _verify_rclone_archive(tmp_zip, suf)
 
-    if not suf.startswith("windows"):
-        try:
-            rclone_bin.chmod(rclone_bin.stat().st_mode | 0o111)
-        except Exception:
-            pass
+        _call_logger(logger, "info", "Extracting rclone")
+        _extract_rclone_binary(tmp_zip, tmp_bin, bin_name)
 
-    _call_logger(logger, "info", f"{_GLYPH_OK} rclone ready")
+        if not suf.startswith("windows"):
+            tmp_bin.chmod(tmp_bin.stat().st_mode | 0o111)
+
+        extracted_version = _installed_rclone_version(tmp_bin)
+        if extracted_version != RCLONE_MIN_VERSION:
+            raise RuntimeError(
+                "Verified rclone archive produced an unexpected binary version; "
+                "the existing binary was not changed."
+            )
+
+        os.replace(tmp_bin, rclone_bin)
+
+    _call_logger(logger, "info", f"{_GLYPH_OK} rclone v{RCLONE_VERSION} ready")
     return rclone_bin
 
 

@@ -19,9 +19,11 @@ import importlib.util
 import json
 import sys
 import tempfile
+import threading
 import types
 import unittest
 import zipfile
+from concurrent.futures import Future
 from pathlib import Path
 from unittest import mock
 
@@ -76,7 +78,7 @@ def _settings_by_flag(settings):
     index = 0
     while index < len(settings):
         flag = settings[index]
-        if flag == "--no-traverse":
+        if flag in {"--no-traverse", "--s3-disable-checksum"}:
             result[flag] = True
             index += 1
         else:
@@ -102,6 +104,24 @@ class TestZipUploadTuning(unittest.TestCase):
         self.assertEqual(values["--transfers"], "1")
         self.assertEqual(values["--checkers"], "1")
 
+    def test_multipart_zip_skips_redundant_whole_archive_md5_pass(self):
+        cutoff = _submit_worker._ZIP_SINGLE_PUT_CUTOFF_BYTES
+        at_cutoff = _settings_by_flag(
+            _submit_worker._build_rclone_upload_settings(
+                single_zip_archive=True,
+                archive_size_bytes=cutoff,
+            )
+        )
+        above_cutoff = _settings_by_flag(
+            _submit_worker._build_rclone_upload_settings(
+                single_zip_archive=True,
+                archive_size_bytes=cutoff + 1,
+            )
+        )
+
+        self.assertNotIn("--s3-disable-checksum", at_cutoff)
+        self.assertIs(above_cutoff["--s3-disable-checksum"], True)
+
     def test_non_zip_upload_settings_remain_unchanged(self):
         values = _settings_by_flag(
             _submit_worker._build_rclone_upload_settings()
@@ -111,6 +131,164 @@ class TestZipUploadTuning(unittest.TestCase):
         self.assertEqual(values["--s3-chunk-size"], "64M")
         self.assertEqual(values["--s3-upload-concurrency"], "4")
         self.assertEqual(values["--buffer-size"], "64M")
+
+    def test_required_api_date_header_replaces_separate_clock_probe(self):
+        drift = _submit_worker._clock_drift_from_http_date(
+            "Sun, 02 Aug 2026 22:00:00 GMT",
+            local_time=1785708007.0,
+        )
+        self.assertEqual(drift, 7)
+        self.assertIsNone(_submit_worker._clock_drift_from_http_date("invalid"))
+
+
+class TestStorageCredentialPrefetch(unittest.TestCase):
+    def test_pack_time_prefetch_removes_credential_request_from_upload_boundary(self):
+        payload = {"items": [{"bucket_name": "redacted"}]}
+        worker_session = mock.MagicMock()
+        fetch = mock.Mock(return_value=payload)
+        ctx = types.SimpleNamespace(
+            no_submit=False,
+            test_mode=False,
+            storage_future=None,
+            storage_thread=None,
+            data={
+                "pocketbase_url": "https://api.invalid",
+                "user_token": "redacted",
+                "project": {"id": "project-1"},
+            },
+            mods={
+                "requests_retry_session": mock.Mock(return_value=worker_session),
+                "fetch_project_storage": fetch,
+            },
+            session=mock.MagicMock(),
+            phase_timings={},
+            report=None,
+        )
+
+        _submit_worker._start_storage_prefetch(ctx)
+        result = _submit_worker._project_storage_payload(ctx)
+
+        self.assertEqual(result, payload)
+        fetch.assert_called_once_with(
+            worker_session,
+            "https://api.invalid",
+            "redacted",
+            "project-1",
+        )
+        worker_session.close.assert_called_once_with()
+        self.assertTrue(ctx.phase_timings["storage_credentials"]["overlapped"])
+
+    def test_prefetch_thread_is_daemon_and_cleanup_never_waits_for_it(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        def blocked_fetch(*_args):
+            started.set()
+            release.wait(timeout=5)
+            return {"items": []}
+
+        ctx = types.SimpleNamespace(
+            no_submit=False,
+            test_mode=False,
+            storage_future=None,
+            storage_thread=None,
+            data={
+                "pocketbase_url": "https://api.invalid",
+                "user_token": "redacted",
+                "project": {"id": "project-1"},
+            },
+            mods={
+                "requests_retry_session": mock.Mock(return_value=mock.MagicMock()),
+                "fetch_project_storage": blocked_fetch,
+            },
+        )
+
+        _submit_worker._start_storage_prefetch(ctx)
+        self.assertTrue(started.wait(timeout=1))
+        thread = ctx.storage_thread
+        self.assertIsNotNone(thread)
+        self.assertTrue(thread.daemon)
+
+        _submit_worker._cancel_storage_prefetch(ctx)
+        self.assertIsNone(ctx.storage_future)
+        self.assertIsNone(ctx.storage_thread)
+        self.assertTrue(thread.is_alive())
+
+        release.set()
+        thread.join(timeout=1)
+        self.assertFalse(thread.is_alive())
+
+    def test_prefetch_session_construction_failure_is_delivered(self):
+        failure = RuntimeError("session setup failed")
+        ctx = types.SimpleNamespace(
+            no_submit=False,
+            test_mode=False,
+            storage_future=None,
+            storage_thread=None,
+            data={
+                "pocketbase_url": "https://api.invalid",
+                "user_token": "redacted",
+                "project": {"id": "project-1"},
+            },
+            mods={
+                "requests_retry_session": mock.Mock(side_effect=failure),
+                "fetch_project_storage": mock.Mock(),
+            },
+            session=mock.MagicMock(),
+            phase_timings={},
+            report=None,
+        )
+
+        _submit_worker._start_storage_prefetch(ctx)
+
+        with self.assertRaisesRegex(RuntimeError, "session setup failed"):
+            _submit_worker._project_storage_payload(ctx)
+
+
+class TestBackgroundUpdateDiscovery(unittest.TestCase):
+    def test_pending_discovery_never_delays_success(self):
+        ctx = types.SimpleNamespace(
+            update_future=Future(),
+            update_thread=mock.MagicMock(),
+            logger=mock.MagicMock(),
+        )
+
+        _submit_worker._show_update_if_ready(ctx)
+
+        ctx.logger.version_update.assert_not_called()
+        self.assertIsNotNone(ctx.update_future)
+
+    def test_completed_discovery_preserves_update_notification(self):
+        future = Future()
+        future.set_result(True)
+        logger = mock.MagicMock()
+        logger.version_update.return_value = "n"
+        ctx = types.SimpleNamespace(
+            update_future=future,
+            update_thread=mock.MagicMock(),
+            logger=logger,
+        )
+
+        _submit_worker._show_update_if_ready(ctx)
+
+        logger.version_update.assert_called_once()
+        self.assertIsNone(ctx.update_future)
+        self.assertIsNone(ctx.update_thread)
+
+    def test_update_notification_error_cannot_fail_completed_submit(self):
+        future = Future()
+        future.set_result(True)
+        logger = mock.MagicMock()
+        logger.version_update.side_effect = RuntimeError("terminal closed")
+        ctx = types.SimpleNamespace(
+            update_future=future,
+            update_thread=mock.MagicMock(),
+            logger=logger,
+        )
+
+        _submit_worker._show_update_if_ready(ctx)
+
+        self.assertIsNone(ctx.update_future)
 
 
 class TestSubmitHandoffCleanup(unittest.TestCase):
@@ -450,6 +628,11 @@ class TestSubmitPhaseTimings(unittest.TestCase):
                 "use_bserver": False,
                 "farm_url": "https://farm.invalid",
                 "pocketbase_url": "https://api.invalid",
+                "settings_schema_key": "bl510-timing",
+                "settings_schema": {
+                    "blender_version": "5.1.0",
+                    "groups": [],
+                },
             },
             logger=mock.MagicMock(),
             session=session,
@@ -471,9 +654,6 @@ class TestSubmitPhaseTimings(unittest.TestCase):
 
         with mock.patch.object(
             _submit_worker,
-            "_sync_settings_schema",
-        ), mock.patch.object(
-            _submit_worker,
             "_nfc",
             side_effect=lambda value: value,
         ), mock.patch.object(
@@ -490,8 +670,18 @@ class TestSubmitPhaseTimings(unittest.TestCase):
         registration = report.values["phase_timings"]["registration"]
         self.assertEqual(registration["outcome"], "completed")
         self.assertGreaterEqual(registration["duration_ms"], 0)
-        self.assertGreaterEqual(registration["schema_sync_ms"], 0)
+        self.assertGreater(registration["schema_payload_bytes"], 0)
         self.assertGreaterEqual(registration["job_post_ms"], 0)
+        session.post.assert_called_once()
+        posted = json.loads(session.post.call_args.kwargs["data"])
+        self.assertEqual(
+            posted["settings_schema_registration"]["schema_key"],
+            "bl510-timing",
+        )
+        self.assertEqual(
+            posted["job_data"]["settings_schema_key"],
+            "bl510-timing",
+        )
 
 
 # DiagnosticReport warning generation

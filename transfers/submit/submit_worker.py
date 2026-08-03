@@ -29,11 +29,14 @@ import subprocess
 import sys
 import shutil
 import tempfile
+import threading
 import time
 import types
 import zipfile
 import webbrowser
+from concurrent.futures import Future
 from dataclasses import dataclass, field
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -49,11 +52,15 @@ def _default_logger(msg: str) -> None:
 _LOG = _default_logger
 _UPLOAD_RESULT_PREFIX = "SULU_UPLOAD_RESULT "
 _PHASE_TIMING_PREFIX = "SULU_PHASE_TIMING "
+_ZIP_SINGLE_PUT_CUTOFF_BYTES = 100 * 1024 * 1024
+_MAX_CLOCK_DRIFT_SECONDS = 300
+_MAX_SETTINGS_SCHEMA_BYTES = 2 * 1024 * 1024
 
 
 def _build_rclone_upload_settings(
     *,
     single_zip_archive: bool = False,
+    archive_size_bytes: int = 0,
 ) -> List[str]:
     """Build bounded-memory S3 settings for the requested upload shape.
 
@@ -78,7 +85,7 @@ def _build_rclone_upload_settings(
         upload_concurrency = "4"
         buffer_size = "64M"
 
-    return [
+    settings = [
         "--transfers",
         transfers,
         "--checkers",
@@ -102,9 +109,27 @@ def _build_rclone_upload_settings(
         "--contimeout",
         "30s",
         "--no-traverse",
-        "--stats",
-        "0.1s",
     ]
+    if single_zip_archive and int(archive_size_bytes or 0) > _ZIP_SINGLE_PUT_CUTOFF_BYTES:
+        # The archive key is unique to this job. For multipart archives, avoid
+        # rereading the entire staged ZIP solely to attach a whole-object MD5;
+        # rclone still validates every uploaded part and performs its normal
+        # post-upload HEAD, while ZIP CRCs protect extraction on the node.
+        settings.append("--s3-disable-checksum")
+    return settings
+
+
+def _clock_drift_from_http_date(
+    value: object,
+    *,
+    local_time: Optional[float] = None,
+) -> Optional[int]:
+    """Return signed local-minus-server clock drift from an HTTP Date value."""
+    try:
+        server_time = parsedate_to_datetime(str(value or "")).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return int((time.time() if local_time is None else float(local_time)) - server_time)
 
 
 def _set_logger(fn) -> None:
@@ -430,43 +455,29 @@ def _build_render_tasks(
     return frame_numbers
 
 
-def _sync_settings_schema(session, data: Dict[str, object], headers: Dict[str, str]) -> None:
-    """Best-effort registration of the dumped Blender settings schema.
-
-    Schemas are deduped server-side by schema_key: GET first, POST only on
-    404. Any failure is logged and ignored — submission must never depend on
-    the schema registry.
-    """
+def _build_settings_schema_registration(
+    data: Dict[str, object],
+) -> Optional[Dict[str, object]]:
+    """Build the optional schema envelope piggybacked on job registration."""
     schema = data.get("settings_schema")
     schema_key = str(data.get("settings_schema_key") or "")
-    if not isinstance(schema, dict) or not schema_key:
-        return
+    if not isinstance(schema, dict) or not schema or not schema_key:
+        return None
+
+    registration: Dict[str, object] = {
+        "schema_key": schema_key,
+        "blender_version": str(schema.get("blender_version", "") or ""),
+        "schema": schema,
+    }
     try:
-        get_resp = session.get(
-            f"{data['pocketbase_url']}/api/blender_schemas/{schema_key}",
-            headers=headers,
-            timeout=30,
+        encoded_size = len(
+            json.dumps(registration, separators=(",", ":")).encode("utf-8")
         )
-        if get_resp.status_code == 200:
-            return
-        if get_resp.status_code != 404:
-            get_resp.raise_for_status()
-        post_resp = session.post(
-            f"{data['pocketbase_url']}/api/blender_schemas",
-            headers={**headers, "Content-Type": "application/json"},
-            data=json.dumps(
-                {
-                    "schema_key": schema_key,
-                    "blender_version": str(schema.get("blender_version", "") or ""),
-                    "schema": schema,
-                }
-            ),
-            timeout=30,
-        )
-        post_resp.raise_for_status()
-    except Exception as exc:
-        if _debug_enabled and _debug_enabled():
-            _LOG(f"Settings schema sync skipped: {exc}")
+    except (TypeError, ValueError, UnicodeError):
+        return None
+    if encoded_size > _MAX_SETTINGS_SCHEMA_BYTES:
+        return None
+    return registration
 
 
 def _missing_project_identity_fields(project: dict | None) -> list[str]:
@@ -715,6 +726,10 @@ class _SubmitContext:
     main_blend_s3: str = ""
     project_root_str: str = ""
     phase_timings: Dict[str, Dict[str, object]] = field(default_factory=dict)
+    storage_future: Optional[Future] = None
+    storage_thread: Optional[threading.Thread] = None
+    update_future: Optional[Future] = None
+    update_thread: Optional[threading.Thread] = None
 
 
 def _record_phase_timing(
@@ -823,6 +838,7 @@ def _preflight(ctx: _SubmitContext) -> None:
     preflight_ok, preflight_issues = run_preflight_checks(
         session=session,
         storage_checks=storage_checks,
+        check_clock=False,
     )
 
     _preflight_user_override = None  # recorded into report after it's created
@@ -843,49 +859,6 @@ def _preflight(ctx: _SubmitContext) -> None:
     ctx.preflight_ok = preflight_ok
     ctx.preflight_issues = preflight_issues
     ctx.preflight_user_override = _preflight_user_override
-
-
-def _check_update(ctx: _SubmitContext) -> None:
-    data = ctx.data
-    logger = ctx.logger
-    session = ctx.session
-
-    # Optional: check for addon update
-    try:
-        github_response = session.get(
-            "https://api.github.com/repos/Superluminal-Studios/sulu-blender-addon/releases/latest"
-        )
-        if github_response.status_code == 200:
-            latest_version = github_response.json().get("tag_name")
-            if latest_version:
-                latest_version = tuple(int(i) for i in latest_version.split("."))
-                if latest_version > tuple(data["addon_version"]):
-                    answer = logger.version_update(
-                        "https://superlumin.al/blender-addon",
-                        [
-                            "Download the add-on .zip file from the link.",
-                            "Uninstall the current add-on in Blender preferences.",
-                            "Install the downloaded .zip file.",
-                            "Restart Blender.",
-                        ],
-                        prompt="Update now?",
-                        options=[
-                            ("y", "Update", "Open the download page and close"),
-                            ("n", "Not now", "Continue with current version"),
-                        ],
-                        default="n",
-                    )
-                    if answer == "y":
-                        webbrowser.open("https://superlumin.al/blender-addon")
-                        logger.info_exit(
-                            "Install the new version, then restart Blender."
-                        )
-    except SystemExit:
-        sys.exit(0)
-    except Exception:
-        logger.info(
-            "Couldn't check for add-on updates. Continuing with current version."
-        )
 
 
 def _ensure_farm_ready(ctx: _SubmitContext) -> None:
@@ -922,6 +895,7 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
             "Refresh projects in the add-on and try again."
         )
 
+    farm_status_started_wall = time.time()
     try:
         farm_status = session.get(
             f"{data['pocketbase_url']}/api/farm_status/{proj['organization_id']}",
@@ -940,6 +914,24 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
                 "Couldn't confirm farm availability.\n"
                 "Verify you're logged in and a project is selected. "
                 "If this continues, log out and log back in."
+            )
+
+        farm_status_finished_wall = time.time()
+        drift = _clock_drift_from_http_date(
+            farm_status.headers.get("Date"),
+            local_time=(farm_status_started_wall + farm_status_finished_wall) / 2.0,
+        )
+        if drift is not None and abs(drift) > _MAX_CLOCK_DRIFT_SECONDS:
+            direction = "ahead" if drift > 0 else "behind"
+            logger.fatal(
+                f"System clock is {abs(drift) // 60} minutes {direction}. "
+                "Cloud storage requires accurate time. Sync the system clock "
+                "in date and time settings, then try again."
+            )
+        if drift is not None and abs(drift) > 60:
+            direction = "ahead" if drift > 0 else "behind"
+            preflight_issues.append(
+                f"System clock is {abs(drift)} seconds {direction}"
             )
     except SystemExit:
         raise
@@ -984,7 +976,11 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
     project_name = proj["name"]
 
     # Wait until .blend is fully written
-    is_blend_saved(blend_path, logger_instance=logger)
+    is_blend_saved(
+        blend_path,
+        logger_instance=logger,
+        expected_signature=data.get("blend_file_signature"),
+    )
 
     # Create diagnostic report for continuous logging
     report = DiagnosticReport(
@@ -1201,9 +1197,12 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
 
     # Pack assets
     if use_project:
-        # Trace dependencies (hydrate cloud placeholders)
+        # Probe accessibility without fully hydrating every dependency. rclone
+        # opens files only when they actually need transfer, so warm PROJECT
+        # submissions can skip unchanged cloud placeholders without rereading
+        # the entire project first.
         dep_paths, missing_set, unreadable_dict, raw_usages, optional_set = trace_dependencies(
-            Path(blend_path), logger=logger, hydrate=True, diagnostic_report=report
+            Path(blend_path), logger=logger, hydrate=False, diagnostic_report=report
         )
 
         # Detect absolute paths in the blend file (PROJECT mode requires relative paths)
@@ -1621,6 +1620,203 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
     ctx.project_root_str = project_root_str if not use_project else ""
 
 
+def _start_storage_prefetch(ctx: _SubmitContext) -> None:
+    """Fetch short-lived R2 credentials while dependency packing is running."""
+    if ctx.no_submit or ctx.test_mode or ctx.storage_future is not None:
+        return
+
+    data = ctx.data
+    mods = ctx.mods
+
+    future: Future = Future()
+
+    def _fetch() -> None:
+        if not future.set_running_or_notify_cancel():
+            return
+        started_at = time.perf_counter()
+        session = None
+        result: Optional[tuple[object, float]] = None
+        failure: Optional[BaseException] = None
+        try:
+            session = mods["requests_retry_session"]()
+            payload = mods["fetch_project_storage"](
+                session,
+                data["pocketbase_url"],
+                data["user_token"],
+                data["project"]["id"],
+            )
+            result = (payload, (time.perf_counter() - started_at) * 1000.0)
+        except BaseException as exc:
+            failure = exc
+        finally:
+            if session is not None:
+                try:
+                    session.close()
+                except Exception:
+                    pass
+        if failure is not None:
+            future.set_exception(failure)
+        else:
+            future.set_result(result)
+
+    # A daemon is deliberate: if tracing aborts while the bounded retrying HTTP
+    # request is in flight, it must not keep the failed submit process open.
+    # On the normal path _project_storage_payload waits for the full existing
+    # retry policy, preserving the synchronous behavior this replaced.
+    thread = threading.Thread(
+        target=_fetch,
+        name="sulu-storage-prefetch",
+        daemon=True,
+    )
+    ctx.storage_future = future
+    ctx.storage_thread = thread
+    thread.start()
+
+
+def _cancel_storage_prefetch(ctx: _SubmitContext) -> None:
+    """Detach optional prefetch work without delaying process shutdown."""
+    future = ctx.storage_future
+    ctx.storage_future = None
+    ctx.storage_thread = None
+    if future is not None:
+        future.cancel()
+
+
+def _version_numbers(value: object) -> tuple[int, int, int]:
+    numbers = [int(part) for part in re.findall(r"\d+", str(value or ""))[:3]]
+    return tuple((numbers + [0, 0, 0])[:3])
+
+
+def _start_update_discovery(ctx: _SubmitContext) -> None:
+    """Discover add-on releases in parallel without joining the submit path."""
+    if ctx.update_future is not None:
+        return
+
+    future: Future = Future()
+    current_version = _version_numbers(ctx.data.get("addon_version"))
+
+    def _fetch() -> None:
+        if not future.set_running_or_notify_cancel():
+            return
+        available = False
+        failure: Optional[BaseException] = None
+        try:
+            with requests.Session() as session:
+                response = session.get(
+                    "https://api.github.com/repos/"
+                    "Superluminal-Studios/sulu-blender-addon/releases/latest",
+                    headers={
+                        "Accept": "application/vnd.github+json",
+                        "User-Agent": "Sulu-Blender-Addon/update-check",
+                    },
+                    timeout=5,
+                )
+                if response.status_code == 200:
+                    latest = response.json().get("tag_name")
+                    available = _version_numbers(latest) > current_version
+        except BaseException as exc:
+            failure = exc
+        if failure is not None:
+            future.set_exception(failure)
+        else:
+            future.set_result(available)
+
+    thread = threading.Thread(
+        target=_fetch,
+        name="sulu-update-discovery",
+        daemon=True,
+    )
+    ctx.update_future = future
+    ctx.update_thread = thread
+    thread.start()
+
+
+def _show_update_if_ready(ctx: _SubmitContext) -> None:
+    """Offer a discovered release after receipt, never waiting on the network."""
+    future = ctx.update_future
+    if future is None or not future.done():
+        return
+    ctx.update_future = None
+    ctx.update_thread = None
+    try:
+        available = bool(future.result())
+    except BaseException:
+        return
+    if not available:
+        return
+
+    try:
+        answer = ctx.logger.version_update(
+            "https://superlumin.al/blender-addon",
+            [
+                "Download the add-on .zip file from the link.",
+                "Uninstall the current add-on in Blender preferences.",
+                "Install the downloaded .zip file.",
+                "Restart Blender.",
+            ],
+            prompt="Update now?",
+            options=[
+                ("y", "Update", "Open the download page and close"),
+                ("n", "Not now", "Continue with current version"),
+            ],
+            default="n",
+        )
+        if answer == "y":
+            webbrowser.open("https://superlumin.al/blender-addon")
+            ctx.logger.info_exit("Install the new version, then restart Blender.")
+    except SystemExit:
+        raise
+    except Exception:
+        # Release discovery is optional and happens after job receipt. A
+        # notification integration failure cannot turn success into failure.
+        return
+
+
+def _cancel_update_discovery(ctx: _SubmitContext) -> None:
+    future = ctx.update_future
+    ctx.update_future = None
+    ctx.update_thread = None
+    if future is not None:
+        future.cancel()
+
+
+def _project_storage_payload(ctx: _SubmitContext) -> object:
+    """Return prefetched storage data, falling back to the synchronous path."""
+    wait_started_at = time.perf_counter()
+    future = ctx.storage_future
+    thread = ctx.storage_thread
+    ctx.storage_future = None
+    ctx.storage_thread = None
+
+    if future is None:
+        started_at = time.perf_counter()
+        payload = ctx.mods["fetch_project_storage"](
+            ctx.session,
+            ctx.data["pocketbase_url"],
+            ctx.data["user_token"],
+            ctx.data["project"]["id"],
+        )
+        _record_phase_timing(
+            ctx,
+            "storage_credentials",
+            (time.perf_counter() - started_at) * 1000.0,
+            overlapped=False,
+        )
+        return payload
+
+    payload, fetch_ms = future.result()
+    if thread is not None:
+        thread.join(timeout=0)
+    _record_phase_timing(
+        ctx,
+        "storage_credentials",
+        fetch_ms,
+        overlapped=True,
+        critical_path_wait_ms=(time.perf_counter() - wait_started_at) * 1000.0,
+    )
+    return payload
+
+
 def _upload(ctx: _SubmitContext) -> None:
     upload_started_at = time.perf_counter()
     data = ctx.data
@@ -1628,7 +1824,6 @@ def _upload(ctx: _SubmitContext) -> None:
     logger = ctx.logger
     session = ctx.session
     report = ctx.report
-    fetch_project_storage = mods["fetch_project_storage"]
     _build_base = mods["_build_base"]
     CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
     run_rclone = mods["run_rclone"]
@@ -1651,12 +1846,7 @@ def _upload(ctx: _SubmitContext) -> None:
 
     # R2 credentials
     try:
-        storage_payload = fetch_project_storage(
-            session,
-            data["pocketbase_url"],
-            data["user_token"],
-            data["project"]["id"],
-        )
+        storage_payload = _project_storage_payload(ctx)
         s3info, bucket = _parse_project_storage_payload(storage_payload)
     except Exception as exc:
         logger.fatal(
@@ -1666,7 +1856,10 @@ def _upload(ctx: _SubmitContext) -> None:
     base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
 
     rclone_settings = _build_rclone_upload_settings()
-    zip_archive_settings = _build_rclone_upload_settings(single_zip_archive=True)
+    zip_archive_settings = _build_rclone_upload_settings(
+        single_zip_archive=True,
+        archive_size_bytes=required_storage,
+    )
 
     has_addons = data.get("packed_addons") and len(data["packed_addons"]) > 0
 
@@ -2061,11 +2254,6 @@ def _register_job(ctx: _SubmitContext) -> None:
         str(data.get("image_format", "")).upper() == "SCENE"
     )
 
-    # Register the dumped settings schema (deduped by key; best effort).
-    schema_sync_started_at = time.perf_counter()
-    _sync_settings_schema(session, data, headers)
-    schema_sync_ms = (time.perf_counter() - schema_sync_started_at) * 1000.0
-
     payload: Dict[str, object] = {
         "job_data": {
             "id": data["job_id"],
@@ -2111,12 +2299,25 @@ def _register_job(ctx: _SubmitContext) -> None:
     if settings_schema_key:
         payload["job_data"]["settings_schema_key"] = settings_schema_key
 
+    schema_registration = _build_settings_schema_registration(data)
+    if schema_registration is not None:
+        payload["settings_schema_registration"] = schema_registration
+
+    request_body = json.dumps(payload, separators=(",", ":"))
+    schema_payload_bytes = (
+        len(
+            json.dumps(schema_registration, separators=(",", ":")).encode("utf-8")
+        )
+        if schema_registration is not None
+        else 0
+    )
+
     job_post_started_at = time.perf_counter()
     try:
         post_resp = session.post(
             f"{data['pocketbase_url']}/api/farm/{org_id}/jobs",
             headers={**headers, "Content-Type": "application/json"},
-            data=json.dumps(payload),
+            data=request_body,
             timeout=30,
         )
         post_resp.raise_for_status()
@@ -2126,7 +2327,7 @@ def _register_job(ctx: _SubmitContext) -> None:
             ctx,
             "registration",
             (registration_finished_at - registration_started_at) * 1000.0,
-            schema_sync_ms=schema_sync_ms,
+            schema_payload_bytes=schema_payload_bytes,
             job_post_ms=(registration_finished_at - job_post_started_at) * 1000.0,
             outcome="failed",
         )
@@ -2141,7 +2342,7 @@ def _register_job(ctx: _SubmitContext) -> None:
             ctx,
             "registration",
             (registration_finished_at - registration_started_at) * 1000.0,
-            schema_sync_ms=schema_sync_ms,
+            schema_payload_bytes=schema_payload_bytes,
             job_post_ms=(registration_finished_at - job_post_started_at) * 1000.0,
             outcome="completed",
         )
@@ -2178,6 +2379,7 @@ def _finish(ctx: _SubmitContext) -> None:
         elapsed=elapsed,
     )
     _emit_upload_success_payload(upload_result)
+    _show_update_if_ready(ctx)
 
     selection = "c"
     try:
@@ -2234,13 +2436,24 @@ def main() -> None:
         logger=logger,
         session=mods["requests_retry_session"](),
     )
-    _preflight(ctx)
-    _check_update(ctx)
-    _ensure_farm_ready(ctx)
-    _trace_and_pack(ctx)
-    _upload(ctx)
-    _register_job(ctx)
-    _finish(ctx)
+    try:
+        _preflight(ctx)
+        _ensure_farm_ready(ctx)
+        # Submission is a latency-sensitive path. Update discovery is intentionally
+        # non-blocking; it and credentials can overlap dependency packing.
+        _start_update_discovery(ctx)
+        _start_storage_prefetch(ctx)
+        _trace_and_pack(ctx)
+        _upload(ctx)
+        _register_job(ctx)
+        _finish(ctx)
+    finally:
+        _cancel_storage_prefetch(ctx)
+        _cancel_update_discovery(ctx)
+        try:
+            ctx.session.close()
+        except Exception:
+            pass
 
 
 # Entry point

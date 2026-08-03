@@ -620,7 +620,7 @@ def single_downloader(dest_dir: str) -> None:
 
 _AUTO_BATCH_FRAMES = 1
 _AUTO_BATCH_SECONDS = 5.0
-_AUTO_POLL_SECONDS = 2
+_AUTO_POLL_SECONDS = 1
 _AUTO_REFRESH_SECONDS = 60.0
 _AUTO_TERMINAL_STABLE_PASSES = 1
 _AUTO_TERMINAL_SETTLE_SECONDS = 30.0
@@ -902,6 +902,9 @@ def main() -> None:
     preflight_ok, preflight_issues = run_preflight_checks(
         session=session,
         storage_checks=storage_checks,
+        # rclone reports clock-skew failures explicitly. Avoid a separate
+        # external HEAD before every download just to discover the same issue.
+        check_clock=False,
     )
 
     if not preflight_ok and preflight_issues:

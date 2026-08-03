@@ -123,7 +123,8 @@ def trace_dependencies(
                 If provided, logs each dependency with colors and formatting.
         hydrate: If True, reads entire files to force cloud-mounted drives
                  (OneDrive, Google Drive, iCloud, etc.) to fully download
-                 "dehydrated" placeholder files. Use for PROJECT mode uploads.
+                 "dehydrated" placeholder files. Keep False when the next
+                 consumer (such as rclone) can hydrate only changed files.
 
     Returns:
         (dependency_paths, missing_files, unreadable_files, raw_usages, optional_paths)

@@ -18,6 +18,7 @@
 #
 # (c) 2019, Blender Foundation - Sybren A. Stüvel
 import zipfile
+from unittest import mock
 from tests.bat.test_pack import AbstractPackTest
 
 from blender_asset_tracer.pack import zipped
@@ -37,3 +38,44 @@ class ZippedPackTest(AbstractPackTest):
             self.assertEqual(
                 {"pack-info.txt", "basic_file_ñønæščii.blend"}, set(inzip.namelist())
             )
+
+    def test_manual_zipinfo_uses_configured_fast_level(self):
+        info = zipfile.ZipInfo("asset.txt")
+        zipped._set_zipinfo_compress_level(info, zipped.ZIP_COMPRESSLEVEL)
+
+        actual = getattr(info, "compress_level", None)
+        if actual is None:
+            actual = getattr(info, "_compresslevel", None)
+        self.assertEqual(actual, 1)
+        self.assertEqual(
+            zipped._zip_entry_label(zipfile.ZIP_DEFLATED, zipfile),
+            "Fast Compression",
+        )
+
+    def test_uppercase_blend_uses_measured_zstd_profile(self):
+        source = self.tpath / "SCENE.BLEND"
+        source.write_bytes(b"BLENDER-v510" + b"payload" * 100)
+        zippath = self.tpath / "uppercase.zip"
+        calls = []
+
+        class FakeCompressor:
+            def __init__(self, **kwargs):
+                calls.append(kwargs)
+
+            def copy_stream(self, source_stream, target_stream, read_size):
+                target_stream.write(source_stream.read())
+
+        worker = zipped.ZipTransferrer(zippath)
+        with mock.patch.object(
+            zipped,
+            "zstd",
+            mock.Mock(ZstdCompressor=FakeCompressor),
+        ):
+            worker.start()
+            worker.queue_copy(source, zippath / source.name)
+            worker.done_and_join()
+
+        self.assertEqual(
+            calls,
+            [{"level": zipped.BLEND_ZSTD_LEVEL, "threads": zipped.BLEND_ZSTD_THREADS}],
+        )

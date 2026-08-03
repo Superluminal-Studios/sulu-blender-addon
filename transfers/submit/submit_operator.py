@@ -225,6 +225,16 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         )
 
         job_id = uuid.uuid4()
+        blend_path = bpy.path.abspath(bpy.data.filepath).replace("\\", "/")
+        blend_file_signature = None
+        try:
+            blend_stat = os.stat(blend_path)
+            blend_file_signature = {
+                "size": int(blend_stat.st_size),
+                "mtime_ns": int(blend_stat.st_mtime_ns),
+            }
+        except OSError:
+            pass
         handoff = {
             "addon_dir": str(addon_dir),
             "addon_version": addon_version("Superluminal Render Farm"),
@@ -232,7 +242,10 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "packed_addons": [],
             "job_id": str(job_id),
             "device_type": props.device_type,
-            "blend_path": bpy.path.abspath(bpy.data.filepath).replace("\\", "/"),
+            "blend_path": blend_path,
+            # Optional and backward-compatible: the worker can prove the file
+            # stayed unchanged across process launch instead of sleeping.
+            "blend_file_signature": blend_file_signature,
             "temp_blend_path": str(
                 Path(tempfile.gettempdir())
                 / bpy.path.basename(bpy.context.blend_data.filepath)

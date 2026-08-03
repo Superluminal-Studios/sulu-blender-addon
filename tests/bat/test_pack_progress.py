@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from blender_asset_tracer.pack import progress
+from blender_asset_tracer.pack import transfer
 
 
 class ThreadedProgressTest(unittest.TestCase):
@@ -40,3 +41,16 @@ class ThreadedProgressTest(unittest.TestCase):
         cb.transfer_file_skipped.assert_called_with(Path("seven"), Path("eight"))
         cb.transfer_progress.assert_called_with(327, 47)
         cb.missing_file.assert_called_with(Path("nine"))
+
+    def test_empty_transfer_completion_has_no_half_second_floor(self):
+        class EmptyTransfer(transfer.FileTransferer):
+            def run(self):
+                list(self.iter_queue())
+
+        worker = EmptyTransfer()
+        worker.start()
+        before = time.monotonic()
+        worker.done_and_join()
+
+        self.assertFalse(worker.is_alive())
+        self.assertLess(time.monotonic() - before, 0.25)

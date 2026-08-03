@@ -368,17 +368,23 @@ def fetch_project_storage(
 
 
 # save/flush detection
-def is_blend_saved(path: str | Path, logger_instance=None) -> None:
+def is_blend_saved(
+    path: str | Path,
+    logger_instance=None,
+    *,
+    expected_signature: Optional[object] = None,
+) -> None:
     """
     Block until a "*.blend" file is finished saving.
 
-    Blender typically writes a sentinel `<file>.blend@` while saving.
-    We wait for the sentinel to disappear *and* for the file size to
-    remain stable for ~0.5s as an extra safety check (covers network drives).
+    Blender typically writes a sentinel `<file>.blend@` while saving. Files
+    unchanged since the Blender operator launched this worker can be accepted
+    immediately; older handoffs get a half-second stability check.
 
     Args:
         path: The .blend file path to check.
         logger_instance: Optional SubmitLogger instance for styled output.
+        expected_signature: Optional operator-captured size + mtime_ns mapping.
     """
     def _log_info(msg: str) -> None:
         if logger_instance and hasattr(logger_instance, "info"):
@@ -396,22 +402,43 @@ def is_blend_saved(path: str | Path, logger_instance=None) -> None:
     warned = False
 
     # Track size stability to avoid racing network/Drive syncs
-    last_size = -1
-    stable_ticks = 0  # 2 ticks of 0.25s ≈ 0.5s stable
+    last_signature = None
+    stable_ticks = 0
+    stability_poll_seconds = 0.1
+    required_stable_ticks = 5
+    operator_signature = None
+    if isinstance(expected_signature, dict):
+        try:
+            operator_signature = (
+                int(expected_signature["size"]),
+                int(expected_signature["mtime_ns"]),
+            )
+        except (KeyError, TypeError, ValueError, OverflowError):
+            operator_signature = None
 
     while True:
         sentinel_exists = os.path.exists(path + "@")
-        file_exists = os.path.exists(path)
-        size = os.path.getsize(path) if file_exists else -1
+        try:
+            stat_result = os.stat(path)
+        except OSError:
+            stat_result = None
 
-        if not sentinel_exists and file_exists:
-            if size == last_size:
+        if not sentinel_exists and stat_result is not None:
+            signature = (stat_result.st_size, stat_result.st_mtime_ns)
+
+            # Matching the operator's pre-launch stat proves that the source
+            # remained unchanged across process startup, avoiding a fixed wait
+            # without weakening the fallback for old handoff payloads.
+            if last_signature is None and signature == operator_signature:
+                return
+
+            if signature == last_signature:
                 stable_ticks += 1
             else:
                 stable_ticks = 0
-            last_size = size
+            last_signature = signature
 
-            if stable_ticks >= 2:  # ~0.5s of stability
+            if stable_ticks >= required_stable_ticks:
                 if warned:
                     _log_success("File saved. Proceeding.")
                 return
@@ -422,7 +449,7 @@ def is_blend_saved(path: str | Path, logger_instance=None) -> None:
                 _log_info("If this takes a while, background sync apps (Dropbox, Google Drive) may be scanning the file.")
                 warned = True
 
-        time.sleep(0.25)
+        time.sleep(stability_poll_seconds)
 
 
 # rclone base command
@@ -846,6 +873,8 @@ def get_temp_space_available() -> int:
 def run_preflight_checks(
     session: Optional[requests.Session] = None,
     storage_checks: Optional[List[Tuple[str, int, str]]] = None,
+    *,
+    check_clock: bool = True,
 ) -> Tuple[bool, List[str]]:
     """
     Run all pre-flight checks and collect issues.
@@ -853,6 +882,8 @@ def run_preflight_checks(
     Args:
         session: HTTP session for time check
         storage_checks: List of (path, required_bytes, label) for storage checks
+        check_clock: Whether to make the remote Date-header probe. Submission
+            workers reuse the already-required farm-status response instead.
 
     Returns:
         Tuple of (all_ok, issues_list) where issues_list contains issue messages.
@@ -860,15 +891,15 @@ def run_preflight_checks(
     all_ok = True
     issues: List[str] = []
 
-    # Time sync check
-    time_ok, drift, time_msg = check_time_sync(session)
-    if not time_ok and time_msg:
-        issues.append(time_msg)
-        all_ok = False
-    elif abs(drift) > 60:
-        # Warn if drift is noticeable but not critical
-        direction = "ahead" if drift > 0 else "behind"
-        issues.append(f"System clock is {abs(drift)} seconds {direction}")
+    if check_clock:
+        time_ok, drift, time_msg = check_time_sync(session)
+        if not time_ok and time_msg:
+            issues.append(time_msg)
+            all_ok = False
+        elif abs(drift) > 60:
+            # Warn if drift is noticeable but not critical
+            direction = "ahead" if drift > 0 else "behind"
+            issues.append(f"System clock is {abs(drift)} seconds {direction}")
 
     # Storage checks
     if storage_checks:
