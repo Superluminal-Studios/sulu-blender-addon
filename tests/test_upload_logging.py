@@ -78,7 +78,7 @@ def _settings_by_flag(settings):
     index = 0
     while index < len(settings):
         flag = settings[index]
-        if flag in {"--no-traverse", "--s3-disable-checksum"}:
+        if flag in {"--no-traverse", "--no-check-dest", "--s3-disable-checksum"}:
             result[flag] = True
             index += 1
         else:
@@ -103,6 +103,7 @@ class TestZipUploadTuning(unittest.TestCase):
         self.assertEqual(values["--buffer-size"], "16M")
         self.assertEqual(values["--transfers"], "1")
         self.assertEqual(values["--checkers"], "1")
+        self.assertIs(values["--no-check-dest"], True)
 
     def test_multipart_zip_skips_redundant_whole_archive_md5_pass(self):
         cutoff = _submit_worker._ZIP_SINGLE_PUT_CUTOFF_BYTES
@@ -131,6 +132,7 @@ class TestZipUploadTuning(unittest.TestCase):
         self.assertEqual(values["--s3-chunk-size"], "64M")
         self.assertEqual(values["--s3-upload-concurrency"], "4")
         self.assertEqual(values["--buffer-size"], "64M")
+        self.assertNotIn("--no-check-dest", values)
 
     def test_required_api_date_header_replaces_separate_clock_probe(self):
         drift = _submit_worker._clock_drift_from_http_date(

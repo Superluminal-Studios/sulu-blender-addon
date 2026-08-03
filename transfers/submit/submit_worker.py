@@ -110,6 +110,13 @@ def _build_rclone_upload_settings(
         "30s",
         "--no-traverse",
     ]
+    if single_zip_archive:
+        # ZIP archive names are generated from a fresh job UUID. There is no
+        # useful destination object to compare before upload, so avoid the
+        # serial preflight HEAD. This does not disable rclone's post-upload
+        # verification, and a retried submission safely overwrites the same
+        # job-scoped archive.
+        settings.append("--no-check-dest")
     if single_zip_archive and int(archive_size_bytes or 0) > _ZIP_SINGLE_PUT_CUTOFF_BYTES:
         # The archive key is unique to this job. For multipart archives, avoid
         # rereading the entire staged ZIP solely to attach a whole-object MD5;
