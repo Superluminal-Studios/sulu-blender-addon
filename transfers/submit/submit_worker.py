@@ -194,6 +194,14 @@ def _emit_upload_success_payload(payload: Dict[str, object]) -> None:
     )
 
 
+def _emit_upload_success_payload_if_requested(
+    data: Dict[str, object], payload: Dict[str, object]
+) -> None:
+    """Emit the automation marker only for an explicitly opted-in harness."""
+    if data.get("emit_upload_result") is True:
+        _emit_upload_success_payload(payload)
+
+
 def _rclone_bytes(result) -> int:
     """Extract bytes_transferred from run_rclone's dict-or-None return."""
     if result is None:
@@ -1720,8 +1728,10 @@ def _version_numbers(value: object) -> tuple[int, int, int]:
 
 
 def _start_update_discovery(ctx: _SubmitContext) -> None:
-    """Discover add-on releases in parallel without joining the submit path."""
+    """Start release discovery for packaged builds only."""
     if ctx.update_future is not None:
+        return
+    if str(ctx.data.get("addon_build_channel") or "").lower() != "release":
         return
 
     future: Future = Future()
@@ -1763,15 +1773,17 @@ def _start_update_discovery(ctx: _SubmitContext) -> None:
     thread.start()
 
 
-def _show_update_if_ready(ctx: _SubmitContext) -> None:
-    """Offer a discovered release after receipt, never waiting on the network."""
+def _show_update_before_submit(ctx: _SubmitContext) -> None:
+    """Offer an available release before submission work begins."""
     future = ctx.update_future
-    if future is None or not future.done():
+    if future is None:
         return
     ctx.update_future = None
     ctx.update_thread = None
     try:
-        available = bool(future.result())
+        # The request itself has a five-second timeout. This outer bound also
+        # prevents a broken discovery thread from holding submission forever.
+        available = bool(future.result(timeout=6))
     except BaseException:
         return
     if not available:
@@ -2410,8 +2422,7 @@ def _finish(ctx: _SubmitContext) -> None:
         report_path=str(report.get_reports_dir()),
         elapsed=elapsed,
     )
-    _emit_upload_success_payload(upload_result)
-    _show_update_if_ready(ctx)
+    _emit_upload_success_payload_if_requested(data, upload_result)
 
     selection = "c"
     try:
@@ -2469,12 +2480,14 @@ def main() -> None:
         session=mods["requests_retry_session"](),
     )
     try:
+        # Let release users decide whether to update before any submission work
+        # continues. Development installs are explicitly excluded.
+        _start_update_discovery(ctx)
+        _show_update_before_submit(ctx)
         _preflight(ctx)
         _ensure_farm_ready(ctx)
-        # Submission is latency-sensitive. Update discovery is non-blocking;
-        # credential prefetch normally began during farm preflight, and this
+        # Credential prefetch normally began during farm preflight; this
         # idempotent call preserves a safe fallback before dependency packing.
-        _start_update_discovery(ctx)
         _start_storage_prefetch(ctx)
         _trace_and_pack(ctx)
         _upload(ctx)

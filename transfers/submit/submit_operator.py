@@ -10,6 +10,7 @@ from bpy.props import EnumProperty, IntProperty, BoolProperty
 import os
 
 from ...utils.worker_utils import launch_worker_secure
+from ...build_info import BUILD_CHANNEL
 from .addon_packer import bundle_addons
 from ...constants import POCKETBASE_URL, FARM_IP
 from ...utils.version_utils import resolved_worker_blender_value
@@ -238,6 +239,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         handoff = {
             "addon_dir": str(addon_dir),
             "addon_version": addon_version("Superluminal Render Farm"),
+            "addon_build_channel": BUILD_CHANNEL,
             "packed_addons_path": tempfile.mkdtemp(prefix="blender_addons_"),
             "packed_addons": [],
             "job_id": str(job_id),

@@ -54,7 +54,8 @@ def main():
         shutil.rmtree(stage)
     shutil.copytree(src, stage, ignore=shutil.ignore_patterns(*EXCLUDE))
 
-    # Patch version in staged __init__.py
+    # Patch version and provenance in the staged release artifact. Source
+    # checkouts remain explicitly marked as development builds.
     if args.version:
         init_path = os.path.join(stage, "__init__.py")
         with open(init_path, "r", encoding="utf-8") as f:
@@ -70,6 +71,21 @@ def main():
             raise SystemExit("Could not find version tuple in __init__.py")
         with open(init_path, "w", encoding="utf-8") as f:
             f.write(text)
+
+        build_info_path = os.path.join(stage, "build_info.py")
+        with open(build_info_path, "r", encoding="utf-8") as f:
+            build_info = f.read()
+        build_info, n = re.subn(
+            r'(^BUILD_CHANNEL\s*=\s*)["\'][^"\']+["\']',
+            r'\1"release"',
+            build_info,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if n == 0:
+            raise SystemExit("Could not mark staged build as a release")
+        with open(build_info_path, "w", encoding="utf-8") as f:
+            f.write(build_info)
 
     # Zip
     with zipfile.ZipFile(args.output, "w", zipfile.ZIP_DEFLATED) as zf:

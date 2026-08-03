@@ -433,6 +433,10 @@ def perform_upload(
         handoff = {
             "addon_dir": str(_addon_dir),
             "addon_version": (0, 0, 0),  # Tuple format expected by worker
+            "addon_build_channel": "development",
+            # Request the machine-readable marker that normal UI submissions
+            # intentionally suppress.
+            "emit_upload_result": True,
             "packed_addons_path": tempfile.mkdtemp(prefix="test_addons_"),
             "packed_addons": [],
             "job_id": result.job_id,

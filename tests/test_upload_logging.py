@@ -301,6 +301,7 @@ class TestStorageCredentialPrefetch(unittest.TestCase):
                     mock.patch.object(_submit_worker, "_preflight"),
                     mock.patch.object(_submit_worker, "_ensure_farm_ready"),
                     mock.patch.object(_submit_worker, "_start_update_discovery"),
+                    mock.patch.object(_submit_worker, "_show_update_before_submit"),
                     mock.patch.object(
                         _submit_worker,
                         "_start_storage_prefetch",
@@ -335,17 +336,31 @@ class TestStorageCredentialPrefetch(unittest.TestCase):
 
 
 class TestBackgroundUpdateDiscovery(unittest.TestCase):
-    def test_pending_discovery_never_delays_success(self):
+    def test_development_build_skips_discovery(self):
+        ctx = types.SimpleNamespace(
+            data={"addon_build_channel": "development"},
+            update_future=None,
+            update_thread=None,
+        )
+
+        with mock.patch.object(_submit_worker.requests, "Session") as session:
+            _submit_worker._start_update_discovery(ctx)
+
+        session.assert_not_called()
+        self.assertIsNone(ctx.update_future)
+
+    def test_pending_discovery_is_resolved_before_submit(self):
         ctx = types.SimpleNamespace(
             update_future=Future(),
             update_thread=mock.MagicMock(),
             logger=mock.MagicMock(),
         )
+        ctx.update_future.set_result(False)
 
-        _submit_worker._show_update_if_ready(ctx)
+        _submit_worker._show_update_before_submit(ctx)
 
         ctx.logger.version_update.assert_not_called()
-        self.assertIsNotNone(ctx.update_future)
+        self.assertIsNone(ctx.update_future)
 
     def test_completed_discovery_preserves_update_notification(self):
         future = Future()
@@ -358,7 +373,7 @@ class TestBackgroundUpdateDiscovery(unittest.TestCase):
             logger=logger,
         )
 
-        _submit_worker._show_update_if_ready(ctx)
+        _submit_worker._show_update_before_submit(ctx)
 
         logger.version_update.assert_called_once()
         self.assertIsNone(ctx.update_future)
@@ -375,9 +390,32 @@ class TestBackgroundUpdateDiscovery(unittest.TestCase):
             logger=logger,
         )
 
-        _submit_worker._show_update_if_ready(ctx)
+        _submit_worker._show_update_before_submit(ctx)
 
         self.assertIsNone(ctx.update_future)
+
+
+class TestUploadResultVisibility(unittest.TestCase):
+    def test_normal_submission_does_not_print_automation_marker(self):
+        with mock.patch.object(
+            _submit_worker, "_emit_upload_success_payload"
+        ) as emit:
+            _submit_worker._emit_upload_success_payload_if_requested(
+                {}, {"status": "success"}
+            )
+
+        emit.assert_not_called()
+
+    def test_automation_harness_can_request_marker(self):
+        payload = {"status": "success"}
+        with mock.patch.object(
+            _submit_worker, "_emit_upload_success_payload"
+        ) as emit:
+            _submit_worker._emit_upload_success_payload_if_requested(
+                {"emit_upload_result": True}, payload
+            )
+
+        emit.assert_called_once_with(payload)
 
 
 class TestSubmitHandoffCleanup(unittest.TestCase):
