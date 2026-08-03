@@ -80,6 +80,63 @@ def _new_isolated_session() -> requests.Session:
     return session
 
 
+class _StoredJobSessionManager:
+    """Own one serialized keep-alive session for persisted job snapshots."""
+
+    def __init__(self) -> None:
+        self._request_lock = threading.Lock()
+        self._state_lock = threading.Lock()
+        self._session: requests.Session | None = None
+        self._active_session: requests.Session | None = None
+
+    def request(self, method: str, url: str, **kwargs):
+        # requests.Session is not guaranteed to be thread-safe. Keep the entire
+        # request serialized while allowing lifecycle invalidation to return
+        # immediately instead of waiting for a network timeout.
+        with self._request_lock:
+            with self._state_lock:
+                if self._session is None:
+                    self._session = _new_isolated_session()
+                session = self._session
+                self._active_session = session
+
+            try:
+                response = logged_session_request(session, method, url, **kwargs)
+                if int(response.status_code) in (401, 403):
+                    # Detach before releasing the request lock so a concurrent
+                    # caller cannot reuse a connection rejected for this auth.
+                    with self._state_lock:
+                        if self._session is session:
+                            self._session = None
+                return response
+            finally:
+                with self._state_lock:
+                    self._active_session = None
+                    close_retired_session = session is not self._session
+                if close_retired_session:
+                    session.close()
+
+    def reset(self) -> None:
+        """Retire the current session, deferring close if a request owns it."""
+        with self._state_lock:
+            retired_session = self._session
+            self._session = None
+            close_now = (
+                retired_session is not None
+                and retired_session is not self._active_session
+            )
+        if close_now:
+            retired_session.close()
+
+
+_stored_job_session_manager = _StoredJobSessionManager()
+
+
+def reset_stored_job_session() -> None:
+    """Invalidate the add-on job-history keep-alive connection."""
+    _stored_job_session_manager.reset()
+
+
 def _token_refresh_due() -> bool:
     token_time = Storage.data.get("user_token_time")
     if not token_time:
@@ -152,6 +209,7 @@ def authorized_request(
     url: str,
     *,
     isolated_session: bool = False,
+    stored_job_session: bool = False,
     **kwargs,
 ):
     """
@@ -162,29 +220,48 @@ def authorized_request(
     3. Performs the request.
     4. Classifies authentication, missing-resource, and server failures.
     """
-    if not Storage.data["user_token"]:
-        raise NotAuthenticated("Not logged in")
+    if isolated_session and stored_job_session:
+        raise ValueError("A request cannot use both isolated and stored-job sessions")
 
-    headers = (kwargs.pop("headers", {}) or {}).copy()
-    headers["Authorization"] = _refresh_token_if_due()
-
-    request_session = _new_isolated_session() if isolated_session else Storage.session
+    request_session = None
     try:
-        res = logged_session_request(
-            request_session,
-            method,
-            url,
-            headers=headers,
-            timeout=Storage.timeout,
-            **kwargs,
-        )
+        if not Storage.data["user_token"]:
+            raise NotAuthenticated("Not logged in")
+
+        headers = (kwargs.pop("headers", {}) or {}).copy()
+        headers["Authorization"] = _refresh_token_if_due()
+
+        if stored_job_session:
+            res = _stored_job_session_manager.request(
+                method,
+                url,
+                headers=headers,
+                timeout=Storage.timeout,
+                **kwargs,
+            )
+        else:
+            request_session = (
+                _new_isolated_session() if isolated_session else Storage.session
+            )
+            res = logged_session_request(
+                request_session,
+                method,
+                url,
+                headers=headers,
+                timeout=Storage.timeout,
+                **kwargs,
+            )
 
         _raise_classified_status(res, clear_expired_session=True)
         return res
 
+    except NotAuthenticated:
+        if stored_job_session:
+            reset_stored_job_session()
+        raise
     except requests.RequestException:
         # Let callers handle network and HTTP errors.
         raise
     finally:
-        if isolated_session:
+        if isolated_session and request_session is not None:
             request_session.close()

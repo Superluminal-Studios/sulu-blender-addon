@@ -6,7 +6,12 @@ import time
 import bpy
 
 from ..constants import POCKETBASE_URL
-from ..pocketbase_auth import NotAuthenticated, NotFound, authorized_request
+from ..pocketbase_auth import (
+    NotAuthenticated,
+    NotFound,
+    authorized_request,
+    reset_stored_job_session,
+)
 from ..storage import Storage
 from .project_context import ProjectContextError
 from .job_list import int_value as _int_value, job_project_ids, selected_project_ids
@@ -255,7 +260,7 @@ def _request_stored_jobs(
         "GET",
         f"{POCKETBASE_URL}/api/jobs/{org_id}",
         params=params,
-        isolated_session=True,
+        stored_job_session=True,
     )
     if resp.status_code == 200 and resp.text:
         return resp.json().get("body", {}) or {}
@@ -319,6 +324,7 @@ def _observe_user_token_locked() -> Future | None:
 
     _observed_user_token = current_token
     _auth_session_generation += 1
+    reset_stored_job_session()
     return _retire_live_job_future_locked()
 
 
@@ -345,6 +351,7 @@ def invalidate_job_refresh_context() -> None:
         _auth_session_generation += 1
         _observed_user_token = str(Storage.data.get("user_token") or "")
         retired_future = _retire_live_job_future_locked()
+    reset_stored_job_session()
     _cancel_retired_future(retired_future)
     _request_properties_redraw()
 
@@ -880,6 +887,7 @@ def unregister_job_refresh_infrastructure() -> None:
     _cancel_retired_future(retired_future)
     if retired_executor is not None:
         retired_executor.shutdown(wait=False, cancel_futures=True)
+    reset_stored_job_session()
 
     _properties_redraw_requested.clear()
     _unregister_pulse_timer()

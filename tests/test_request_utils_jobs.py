@@ -202,6 +202,181 @@ class TestRequestUtilsJobs(unittest.TestCase):
             {"refreshed-token"},
         )
 
+    def test_stored_job_requests_reuse_one_serialized_session(self):
+        class _StoredJobSession:
+            def __init__(self):
+                self.calls = []
+                self.active_requests = 0
+                self.max_active_requests = 0
+                self.first_request_started = threading.Event()
+                self.release_first_request = threading.Event()
+                self.closed = False
+
+            def request(self, method, url, **kwargs):
+                self.active_requests += 1
+                self.max_active_requests = max(
+                    self.max_active_requests,
+                    self.active_requests,
+                )
+                self.calls.append((method, url, kwargs))
+                if len(self.calls) == 1:
+                    self.first_request_started.set()
+                    self.release_first_request.wait(timeout=1)
+                self.active_requests -= 1
+                return _FakeResponse({"ok": True})
+
+            def close(self):
+                self.closed = True
+
+        session = _StoredJobSession()
+        second_request_started = threading.Event()
+
+        def _second_request():
+            second_request_started.set()
+            return pocketbase_auth.authorized_request(
+                "GET",
+                "https://example.invalid/jobs/second",
+                stored_job_session=True,
+            )
+
+        pocketbase_auth.reset_stored_job_session()
+        try:
+            with patch.dict(
+                pocketbase_auth.Storage.data,
+                {"user_token": "token", "user_token_time": int(time.time())},
+            ), patch.object(
+                pocketbase_auth,
+                "_new_isolated_session",
+                return_value=session,
+            ) as session_factory, ThreadPoolExecutor(max_workers=2) as executor:
+                first = executor.submit(
+                    pocketbase_auth.authorized_request,
+                    "GET",
+                    "https://example.invalid/jobs/first",
+                    stored_job_session=True,
+                )
+                self.assertTrue(session.first_request_started.wait(timeout=1))
+                second = executor.submit(_second_request)
+                self.assertTrue(second_request_started.wait(timeout=1))
+                self.assertEqual(len(session.calls), 1)
+                session.release_first_request.set()
+                self.assertEqual(first.result().json(), {"ok": True})
+                self.assertEqual(second.result().json(), {"ok": True})
+
+            session_factory.assert_called_once_with()
+            self.assertEqual(session.max_active_requests, 1)
+            self.assertFalse(session.closed)
+            self.assertEqual(
+                [call[2]["headers"]["Authorization"] for call in session.calls],
+                ["token", "token"],
+            )
+        finally:
+            pocketbase_auth.reset_stored_job_session()
+
+        self.assertTrue(session.closed)
+
+    def test_active_stored_job_session_is_retired_without_blocking_and_recreated(self):
+        class _StoredJobSession:
+            def __init__(self, *, block=False):
+                self.block = block
+                self.started = threading.Event()
+                self.release = threading.Event()
+                self.closed = False
+
+            def request(self, _method, _url, **_kwargs):
+                self.started.set()
+                if self.block:
+                    self.release.wait(timeout=5)
+                return _FakeResponse({"ok": True})
+
+            def close(self):
+                self.closed = True
+
+        first_session = _StoredJobSession(block=True)
+        second_session = _StoredJobSession()
+        pocketbase_auth.reset_stored_job_session()
+        try:
+            with patch.dict(
+                pocketbase_auth.Storage.data,
+                {"user_token": "token", "user_token_time": int(time.time())},
+            ), patch.object(
+                pocketbase_auth,
+                "_new_isolated_session",
+                side_effect=[first_session, second_session],
+            ) as session_factory, ThreadPoolExecutor(max_workers=2) as executor:
+                request = executor.submit(
+                    pocketbase_auth.authorized_request,
+                    "GET",
+                    "https://example.invalid/jobs/active",
+                    stored_job_session=True,
+                )
+                self.assertTrue(first_session.started.wait(timeout=1))
+
+                reset = executor.submit(pocketbase_auth.reset_stored_job_session)
+                self.assertIsNone(reset.result(timeout=0.5))
+                self.assertFalse(first_session.closed)
+
+                first_session.release.set()
+                self.assertEqual(request.result().json(), {"ok": True})
+                self.assertTrue(first_session.closed)
+
+                response = pocketbase_auth.authorized_request(
+                    "GET",
+                    "https://example.invalid/jobs/recreated",
+                    stored_job_session=True,
+                )
+                self.assertEqual(response.json(), {"ok": True})
+
+            self.assertEqual(session_factory.call_count, 2)
+        finally:
+            first_session.release.set()
+            pocketbase_auth.reset_stored_job_session()
+
+        self.assertTrue(second_session.closed)
+
+    def test_stored_job_unauthorized_response_clears_auth_and_session(self):
+        class _StoredJobSession:
+            def __init__(self):
+                self.authorization = ""
+                self.closed = False
+
+            def request(self, _method, _url, **kwargs):
+                self.authorization = kwargs["headers"]["Authorization"]
+                return _StatusResponse(401)
+
+            def close(self):
+                self.closed = True
+
+        session = _StoredJobSession()
+        pocketbase_auth.reset_stored_job_session()
+        try:
+            with patch.dict(
+                pocketbase_auth.Storage.data,
+                {"user_token": "token", "user_token_time": int(time.time())},
+            ), patch.object(
+                pocketbase_auth,
+                "_new_isolated_session",
+                return_value=session,
+            ), patch.object(
+                pocketbase_auth.Storage,
+                "clear",
+            ) as clear:
+                with self.assertRaisesRegex(
+                    pocketbase_auth.NotAuthenticated,
+                    "Session expired",
+                ):
+                    pocketbase_auth.authorized_request(
+                        "GET",
+                        "https://example.invalid/jobs",
+                        stored_job_session=True,
+                    )
+
+            clear.assert_called_once_with()
+            self.assertEqual(session.authorization, "token")
+            self.assertTrue(session.closed)
+        finally:
+            pocketbase_auth.reset_stored_job_session()
+
     def test_fetch_projects_requests_every_pocketbase_page(self):
         payloads = [
             {
@@ -301,7 +476,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
                 "view": "addon",
                 "project_id": "project-id",
             },
-            isolated_session=True,
+            stored_job_session=True,
         )
 
     def test_request_jobs_fetches_stored_and_live_sources_concurrently(self):
@@ -720,6 +895,46 @@ class TestRequestUtilsJobs(unittest.TestCase):
                     request_utils._pending_live_overlay,
                 ) = snapshot
 
+    def test_auth_context_invalidation_resets_stored_job_session(self):
+        old_live_redraw_pending = request_utils._live_job_redraw_pending.is_set()
+        with request_utils._live_job_future_lock:
+            snapshot = (
+                request_utils._auth_session_generation,
+                request_utils._observed_user_token,
+                request_utils._live_job_future,
+                request_utils._pending_live_overlay,
+            )
+            request_utils._live_job_future = None
+            request_utils._pending_live_overlay = None
+
+        try:
+            with patch.object(
+                request_utils,
+                "reset_stored_job_session",
+            ) as reset_stored_session, patch.object(
+                request_utils,
+                "_request_properties_redraw",
+            ):
+                request_utils.invalidate_job_refresh_context()
+
+            reset_stored_session.assert_called_once_with()
+            self.assertEqual(
+                request_utils._auth_session_generation,
+                snapshot[0] + 1,
+            )
+        finally:
+            if old_live_redraw_pending:
+                request_utils._live_job_redraw_pending.set()
+            else:
+                request_utils._live_job_redraw_pending.clear()
+            with request_utils._live_job_future_lock:
+                (
+                    request_utils._auth_session_generation,
+                    request_utils._observed_user_token,
+                    request_utils._live_job_future,
+                    request_utils._pending_live_overlay,
+                ) = snapshot
+
     def test_refresh_infrastructure_can_unregister_and_register_again(self):
         old_executor = MagicMock()
         new_executor = MagicMock()
@@ -754,6 +969,9 @@ class TestRequestUtilsJobs(unittest.TestCase):
                 "_unregister_pulse_timer",
             ) as unregister_timer, patch.object(
                 request_utils,
+                "reset_stored_job_session",
+            ) as reset_stored_session, patch.object(
+                request_utils,
                 "_create_live_job_executor",
                 return_value=new_executor,
             ), patch.object(
@@ -770,6 +988,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
                     wait=False,
                     cancel_futures=True,
                 )
+                reset_stored_session.assert_called_once_with()
                 unregister_timer.assert_called_once_with()
 
                 request_utils.register_job_refresh_infrastructure()
