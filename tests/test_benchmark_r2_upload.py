@@ -58,3 +58,56 @@ def test_cleanup_timeout_is_contained_without_exposing_the_command():
             ":s3:secret-bucket/secret-prefix",
             env={},
         ) is False
+
+
+def test_cleanup_timeout_reaches_main_as_a_sanitized_failure(tmp_path, capsys):
+    rclone = tmp_path / "rclone"
+    rclone.touch()
+    secret_bucket = "secret-bucket"
+    secret_run_id = "secret-run-id"
+    purge_attempts = 0
+
+    def run_with_cleanup_timeout(command, **_kwargs):
+        nonlocal purge_attempts
+        if "purge" in command:
+            purge_attempts += 1
+            raise subprocess.TimeoutExpired(command, 120)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    run_id = mock.Mock()
+    run_id.hex = secret_run_id
+    with (
+        mock.patch.object(benchmark, "_load_session", return_value=("token", "project")),
+        mock.patch.object(benchmark, "_fetch_storage", return_value=({}, secret_bucket)),
+        mock.patch.object(
+            benchmark,
+            "_credential_env",
+            return_value={
+                "AWS_ACCESS_KEY_ID": "secret-access-key",
+                "AWS_SECRET_ACCESS_KEY": "secret-key",
+            },
+        ),
+        mock.patch.object(benchmark, "_version", return_value="rclone test"),
+        mock.patch.object(benchmark, "_run", side_effect=run_with_cleanup_timeout),
+        mock.patch.object(benchmark.uuid, "uuid4", return_value=run_id),
+        mock.patch.object(benchmark.time, "sleep"),
+    ):
+        exit_code = benchmark.main(
+            [
+                "--live",
+                "--rclone",
+                str(rclone),
+                "--sizes",
+                "5MiB",
+                "--profiles",
+                "shipping",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    output = captured.out + captured.err
+    assert exit_code == 2
+    assert purge_attempts == 3
+    assert secret_bucket not in output
+    assert secret_run_id not in output
+    assert "could not be purged" in captured.err

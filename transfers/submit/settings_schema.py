@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from typing import Any, Iterator, Optional, Tuple
 
@@ -91,8 +92,10 @@ def _json_value(value: Any) -> Any:
 
     Enums arrive as identifier strings; vectors/colors become plain lists.
     """
-    if value is None or isinstance(value, (bool, int, float, str)):
+    if value is None or isinstance(value, (bool, int, str)):
         return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else _SKIP
     if isinstance(value, bytes):
         return _SKIP
     try:
@@ -297,7 +300,16 @@ def _build_schema(scene: Any, bpy_module: Any) -> Optional[dict[str, Any]]:
 
 def _schema_key(schema: dict[str, Any]) -> str:
     version_digits = re.sub(r"[^0-9]", "", str(schema.get("blender_version", "")))
-    canonical = json.dumps(schema, sort_keys=True, separators=(",", ":"))
+    # Reject non-standard NaN/Infinity tokens. The caller treats schema
+    # capture as optional and fails closed, keeping the farm-job JSON valid.
+    # For finite values this is byte-for-byte identical to the prior
+    # canonicalization and therefore preserves existing schema keys.
+    canonical = json.dumps(
+        schema,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
     return f"bl{version_digits}-{digest}"
 

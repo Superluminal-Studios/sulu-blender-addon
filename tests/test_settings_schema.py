@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 
 _tests_dir = Path(__file__).parent
@@ -281,6 +283,66 @@ class TestCollectSettingsSchema(unittest.TestCase):
         _, key_a = _settings_schema.collect_settings_schema(_make_scene(), _fake_bpy())
         _, key_b = _settings_schema.collect_settings_schema(_make_scene(), _fake_bpy())
         self.assertEqual(key_a, key_b)
+
+    def test_finite_schema_key_remains_canonicalization_compatible(self):
+        schema = {
+            "blender_version": "4.5.9 beta 2",
+            "ascii": 'quote" slash/ backslash\\ <>& \x7f',
+            "unicode": "Café 😀",
+            "large_float": 1e15,
+            "numbers": [9007199254740993, 1e-7, -0.0],
+            "nested": {"z": None, "a": True},
+        }
+        self.assertEqual(
+            _settings_schema._schema_key(schema),
+            "bl4592-b8fa1bac1e5fe5aa",
+        )
+
+    def test_non_finite_rna_metadata_is_filtered_from_schema_and_values(self):
+        scene = _make_scene()
+        scene.render.bl_rna.properties.append(
+            _prop(
+                "unstable_factor",
+                "FLOAT",
+                default=float("nan"),
+                soft_min=float("-inf"),
+                soft_max=float("inf"),
+                hard_min=float("-inf"),
+                hard_max=float("inf"),
+                step=float("nan"),
+                precision=3,
+            )
+        )
+        scene.render.unstable_factor = float("nan")
+
+        schema, schema_key = _settings_schema.collect_settings_schema(scene, _fake_bpy())
+
+        self.assertIsNotNone(schema)
+        self.assertRegex(schema_key, r"^bl459-[0-9a-f]{16}$")
+        render_group = next(group for group in schema["groups"] if group["id"] == "render")
+        unstable = next(
+            prop for prop in render_group["properties"]
+            if prop["identifier"] == "unstable_factor"
+        )
+        for field in ("default", "soft_min", "soft_max", "hard_min", "hard_max", "step"):
+            self.assertIsNone(unstable[field])
+        # Strict encoding proves this optional schema cannot poison the farm
+        # job request body with Python's non-standard numeric tokens.
+        json.dumps(schema, allow_nan=False)
+        self.assertNotIn(
+            "render.unstable_factor",
+            _settings_schema.collect_settings_values(scene),
+        )
+
+    def test_non_finite_optional_layout_fails_schema_capture_closed(self):
+        parser = SimpleNamespace(
+            collect_layout=lambda _bpy: {"panels": [{"factor": float("inf")}]}
+        )
+        with mock.patch.object(_settings_schema, "_load_layout_parser", return_value=parser):
+            self.assertEqual(
+                _settings_schema.collect_settings_schema(_make_scene(), _fake_bpy()),
+                (None, None),
+            )
 
     def test_per_layer_paths_are_layer_relative(self):
         schema, _ = _settings_schema.collect_settings_schema(_make_scene(), _fake_bpy())

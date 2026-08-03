@@ -180,9 +180,28 @@ class TestStorageCredentialPrefetch(unittest.TestCase):
         worker_session.close.assert_called_once_with()
         self.assertTrue(ctx.phase_timings["storage_credentials"]["overlapped"])
 
+    def test_prefetch_wait_does_not_override_the_retry_policy_with_a_timeout(self):
+        payload = {"items": [{"bucket_name": "redacted"}]}
+        future = mock.Mock()
+        future.result.return_value = (payload, 123.0)
+        ctx = types.SimpleNamespace(
+            storage_future=future,
+            storage_thread=mock.MagicMock(),
+            phase_timings={},
+            report=None,
+        )
+
+        result = _submit_worker._project_storage_payload(ctx)
+
+        self.assertEqual(result, payload)
+        future.result.assert_called_once_with()
+        self.assertIsNone(ctx.storage_future)
+        self.assertIsNone(ctx.storage_thread)
+
     def test_prefetch_thread_is_daemon_and_cleanup_never_waits_for_it(self):
         started = threading.Event()
         release = threading.Event()
+        worker_session = mock.MagicMock()
 
         def blocked_fetch(*_args):
             started.set()
@@ -200,7 +219,7 @@ class TestStorageCredentialPrefetch(unittest.TestCase):
                 "project": {"id": "project-1"},
             },
             mods={
-                "requests_retry_session": mock.Mock(return_value=mock.MagicMock()),
+                "requests_retry_session": mock.Mock(return_value=worker_session),
                 "fetch_project_storage": blocked_fetch,
             },
         )
@@ -219,6 +238,7 @@ class TestStorageCredentialPrefetch(unittest.TestCase):
         release.set()
         thread.join(timeout=1)
         self.assertFalse(thread.is_alive())
+        worker_session.close.assert_called_once_with()
 
     def test_prefetch_session_construction_failure_is_delivered(self):
         failure = RuntimeError("session setup failed")
@@ -245,6 +265,73 @@ class TestStorageCredentialPrefetch(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "session setup failed"):
             _submit_worker._project_storage_payload(ctx)
+
+    def test_main_cleans_prefetch_on_success_error_and_cancel(self):
+        scenarios = (
+            ("success", None, None),
+            ("error", RuntimeError("packing failed"), RuntimeError),
+            ("cancel", SystemExit(1), SystemExit),
+        )
+
+        for name, trace_side_effect, expected_exception in scenarios:
+            with self.subTest(name=name):
+                session = mock.MagicMock()
+                logger = mock.MagicMock()
+                mods = {
+                    "clear_console": mock.Mock(),
+                    "create_logger": mock.Mock(return_value=logger),
+                    "requests_retry_session": mock.Mock(return_value=session),
+                }
+
+                def mark_prefetch_started(ctx):
+                    ctx.storage_future = Future()
+                    ctx.storage_thread = mock.MagicMock()
+
+                with (
+                    mock.patch.object(
+                        _submit_worker,
+                        "_load_handoff_from_argv",
+                        return_value={"project": {}},
+                    ),
+                    mock.patch.object(
+                        _submit_worker,
+                        "_bootstrap_addon_modules",
+                        return_value=mods,
+                    ),
+                    mock.patch.object(_submit_worker, "_preflight"),
+                    mock.patch.object(_submit_worker, "_ensure_farm_ready"),
+                    mock.patch.object(_submit_worker, "_start_update_discovery"),
+                    mock.patch.object(
+                        _submit_worker,
+                        "_start_storage_prefetch",
+                        side_effect=mark_prefetch_started,
+                    ),
+                    mock.patch.object(
+                        _submit_worker,
+                        "_trace_and_pack",
+                        side_effect=trace_side_effect,
+                    ),
+                    mock.patch.object(_submit_worker, "_upload"),
+                    mock.patch.object(_submit_worker, "_register_job"),
+                    mock.patch.object(_submit_worker, "_finish"),
+                    mock.patch.object(
+                        _submit_worker,
+                        "_cancel_storage_prefetch",
+                        wraps=_submit_worker._cancel_storage_prefetch,
+                    ) as cancel_prefetch,
+                    mock.patch.object(_submit_worker, "_cancel_update_discovery"),
+                ):
+                    if expected_exception is None:
+                        _submit_worker.main()
+                    else:
+                        with self.assertRaises(expected_exception):
+                            _submit_worker.main()
+
+                cancel_prefetch.assert_called_once()
+                cleaned_ctx = cancel_prefetch.call_args.args[0]
+                self.assertIsNone(cleaned_ctx.storage_future)
+                self.assertIsNone(cleaned_ctx.storage_thread)
+                session.close.assert_called_once_with()
 
 
 class TestBackgroundUpdateDiscovery(unittest.TestCase):
