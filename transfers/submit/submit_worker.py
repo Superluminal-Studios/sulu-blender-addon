@@ -884,6 +884,7 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
     headers = {"Authorization": data["user_token"]}
 
     # Ensure rclone is present (shows Rich download progress)
+    rclone_setup_started_at = time.perf_counter()
     try:
         rclone_bin = ensure_rclone(logger=logger)
     except Exception as e:
@@ -892,6 +893,9 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
             "Restart Blender. If this keeps happening, reinstall the add-on.\n"
             f"Details: {e}"
         )
+    rclone_setup_duration_ms = (
+        time.perf_counter() - rclone_setup_started_at
+    ) * 1000.0
 
     # Verify farm availability (nice error if org misconfigured)
     missing_project_fields = _missing_project_identity_fields(proj)
@@ -902,6 +906,17 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
             "Refresh projects in the add-on and try again."
         )
 
+    # Credential resolution is independent of the farm readiness request.
+    # Starting it here hides that round trip behind farm preflight instead of
+    # waiting until the preflight has completed.  Test/no-submit modes retain
+    # their no-network behavior.
+    test_mode: bool = bool(data.get("test_mode", False))
+    no_submit: bool = bool(data.get("no_submit", False))
+    ctx.test_mode = test_mode
+    ctx.no_submit = no_submit
+    _start_storage_prefetch(ctx)
+
+    farm_status_started_at = time.perf_counter()
     farm_status_started_wall = time.time()
     try:
         farm_status = session.get(
@@ -950,6 +965,9 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
             "Verify you're logged in and a project is selected. "
             "If this continues, log out and log back in."
         )
+    farm_status_duration_ms = (
+        time.perf_counter() - farm_status_started_at
+    ) * 1000.0
 
     # Local paths / settings
     blend_path: str = data["blend_path"]
@@ -958,10 +976,6 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
     automatic_project_path: bool = bool(data["automatic_project_path"])
     custom_project_path_str: str = data["custom_project_path"]
     job_id: str = data["job_id"]
-
-    # Test mode flags (optional in handoff)
-    test_mode: bool = bool(data.get("test_mode", False))
-    no_submit: bool = bool(data.get("no_submit", False))
 
     render_order = str(data.get("render_order", "LINEAR"))
     frame_step_val = _normalize_frame_step(data.get("frame_stepping_size", 1))
@@ -1059,6 +1073,17 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
     ctx.project_sqid = project_sqid
     ctx.project_name = project_name
     ctx.report = report
+    _record_phase_timing(
+        ctx,
+        "rclone_setup",
+        rclone_setup_duration_ms,
+    )
+    _record_phase_timing(
+        ctx,
+        "farm_status",
+        farm_status_duration_ms,
+        storage_prefetch_started=ctx.storage_future is not None,
+    )
 
 
 def _run_test_mode_report(
@@ -2446,8 +2471,9 @@ def main() -> None:
     try:
         _preflight(ctx)
         _ensure_farm_ready(ctx)
-        # Submission is a latency-sensitive path. Update discovery is intentionally
-        # non-blocking; it and credentials can overlap dependency packing.
+        # Submission is latency-sensitive. Update discovery is non-blocking;
+        # credential prefetch normally began during farm preflight, and this
+        # idempotent call preserves a safe fallback before dependency packing.
         _start_update_discovery(ctx)
         _start_storage_prefetch(ctx)
         _trace_and_pack(ctx)

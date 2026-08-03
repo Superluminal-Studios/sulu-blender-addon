@@ -296,7 +296,11 @@ class TestRequestUtilsJobs(unittest.TestCase):
         authorized_request.assert_called_once_with(
             "GET",
             f"{request_utils.POCKETBASE_URL}/api/jobs/org-id",
-            params={"limit": 37, "project_id": "project-id"},
+            params={
+                "limit": 37,
+                "view": "addon",
+                "project_id": "project-id",
+            },
             isolated_session=True,
         )
 

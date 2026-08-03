@@ -244,7 +244,10 @@ def _request_stored_jobs(
     project_id: str = "",
     limit: int = _STORED_JOBS_LIMIT,
 ) -> dict:
-    params = {"limit": max(1, int(limit))}
+    # The persisted job payload also feeds the web admin and can contain large
+    # scene manifests.  Blender only needs the compact list/download snapshot;
+    # older backends safely ignore this opt-in query parameter.
+    params = {"limit": max(1, int(limit)), "view": "addon"}
     if project_id := str(project_id or "").strip():
         params["project_id"] = project_id
 
