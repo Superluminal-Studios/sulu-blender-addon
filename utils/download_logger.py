@@ -8,6 +8,7 @@ Calm, confident, concise.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Callable, Optional
 
 from .worker_utils import format_size
@@ -365,7 +366,12 @@ class DownloadLogger(TranscriptLogger):
             return "c"
         return "o" if (raw or "").strip().lower() in {"o", "open"} else "c"
 
-    def logo_end(self, elapsed: Optional[float] = None, dest_dir: Optional[str] = None) -> str:
+    def logo_end(
+        self,
+        elapsed: Optional[float] = None,
+        dest_dir: Optional[str] = None,
+        mp4_path: Optional[str] = None,
+    ) -> str:
         """Show completion and prompt. Returns 'o' (open) or 'c' (close)."""
         self._stop_live()
         dest = dest_dir or self._dest_dir
@@ -382,7 +388,10 @@ class DownloadLogger(TranscriptLogger):
             if elapsed is not None:
                 panel_title.append(f"  {elapsed:.1f}s", style="sulu.muted")
 
-            headline = Text("Download complete", style="sulu.ok_b")
+            headline = Text(
+                "Download and MP4 complete" if mp4_path else "Download complete",
+                style="sulu.ok_b",
+            )
 
             # Action row
             actions = Text()
@@ -404,6 +413,10 @@ class DownloadLogger(TranscriptLogger):
             if dest:
                 dest_text = Text(dest, style="sulu.dim")
                 body.add_row(Align.center(dest_text))
+            if mp4_path:
+                body.add_row(
+                    Align.center(Text(Path(mp4_path).name, style="sulu.accent"))
+                )
             body.add_row(Text(""))
             body.add_row(Align.center(actions))
 
@@ -436,9 +449,13 @@ class DownloadLogger(TranscriptLogger):
             self._log_fn(f"Done  {elapsed:.1f}s")
         else:
             self._log_fn("Done")
-        self._log_fn("Download complete")
+        self._log_fn(
+            "Download and MP4 complete" if mp4_path else "Download complete"
+        )
         if dest:
             self._log_fn(f"  {dest}")
+        if mp4_path:
+            self._log_fn(f"  {Path(mp4_path).name}")
         self._log_fn("")
         self._log_fn("  [O] Open folder")
         self._log_fn("  [Enter] Close")

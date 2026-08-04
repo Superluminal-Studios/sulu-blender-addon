@@ -783,26 +783,203 @@ _AUTO_TERMINAL_STABLE_PASSES = 1
 _AUTO_TERMINAL_SETTLE_SECONDS = 30.0
 _AUTO_TERMINAL_QUIET_SECONDS = 10.0
 
+_VIDEO_IMAGE_EXTENSIONS = {
+    ".avif",
+    ".bmp",
+    ".cin",
+    ".dpx",
+    ".exr",
+    ".hdr",
+    ".jpeg",
+    ".jpg",
+    ".jp2",
+    ".png",
+    ".rgb",
+    ".tga",
+    ".tif",
+    ".tiff",
+    ".webp",
+}
+_VIDEO_FRAME_SUFFIX = re.compile(r"^(.*?)(\d+)$")
+
 
 def _run_selected_downloader(
     dest_dir: str,
     mode: str,
     status_url: Optional[str],
     status_token: Optional[str],
-) -> None:
+) -> str:
     """Dispatch without bypassing terminal object-visibility reconciliation."""
     if mode == "single":
         single_downloader(dest_dir)
+        return "available"
     elif not status_url or not status_token:
         logger.warning(
             "Can't track job progress. Downloading available frames only."
         )
         single_downloader(dest_dir)
+        return "available"
     else:
         # Always enter the settling loop in auto mode, including when the
         # first status snapshot is already terminal. Queue completion can
         # precede visibility of the final R2 objects.
-        auto_downloader(dest_dir, poll_seconds=_AUTO_POLL_SECONDS)
+        return auto_downloader(dest_dir, poll_seconds=_AUTO_POLL_SECONDS)
+
+
+def _select_video_sequence(dest_dir: str) -> List[Path]:
+    """Return the strongest frame-numbered image sequence in the job folder."""
+    groups: Dict[Tuple[str, str, str], Dict[int, Path]] = {}
+    root = Path(dest_dir)
+    if not root.is_dir():
+        return []
+
+    for path in root.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in _VIDEO_IMAGE_EXTENSIONS:
+            continue
+        match = _VIDEO_FRAME_SUFFIX.match(path.stem)
+        if not match:
+            continue
+        prefix, frame_text = match.groups()
+        key = (str(path.parent), prefix, path.suffix.lower())
+        groups.setdefault(key, {})[int(frame_text)] = path
+
+    if not groups:
+        return []
+
+    def score(
+        item: Tuple[Tuple[str, str, str], Dict[int, Path]],
+    ) -> Tuple[int, int, int, str]:
+        (parent, prefix, _suffix), frames = item
+        relative_parent = Path(parent).relative_to(root)
+        composite = int(
+            "composite" in {part.lower() for part in relative_parent.parts}
+            or "composite" in prefix.lower()
+        )
+        # Prefer more complete sequences, then conventional compositor output,
+        # then the least deeply nested deterministic path.
+        return (len(frames), composite, -len(relative_parent.parts), parent + prefix)
+
+    _key, selected = max(groups.items(), key=score)
+    return [selected[number] for number in sorted(selected)]
+
+
+def _terminate_video_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def _create_mp4(dest_dir: str) -> Optional[str]:
+    files = _select_video_sequence(dest_dir)
+    if len(files) < 2:
+        logger.warning(
+            "MP4 skipped: no frame-numbered image sequence with at least "
+            "two frames was found."
+        )
+        return None
+
+    blender_binary = str(data.get("blender_binary", "") or "").strip()
+    if not blender_binary or not Path(blender_binary).is_file():
+        logger.warning(
+            "Frames are downloaded, but MP4 creation needs the Blender "
+            "executable used to submit the job."
+        )
+        return None
+
+    fps = max(1, int(data.get("video_fps", 24) or 24))
+    fps_base = max(0.001, float(data.get("video_fps_base", 1.0) or 1.0))
+    safe_video_name = _safe_dir_name(job_name, f"job_{job_id}")
+    output_path = Path(dest_dir) / f"{safe_video_name}.mp4"
+    working_path = output_path.with_name(
+        f".{output_path.stem}.{os.getpid()}.creating.mp4"
+    )
+    manifest_path: Optional[Path] = None
+    process: Optional[subprocess.Popen] = None
+
+    logger.info(
+        f"Creating MP4 from {len(files)} frames at {fps / fps_base:g} fps"
+    )
+    try:
+        manifest = {
+            "files": [str(path) for path in files],
+            "output_path": str(working_path),
+            "fps": fps,
+            "fps_base": fps_base,
+        }
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix="superluminal_video_",
+            suffix=".json",
+            delete=False,
+        ) as manifest_file:
+            json.dump(manifest, manifest_file)
+            manifest_path = Path(manifest_file.name)
+        try:
+            os.chmod(manifest_path, 0o600)
+        except OSError:
+            pass
+
+        export_script = (
+            Path(data["addon_dir"]) / "utils" / "blender_video_export.py"
+        )
+        with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as process_log:
+            process = subprocess.Popen(
+                [
+                    blender_binary,
+                    "--background",
+                    "--factory-startup",
+                    "--python",
+                    str(export_script),
+                    "--",
+                    str(manifest_path),
+                ],
+                stdout=process_log,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            try:
+                while process.poll() is None:
+                    _wait_for_download_actions(0.1)
+            except BaseException:
+                _terminate_video_process(process)
+                raise
+
+            if process.returncode != 0:
+                process_log.seek(0)
+                lines = process_log.read().splitlines()
+                detail = next(
+                    (line.strip() for line in reversed(lines) if line.strip()),
+                    "",
+                )
+                suffix = f" ({detail})" if detail else ""
+                raise RuntimeError(
+                    f"Blender's video encoder exited with code {process.returncode}{suffix}"
+                )
+
+        if not working_path.is_file() or working_path.stat().st_size <= 0:
+            raise RuntimeError("Blender finished without writing an MP4")
+        os.replace(working_path, output_path)
+        logger.success(f"MP4 created: {output_path.name}")
+        return str(output_path)
+    finally:
+        if process is not None and process.poll() is None:
+            _terminate_video_process(process)
+        if manifest_path is not None:
+            try:
+                manifest_path.unlink()
+            except OSError:
+                pass
+        if working_path.exists():
+            try:
+                working_path.unlink()
+            except OSError:
+                pass
 
 
 def _next_poll_deadline(previous: float, interval: float, now: float) -> float:
@@ -826,7 +1003,7 @@ def auto_downloader(
     terminal_stable_passes: int = _AUTO_TERMINAL_STABLE_PASSES,
     terminal_settle_seconds: float = _AUTO_TERMINAL_SETTLE_SECONDS,
     terminal_quiet_seconds: float = _AUTO_TERMINAL_QUIET_SECONDS,
-) -> None:
+) -> str:
     """Poll for new frames, copying newly discovered output keys in batches."""
     _ensure_dir(dest_dir)
 
@@ -1007,7 +1184,9 @@ def auto_downloader(
                     logger.warning(
                         f"Job stopped with errors. {terminal_finished} frames saved."
                     )
-                break
+                if terminal_status == "finished" and not settled:
+                    return "incomplete"
+                return terminal_status
 
         now = time.monotonic()
         next_poll = _next_poll_deadline(next_poll, poll_interval, now)
@@ -1144,18 +1323,39 @@ def run_download(
 
     # Run selected mode
     try:
-        _run_selected_downloader(
+        outcome = _run_selected_downloader(
             dest_dir,
             download_type,
             sarfis_url,
             sarfis_token,
         )
 
+        mp4_path = None
+        if bool(data.get("create_mp4_after_download")):
+            if outcome == "finished":
+                try:
+                    mp4_path = _create_mp4(dest_dir)
+                except _DownloadCancelled:
+                    raise
+                except Exception as exc:
+                    logger.warning(
+                        "Frames downloaded, but MP4 creation failed. "
+                        f"You can retry the download later. Details: {exc}"
+                    )
+            else:
+                logger.warning(
+                    "MP4 will be created only after the complete job downloads successfully."
+                )
+
         elapsed = time.perf_counter() - t_start
 
         # Show success screen
         actions.stop()
-        choice = logger.logo_end(elapsed=elapsed, dest_dir=dest_dir)
+        choice = logger.logo_end(
+            elapsed=elapsed,
+            dest_dir=dest_dir,
+            mp4_path=mp4_path,
+        )
         if choice == "o":
             open_folder(dest_dir)
         return dest_dir

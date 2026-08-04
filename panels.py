@@ -332,6 +332,13 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         download_path = download_col.row(align=True)
         download_path.active = props.download_after_submit
         download_path.prop(props, "download_path", text="Save to")
+        create_video = download_col.row(align=True)
+        create_video.active = props.download_after_submit
+        create_video.prop(
+            props,
+            "create_mp4_after_download",
+            text="Create MP4 when finished",
+        )
 
         if using_video_format:
             r = layout.row()

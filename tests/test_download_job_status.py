@@ -261,11 +261,21 @@ class IntegratedDownloadRunnerTest(unittest.TestCase):
             "project": {"id": "project-1"},
             "sarfis_url": "https://farm.invalid/project-1",
             "sarfis_token": "redacted",
+            "create_mp4_after_download": True,
         }
 
         with (
             patch.object(self.worker, "_bootstrap_addon_modules", return_value=mods),
-            patch.object(self.worker, "_run_selected_downloader") as downloader,
+            patch.object(
+                self.worker,
+                "_run_selected_downloader",
+                return_value="finished",
+            ) as downloader,
+            patch.object(
+                self.worker,
+                "_create_mp4",
+                return_value="/tmp/renders/Nebula Passage.mp4",
+            ) as create_mp4,
         ):
             destination = self.worker.run_download(
                 handoff,
@@ -284,6 +294,11 @@ class IntegratedDownloadRunnerTest(unittest.TestCase):
             "auto",
             "https://farm.invalid/project-1",
             "redacted",
+        )
+        create_mp4.assert_called_once_with(destination)
+        self.assertEqual(
+            fake_logger.logo_end.call_args.kwargs["mp4_path"],
+            "/tmp/renders/Nebula Passage.mp4",
         )
 
 
@@ -930,6 +945,51 @@ class _FakeClock:
         self.now += seconds
 
 
+class VideoSequenceSelectionTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.worker = _load_worker_module()
+
+    def test_selects_largest_frame_numbered_sequence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            composite = root / "composite"
+            preview = root / "preview"
+            composite.mkdir()
+            preview.mkdir()
+            for name in (
+                "beauty_0001.png",
+                "beauty_0002.png",
+                "beauty_0003.png",
+            ):
+                (composite / name).touch()
+            for name in ("preview_0001.jpg", "preview_0002.jpg"):
+                (preview / name).touch()
+            (root / "reference.png").touch()
+
+            selected = self.worker._select_video_sequence(temp_dir)
+
+        self.assertEqual(
+            [path.name for path in selected],
+            ["beauty_0001.png", "beauty_0002.png", "beauty_0003.png"],
+        )
+
+    def test_composite_sequence_wins_an_equal_length_tie(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            composite = root / "composite"
+            alternate = root / "alternate"
+            composite.mkdir()
+            alternate.mkdir()
+            for directory in (alternate, composite):
+                (directory / "0001.png").touch()
+                (directory / "0002.png").touch()
+
+            selected = self.worker._select_video_sequence(temp_dir)
+
+        self.assertEqual(selected[0].parent.name, "composite")
+
+
 class AutoDownloaderTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -960,9 +1020,13 @@ class AutoDownloaderTest(unittest.TestCase):
         with (
             patch.object(self.worker, "_fetch_job_details") as fetch_details,
             patch.object(self.worker, "single_downloader") as single,
-            patch.object(self.worker, "auto_downloader") as automatic,
+            patch.object(
+                self.worker,
+                "auto_downloader",
+                return_value="finished",
+            ) as automatic,
         ):
-            self.worker._run_selected_downloader(
+            outcome = self.worker._run_selected_downloader(
                 "/tmp/download",
                 "auto",
                 "https://farm.example",
@@ -975,6 +1039,7 @@ class AutoDownloaderTest(unittest.TestCase):
             "/tmp/download",
             poll_seconds=self.worker._AUTO_POLL_SECONDS,
         )
+        self.assertEqual(outcome, "finished")
 
     def test_polling_uses_deadlines_instead_of_sleeping_after_work(self):
         clock = _FakeClock()
@@ -1367,7 +1432,7 @@ class AutoDownloaderTest(unittest.TestCase):
                 return_value=([], []),
             ) as list_files,
         ):
-            self.worker.auto_downloader(
+            outcome = self.worker.auto_downloader(
                 dest_dir,
                 poll_seconds=5,
                 terminal_stable_passes=2,
@@ -1381,6 +1446,7 @@ class AutoDownloaderTest(unittest.TestCase):
             any("did not stabilize within 12s" in message for message in warning_messages)
         )
         self.worker.logger.success.assert_not_called()
+        self.assertEqual(outcome, "incomplete")
 
     def test_finished_paused_and_error_terminal_messages(self):
         expected = {
@@ -1409,13 +1475,14 @@ class AutoDownloaderTest(unittest.TestCase):
                         return_value=([], []),
                     ),
                 ):
-                    self.worker.auto_downloader(
+                    outcome = self.worker.auto_downloader(
                         dest_dir,
                         poll_seconds=5,
                         terminal_stable_passes=1,
                     )
 
                 getattr(self.worker.logger, method).assert_called_with(message)
+                self.assertEqual(outcome, status)
 
 
 if __name__ == "__main__":
