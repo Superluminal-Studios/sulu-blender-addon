@@ -206,6 +206,8 @@ class IntegratedDownloadRunnerTest(unittest.TestCase):
             "_build_base",
             "requests_retry_session",
             "CLOUDFLARE_R2_DOMAIN",
+            "TerminalKeyReader",
+            "_download_actions",
         )
         previous_globals = {
             name: getattr(self.worker, name, None) for name in global_names
@@ -239,6 +241,12 @@ class IntegratedDownloadRunnerTest(unittest.TestCase):
             "requests_retry_session": MagicMock(return_value=worker_session),
             "CLOUDFLARE_R2_DOMAIN": "example.r2.cloudflarestorage.com",
             "DownloadLogger": MagicMock(return_value=fake_logger),
+            "TerminalKeyReader": MagicMock(
+                return_value=MagicMock(
+                    start=MagicMock(return_value=False),
+                    stop=MagicMock(),
+                )
+            ),
             "clear_console": clear_console,
             "run_preflight_checks": MagicMock(return_value=(True, [])),
         }
@@ -276,6 +284,94 @@ class IntegratedDownloadRunnerTest(unittest.TestCase):
             "auto",
             "https://farm.invalid/project-1",
             "redacted",
+        )
+
+
+class DownloadActionControllerTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.worker = _load_worker_module()
+
+    class _Reader:
+        def __init__(self, keys):
+            self.keys = list(keys)
+            self.stopped = False
+
+        def start(self):
+            return True
+
+        def drain(self):
+            keys, self.keys = self.keys, []
+            return keys
+
+        def stop(self):
+            self.stopped = True
+
+    def setUp(self):
+        self.original_logger = getattr(self.worker, "logger", None)
+        self.original_open_folder = getattr(self.worker, "open_folder", None)
+        self.worker.logger = MagicMock()
+        self.worker.open_folder = MagicMock()
+        self.addCleanup(setattr, self.worker, "logger", self.original_logger)
+        self.addCleanup(
+            setattr,
+            self.worker,
+            "open_folder",
+            self.original_open_folder,
+        )
+
+    def test_shortcuts_open_job_reports_folder_and_help(self):
+        reader = self._Reader(["j", "r", "o", "?"])
+        controller = self.worker._DownloadActionController(
+            reader,
+            dest_dir="/tmp/renders/Nebula Passage",
+            job_url="https://superlumin.al/jobs/123",
+            report_path="/tmp/reports",
+        )
+
+        with patch.object(self.worker.webbrowser, "open") as open_web:
+            self.assertTrue(controller.start())
+            controller.poll()
+
+        open_web.assert_called_once_with("https://superlumin.al/jobs/123")
+        self.worker.open_folder.assert_any_call(
+            "/tmp/reports",
+            logger_instance=self.worker.logger,
+        )
+        self.worker.open_folder.assert_any_call(
+            "/tmp/renders/Nebula Passage",
+            logger_instance=self.worker.logger,
+        )
+        self.worker.logger.download_actions.assert_called_once_with(
+            have_job=True,
+            have_report=True,
+        )
+
+    def test_cancel_shortcut_raises_resumable_cancellation(self):
+        controller = self.worker._DownloadActionController(
+            self._Reader(["c"]),
+            dest_dir="/tmp/renders",
+        )
+        controller.start()
+
+        with self.assertRaises(self.worker._DownloadCancelled):
+            controller.poll()
+
+        self.worker.logger.action_feedback.assert_called_once_with(
+            "Stopping download safely…"
+        )
+
+    def test_manual_download_derives_job_page_from_project(self):
+        url = self.worker._job_page_url(
+            {
+                "job_id": "job-123",
+                "project": {"sqid": "project-sqid"},
+            }
+        )
+
+        self.assertEqual(
+            url,
+            "https://superlumin.al/p/project-sqid/farm/jobs/job-123",
         )
 
 

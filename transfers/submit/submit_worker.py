@@ -2450,8 +2450,15 @@ def _finish(ctx: _SubmitContext) -> None:
         selection = "c"
 
     if continue_to_download:
+        download_handoff = dict(data)
+        download_handoff.update(
+            {
+                "job_url": job_url,
+                "report_path": str(report.get_reports_dir()),
+            }
+        )
         try:
-            _run_integrated_download(data, str(mods["pkg_name"]))
+            _run_integrated_download(download_handoff, str(mods["pkg_name"]))
         except SystemExit:
             raise
         except Exception as exc:

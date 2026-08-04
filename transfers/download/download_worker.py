@@ -19,6 +19,7 @@ import sys
 import tempfile
 import time
 import types
+import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 import traceback
@@ -70,6 +71,9 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
     # Import download logger
     download_logger_mod = importlib.import_module(f"{pkg_name}.utils.download_logger")
     DownloadLogger = download_logger_mod.DownloadLogger
+    terminal_actions_mod = importlib.import_module(
+        f"{pkg_name}.utils.terminal_actions"
+    )
 
     return {
         "pkg_name": pkg_name,
@@ -81,6 +85,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
         "open_folder": open_folder,
         "fetch_project_storage": fetch_project_storage,
         "DownloadLogger": DownloadLogger,
+        "TerminalKeyReader": terminal_actions_mod.TerminalKeyReader,
         "_build_base": worker_utils._build_base,
         "requests_retry_session": worker_utils.requests_retry_session,
         "CLOUDFLARE_R2_DOMAIN": worker_utils.CLOUDFLARE_R2_DOMAIN,
@@ -111,6 +116,107 @@ fetch_project_storage: Any = None
 _build_base: Any
 requests_retry_session: Any
 CLOUDFLARE_R2_DOMAIN: str
+TerminalKeyReader: Any
+
+
+class _DownloadCancelled(Exception):
+    """Raised after a user requests a graceful, resumable cancellation."""
+
+
+class _DownloadActionController:
+    def __init__(
+        self,
+        reader: Any,
+        *,
+        dest_dir: str,
+        job_url: str = "",
+        report_path: str = "",
+    ) -> None:
+        self.reader = reader
+        self.dest_dir = dest_dir
+        self.job_url = job_url
+        self.report_path = report_path
+        self.active = False
+
+    def start(self) -> bool:
+        self.active = bool(self.reader.start())
+        return self.active
+
+    def stop(self) -> None:
+        self.reader.stop()
+        self.active = False
+
+    def poll(self) -> None:
+        if not self.active:
+            return
+        for raw_key in self.reader.drain():
+            key = str(raw_key or "").lower()
+            if key in {"c", "q", "\x03"}:
+                logger.action_feedback("Stopping download safely…")
+                raise _DownloadCancelled()
+            if key == "j" and self.job_url:
+                try:
+                    opened = webbrowser.open(self.job_url)
+                except Exception:
+                    opened = False
+                if opened is False:
+                    logger.warning("Couldn't open the job page automatically.")
+                else:
+                    logger.action_feedback("Job page opened.")
+            elif key == "r" and self.report_path:
+                open_folder(self.report_path, logger_instance=logger)
+                logger.action_feedback("Diagnostic reports opened.")
+            elif key == "o":
+                _ensure_dir(self.dest_dir)
+                open_folder(self.dest_dir, logger_instance=logger)
+                logger.action_feedback("Download folder opened.")
+            elif key in {"h", "?"}:
+                logger.download_actions(
+                    have_job=bool(self.job_url),
+                    have_report=bool(self.report_path),
+                )
+
+    def wait(self, delay: float) -> None:
+        deadline = time.monotonic() + max(0.0, float(delay))
+        while True:
+            self.poll()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            time.sleep(min(0.1, remaining))
+
+
+_download_actions: Optional[_DownloadActionController] = None
+
+
+def _poll_download_actions() -> None:
+    if _download_actions is not None:
+        _download_actions.poll()
+
+
+def _wait_for_download_actions(delay: float) -> None:
+    if _download_actions is None:
+        time.sleep(delay)
+    else:
+        _download_actions.wait(delay)
+
+
+def _job_page_url(handoff: Dict[str, object]) -> str:
+    explicit = str(handoff.get("job_url", "") or "").strip()
+    if explicit.startswith(("https://", "http://")):
+        return explicit
+    project = handoff.get("project") or {}
+    project_sqid = (
+        str(project.get("sqid", "") or "").strip()
+        if isinstance(project, dict)
+        else ""
+    )
+    handoff_job_id = str(handoff.get("job_id", "") or "").strip()
+    if not project_sqid or not handoff_job_id:
+        return ""
+    return (
+        f"https://superlumin.al/p/{project_sqid}/farm/jobs/{handoff_job_id}"
+    )
 
 
 def _safe_dir_name(name: str, fallback: str) -> str:
@@ -430,6 +536,7 @@ def _run_output_copy(
             local,
             rclone_args,
             logger=logger,
+            action_callback=_poll_download_actions,
         )
         changed_count = len(new_files)
         if reconcile_existing and isinstance(rclone_result, dict):
@@ -707,6 +814,7 @@ def auto_downloader(
     logger.auto_mode_info()
 
     while True:
+        _poll_download_actions()
         quiet_wake_at: Optional[float] = None
         if terminal_status is None:
             job_status, finished, total = _fetch_job_details()
@@ -843,7 +951,7 @@ def auto_downloader(
             wake_at = min(wake_at, quiet_wake_at)
         delay = max(0.0, wake_at - now)
         if delay > 0:
-            time.sleep(delay)
+            _wait_for_download_actions(delay)
 
 
 def run_download(
@@ -865,6 +973,7 @@ def run_download(
     global run_rclone, ensure_rclone, NOT_FOUND_MARKERS, AUTH_MARKERS
     global open_folder, fetch_project_storage, _build_base
     global requests_retry_session, CLOUDFLARE_R2_DOMAIN
+    global TerminalKeyReader, _download_actions
 
     t_start = time.perf_counter()
     data = dict(handoff)
@@ -879,6 +988,7 @@ def run_download(
     requests_retry_session = mods["requests_retry_session"]
     CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
     DownloadLogger = mods["DownloadLogger"]
+    TerminalKeyReader = mods["TerminalKeyReader"]
     if clear_console:
         mods["clear_console"]()
 
@@ -952,6 +1062,19 @@ def run_download(
     # Make sure the target directory exists
     _ensure_dir(download_path)
 
+    actions = _DownloadActionController(
+        TerminalKeyReader(),
+        dest_dir=dest_dir,
+        job_url=_job_page_url(data),
+        report_path=str(data.get("report_path", "") or "").strip(),
+    )
+    _download_actions = actions
+    if actions.start():
+        logger.download_actions(
+            have_job=bool(actions.job_url),
+            have_report=bool(actions.report_path),
+        )
+
     # Run selected mode
     try:
         _run_selected_downloader(
@@ -964,12 +1087,20 @@ def run_download(
         elapsed = time.perf_counter() - t_start
 
         # Show success screen
+        actions.stop()
         choice = logger.logo_end(elapsed=elapsed, dest_dir=dest_dir)
         if choice == "o":
             open_folder(dest_dir)
         return dest_dir
 
+    except _DownloadCancelled:
+        actions.stop()
+        choice = logger.cancelled(dest_dir=dest_dir)
+        if choice == "o":
+            open_folder(dest_dir)
+        return dest_dir
     except KeyboardInterrupt:
+        actions.stop()
         logger.warn_block(
             "Download interrupted. Run again to resume.", severity="warning"
         )
@@ -980,7 +1111,11 @@ def run_download(
                 pass
         return dest_dir
     except Exception as exc:
+        actions.stop()
         logger.fatal(f"Download stopped: {exc}")
+    finally:
+        actions.stop()
+        _download_actions = None
 
     return dest_dir
 

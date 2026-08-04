@@ -462,7 +462,13 @@ class TestIntegratedDownloadHandoff(unittest.TestCase):
         self.assertTrue(
             ctx.logger.logo_end.call_args.kwargs["continue_to_download"]
         )
-        run_download.assert_called_once_with(ctx.data, _pkg_name)
+        download_handoff = run_download.call_args.args[0]
+        self.assertEqual(run_download.call_args.args[1], _pkg_name)
+        self.assertEqual(
+            download_handoff["job_url"],
+            "https://superlumin.al/p/project-sqid/farm/jobs/job-live-download",
+        )
+        self.assertEqual(download_handoff["report_path"], "/tmp/sulu-reports")
 
     def test_disabled_handoff_keeps_existing_completion_prompt(self):
         ctx = self._context(enabled=False)
@@ -602,8 +608,14 @@ class TestRcloneFinalizingProgress(unittest.TestCase):
         def __exit__(self, exc_type, exc, traceback):
             return False
 
-        def wait(self):
+        def wait(self, timeout=None):
             return self.exit_code
+
+        def terminate(self):
+            self.terminated = True
+
+        def kill(self):
+            self.killed = True
 
     def test_holds_at_99_9_until_process_exit_and_records_boundary(self):
         stats_line = json.dumps(
@@ -765,6 +777,34 @@ class TestRcloneFinalizingProgress(unittest.TestCase):
         self.assertNotIn((999, 1000, "finalizing"), logger.calls)
         self.assertIsNone(result["reported_bytes_complete_time"])
         self.assertIsNone(result["finalization_time"])
+
+    def test_action_callback_cancels_active_rclone_process(self):
+        process = self._Process(["working\n"])
+
+        class CancelDownload(Exception):
+            pass
+
+        with mock.patch.object(
+            _rclone_utils,
+            "_rclone_supports_flag",
+            return_value=False,
+        ), mock.patch.object(
+            _rclone_utils.subprocess,
+            "Popen",
+            return_value=process,
+        ):
+            with self.assertRaises(CancelDownload):
+                _rclone_utils.run_rclone(
+                    ["rclone"],
+                    "copy",
+                    ":s3:bucket/results/",
+                    "/tmp/results",
+                    action_callback=lambda: (_ for _ in ()).throw(
+                        CancelDownload()
+                    ),
+                )
+
+        self.assertTrue(process.terminated)
 
 
 class TestSubmitPhaseTimings(unittest.TestCase):
