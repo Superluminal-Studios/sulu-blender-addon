@@ -768,6 +768,7 @@ class SubmitLogger(TranscriptLogger):
         elapsed: Optional[float] = None,
         job_url: Optional[str] = None,
         report_path: Optional[str] = None,
+        continue_to_download: bool = False,
     ) -> str:
         """
         Success screen with logo and action options.
@@ -805,14 +806,24 @@ class SubmitLogger(TranscriptLogger):
             headline.justify = "center"
 
             subtitle = Text(
-                "Your job is queued. Rendering begins shortly.",
+                (
+                    "Downloading frames as they finish."
+                    if continue_to_download
+                    else "Your job is queued. Rendering begins shortly."
+                ),
                 style="sulu.muted",
             )
             subtitle.justify = "center"
 
-            action_block = self._success_action_block(
-                have_job=have_job, have_report=have_report
-            )
+            if continue_to_download:
+                action_block = Text()
+                action_block.justify = "center"
+                action_block.append(" NEXT ", style="bold #D8DEEC on #5250FF")
+                action_block.append(" Live download", style="sulu.fg")
+            else:
+                action_block = self._success_action_block(
+                    have_job=have_job, have_report=have_report
+                )
 
             body = Table.grid(padding=(0, 0))
             body.expand = True
@@ -834,6 +845,9 @@ class SubmitLogger(TranscriptLogger):
                 padding=(1, 2),
             )
             self.console.print(panel)
+
+            if continue_to_download:
+                return "c"
 
             if not self._can_prompt():
                 return "c"
@@ -866,6 +880,12 @@ class SubmitLogger(TranscriptLogger):
         # Plain text fallback
         self._log_fn("")
         self._log_fn("Submission complete")
+        if continue_to_download:
+            self._log_fn("Downloading frames as they finish.")
+            self._log_fn("")
+            self._log_fn("  [Next] Live download")
+            return "c"
+
         self._log_fn("Your job is queued. Rendering begins shortly.")
         self._log_fn("")
         if have_job:

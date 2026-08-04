@@ -287,6 +287,13 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "use_bserver": props.use_bserver,
             "use_async_upload": True,
             "farm_url": f"{FARM_IP}/farm/{org_id}/api/",
+            # Optional worker handoff: after registration, the same terminal
+            # switches to the resumable downloader and follows the live job.
+            "download_after_submit": bool(props.download_after_submit),
+            "download_path": bpy.path.abspath(props.download_path),
+            "download_type": "auto",
+            "sarfis_url": f"{FARM_IP.rstrip('/')}/farm/{org_id}",
+            "sarfis_token": user_key,
         }
 
         worker = Path(__file__).with_name("submit_worker.py")

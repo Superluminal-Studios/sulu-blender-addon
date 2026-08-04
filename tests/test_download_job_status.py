@@ -183,6 +183,102 @@ def _make_session(response: _FakeResponse):
 # Tests
 
 
+class IntegratedDownloadRunnerTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.worker = _load_worker_module()
+
+    def test_integrated_run_preserves_terminal_and_uses_auto_mode(self):
+        global_names = (
+            "data",
+            "session",
+            "job_id",
+            "job_name",
+            "download_path",
+            "download_type",
+            "sarfis_url",
+            "sarfis_token",
+            "logger",
+            "run_rclone",
+            "ensure_rclone",
+            "open_folder",
+            "fetch_project_storage",
+            "_build_base",
+            "requests_retry_session",
+            "CLOUDFLARE_R2_DOMAIN",
+        )
+        previous_globals = {
+            name: getattr(self.worker, name, None) for name in global_names
+        }
+        self.addCleanup(
+            lambda: [
+                setattr(self.worker, name, value)
+                for name, value in previous_globals.items()
+            ]
+        )
+
+        fake_logger = MagicMock()
+        fake_logger.logo_end.return_value = "c"
+        clear_console = MagicMock()
+        worker_session = MagicMock()
+        storage_record = {
+            "bucket_name": "render-test",
+            "access_key_id": "key",
+            "secret_access_key": "secret",
+        }
+        mods = {
+            "run_rclone": MagicMock(),
+            "ensure_rclone": MagicMock(return_value="/tmp/rclone"),
+            "NOT_FOUND_MARKERS": (),
+            "AUTH_MARKERS": (),
+            "open_folder": MagicMock(),
+            "fetch_project_storage": MagicMock(
+                return_value={"items": [storage_record]}
+            ),
+            "_build_base": MagicMock(return_value=["rclone"]),
+            "requests_retry_session": MagicMock(return_value=worker_session),
+            "CLOUDFLARE_R2_DOMAIN": "example.r2.cloudflarestorage.com",
+            "DownloadLogger": MagicMock(return_value=fake_logger),
+            "clear_console": clear_console,
+            "run_preflight_checks": MagicMock(return_value=(True, [])),
+        }
+        handoff = {
+            "addon_dir": str(REPO_ROOT),
+            "job_id": "job-live-download",
+            "job_name": "Nebula Passage",
+            "download_path": tempfile.mkdtemp(prefix="sulu_integrated_dl_"),
+            "download_type": "auto",
+            "pocketbase_url": "https://api.invalid",
+            "user_token": "redacted",
+            "project": {"id": "project-1"},
+            "sarfis_url": "https://farm.invalid/project-1",
+            "sarfis_token": "redacted",
+        }
+
+        with (
+            patch.object(self.worker, "_bootstrap_addon_modules", return_value=mods),
+            patch.object(self.worker, "_run_selected_downloader") as downloader,
+        ):
+            destination = self.worker.run_download(
+                handoff,
+                clear_console=False,
+                integrated=True,
+            )
+
+        clear_console.assert_not_called()
+        fake_logger.logo_start.assert_called_once_with(
+            job_name="Nebula Passage",
+            dest_dir=destination,
+            show_logo=False,
+        )
+        downloader.assert_called_once_with(
+            destination,
+            "auto",
+            "https://farm.invalid/project-1",
+            "redacted",
+        )
+
+
 class FetchJobDetailsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

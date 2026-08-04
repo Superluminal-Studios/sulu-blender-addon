@@ -115,13 +115,20 @@ class DownloadLogger(TranscriptLogger):
 
     # Logo
 
-    def logo_start(self, job_name: str = "", dest_dir: str = "") -> None:
+    def logo_start(
+        self,
+        job_name: str = "",
+        dest_dir: str = "",
+        *,
+        show_logo: bool = True,
+    ) -> None:
         """Show startup logo with job info panel."""
         self._dest_dir = dest_dir
         width = self._get_width()
 
         if self.console and Text is not None:
-            self._print_logo(gradient_bg=True)
+            if show_logo:
+                self._print_logo(gradient_bg=True)
 
             # Job info panel
             if job_name or dest_dir:
@@ -142,10 +149,11 @@ class DownloadLogger(TranscriptLogger):
                 panel = self._panel(body, title=title, padding=(0, 2))
                 self.console.print(panel)
         else:
-            logo_str = _get_logo_mark(width)
-            if logo_str:
-                self._log_fn(logo_str)
-            self._log_fn("")
+            if show_logo:
+                logo_str = _get_logo_mark(width)
+                if logo_str:
+                    self._log_fn(logo_str)
+                self._log_fn("")
             if job_name:
                 self._log_fn(f"Downloading: {job_name}")
             if dest_dir:

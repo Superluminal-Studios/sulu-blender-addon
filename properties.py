@@ -216,6 +216,14 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     # ------------------------------------------------------------
     #  Download / persistence options
     # ------------------------------------------------------------
+    download_after_submit: bpy.props.BoolProperty(
+        name="Download as Frames Finish",
+        default=False,
+        description=(
+            "Keep the submission window open and download completed frames "
+            "until the render job finishes"
+        ),
+    )
     download_path: bpy.props.StringProperty(
         name="Download Path",
         default="/tmp/",

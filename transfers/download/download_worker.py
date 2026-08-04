@@ -46,10 +46,13 @@ def _load_handoff_from_argv(argv: List[str]) -> Dict[str, object]:
 def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
     addon_dir = Path(data["addon_dir"]).resolve()
     pkg_name = addon_dir.name.replace("-", "_")
-    sys.path.insert(0, str(addon_dir.parent))
-    pkg = types.ModuleType(pkg_name)
-    pkg.__path__ = [str(addon_dir)]
-    sys.modules[pkg_name] = pkg
+    addon_parent = str(addon_dir.parent)
+    if addon_parent not in sys.path:
+        sys.path.insert(0, addon_parent)
+    if pkg_name not in sys.modules:
+        pkg = types.ModuleType(pkg_name)
+        pkg.__path__ = [str(addon_dir)]
+        sys.modules[pkg_name] = pkg
 
     # Import helpers
     rclone = importlib.import_module(f"{pkg_name}.transfers.rclone_utils")
@@ -843,7 +846,18 @@ def auto_downloader(
             time.sleep(delay)
 
 
-def main() -> None:
+def run_download(
+    handoff: Dict[str, object],
+    *,
+    clear_console: bool = True,
+    integrated: bool = False,
+) -> str:
+    """Run a download in this process and return its destination directory.
+
+    ``integrated`` is used by the submit worker: it preserves the submission
+    transcript and skips the second full-size logo while keeping the same
+    downloader, polling, resume, and completion behavior as manual downloads.
+    """
     global data, session, job_id, job_name, download_path
     global rclone_bin, s3info, bucket, base_cmd
     global download_type, sarfis_url, sarfis_token
@@ -853,25 +867,20 @@ def main() -> None:
     global requests_retry_session, CLOUDFLARE_R2_DOMAIN
 
     t_start = time.perf_counter()
-    try:
-        data = _load_handoff_from_argv(sys.argv)
-        mods = _bootstrap_addon_modules(data)
-        run_rclone = mods["run_rclone"]
-        ensure_rclone = mods["ensure_rclone"]
-        NOT_FOUND_MARKERS = mods["NOT_FOUND_MARKERS"]
-        AUTH_MARKERS = mods["AUTH_MARKERS"]
-        open_folder = mods["open_folder"]
-        fetch_project_storage = mods["fetch_project_storage"]
-        _build_base = mods["_build_base"]
-        requests_retry_session = mods["requests_retry_session"]
-        CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
-        DownloadLogger = mods["DownloadLogger"]
+    data = dict(handoff)
+    mods = _bootstrap_addon_modules(data)
+    run_rclone = mods["run_rclone"]
+    ensure_rclone = mods["ensure_rclone"]
+    NOT_FOUND_MARKERS = mods["NOT_FOUND_MARKERS"]
+    AUTH_MARKERS = mods["AUTH_MARKERS"]
+    open_folder = mods["open_folder"]
+    fetch_project_storage = mods["fetch_project_storage"]
+    _build_base = mods["_build_base"]
+    requests_retry_session = mods["requests_retry_session"]
+    CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
+    DownloadLogger = mods["DownloadLogger"]
+    if clear_console:
         mods["clear_console"]()
-    except Exception as exc:
-        print(f"Couldn't start downloader: {exc}")
-        traceback.print_exc()
-        input("\nPress Enter to close.")
-        sys.exit(1)
 
     # Create logger
     logger = DownloadLogger()
@@ -886,7 +895,11 @@ def main() -> None:
     dest_dir = os.path.abspath(os.path.join(download_path, safe_job_dir))
 
     # Show startup logo
-    logger.logo_start(job_name=job_name, dest_dir=dest_dir)
+    logger.logo_start(
+        job_name=job_name,
+        dest_dir=dest_dir,
+        show_logo=not integrated,
+    )
 
     # Early preflight checks
     run_preflight_checks = mods["run_preflight_checks"]
@@ -954,17 +967,27 @@ def main() -> None:
         choice = logger.logo_end(elapsed=elapsed, dest_dir=dest_dir)
         if choice == "o":
             open_folder(dest_dir)
+        return dest_dir
 
     except KeyboardInterrupt:
         logger.warn_block(
             "Download interrupted. Run again to resume.", severity="warning"
         )
-        try:
-            input("\nPress Enter to close.")
-        except Exception:
-            pass
+        if not integrated:
+            try:
+                input("\nPress Enter to close.")
+            except Exception:
+                pass
+        return dest_dir
     except Exception as exc:
         logger.fatal(f"Download stopped: {exc}")
+
+    return dest_dir
+
+
+def main() -> None:
+    data = _load_handoff_from_argv(sys.argv)
+    run_download(data)
 
 
 if __name__ == "__main__":

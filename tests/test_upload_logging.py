@@ -63,6 +63,7 @@ def _synthesize_addon_package() -> str:
 _pkg_name = _synthesize_addon_package()
 _diagnostic_report = importlib.import_module(f"{_pkg_name}.utils.diagnostic_report")
 _logger_utils = importlib.import_module(f"{_pkg_name}.utils.logger_utils")
+_submit_logger = importlib.import_module(f"{_pkg_name}.utils.submit_logger")
 _rclone_utils = importlib.import_module(f"{_pkg_name}.transfers.rclone_utils")
 _submit_worker = importlib.import_module(
     f"{_pkg_name}.transfers.submit.submit_worker"
@@ -416,6 +417,80 @@ class TestUploadResultVisibility(unittest.TestCase):
             )
 
         emit.assert_called_once_with(payload)
+
+
+class TestIntegratedDownloadHandoff(unittest.TestCase):
+    def _context(self, *, enabled: bool):
+        report = mock.MagicMock()
+        report.get_reports_dir.return_value = Path("/tmp/sulu-reports")
+        logger = mock.MagicMock()
+        logger.logo_end.return_value = "c"
+        return types.SimpleNamespace(
+            data={
+                "job_id": "job-live-download",
+                "job_name": "Nebula Passage",
+                "download_after_submit": enabled,
+                "download_path": "/tmp/renders",
+                "packed_addons": [],
+            },
+            mods={"pkg_name": _pkg_name, "open_folder": mock.Mock()},
+            logger=logger,
+            report=report,
+            t_start=0.0,
+            use_project=False,
+            project_sqid="project-sqid",
+            rel_manifest=[],
+            main_blend_s3="scene.zip",
+            blend_path="/tmp/scene.blend",
+        )
+
+    def test_enabled_handoff_continues_in_same_terminal(self):
+        ctx = self._context(enabled=True)
+
+        with (
+            mock.patch.object(
+                _submit_worker,
+                "_run_integrated_download",
+                return_value="/tmp/renders/Nebula Passage",
+            ) as run_download,
+            self.assertRaises(SystemExit) as raised,
+        ):
+            _submit_worker._finish(ctx)
+
+        self.assertEqual(raised.exception.code, 0)
+        ctx.logger.logo_end.assert_called_once()
+        self.assertTrue(
+            ctx.logger.logo_end.call_args.kwargs["continue_to_download"]
+        )
+        run_download.assert_called_once_with(ctx.data, _pkg_name)
+
+    def test_disabled_handoff_keeps_existing_completion_prompt(self):
+        ctx = self._context(enabled=False)
+
+        with (
+            mock.patch.object(_submit_worker, "_run_integrated_download") as run_download,
+            self.assertRaises(SystemExit) as raised,
+        ):
+            _submit_worker._finish(ctx)
+
+        self.assertEqual(raised.exception.code, 0)
+        self.assertFalse(
+            ctx.logger.logo_end.call_args.kwargs["continue_to_download"]
+        )
+        run_download.assert_not_called()
+
+    def test_transition_screen_never_waits_for_input(self):
+        messages = []
+        input_fn = mock.Mock(return_value="j")
+        logger = _submit_logger.SubmitLogger(log_fn=messages.append, input_fn=input_fn)
+        logger.console = None
+
+        choice = logger.logo_end(continue_to_download=True)
+
+        self.assertEqual(choice, "c")
+        input_fn.assert_not_called()
+        self.assertIn("Downloading frames as they finish.", messages)
+        self.assertIn("  [Next] Live download", messages)
 
 
 class TestSubmitHandoffCleanup(unittest.TestCase):

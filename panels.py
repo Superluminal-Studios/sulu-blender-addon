@@ -323,6 +323,16 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         )
         op_anim.mode = "ANIMATION"
 
+        download_col = layout.column(align=True)
+        download_col.prop(
+            props,
+            "download_after_submit",
+            text="Download as frames finish",
+        )
+        download_path = download_col.row(align=True)
+        download_path.active = props.download_after_submit
+        download_path.prop(props, "download_path", text="Save to")
+
         if using_video_format:
             r = layout.row()
             r.alert = True  # make warning red

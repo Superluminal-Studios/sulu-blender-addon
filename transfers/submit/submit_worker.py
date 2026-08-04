@@ -2392,6 +2392,18 @@ def _register_job(ctx: _SubmitContext) -> None:
         )
 
 
+def _run_integrated_download(data: Dict[str, object], pkg_name: str) -> str:
+    """Hand a successful submission to the downloader in this terminal."""
+    download_worker = importlib.import_module(
+        f"{pkg_name}.transfers.download.download_worker"
+    )
+    return download_worker.run_download(
+        data,
+        clear_console=False,
+        integrated=True,
+    )
+
+
 def _finish(ctx: _SubmitContext) -> None:
     data = ctx.data
     mods = ctx.mods
@@ -2424,6 +2436,7 @@ def _finish(ctx: _SubmitContext) -> None:
     )
     _emit_upload_success_payload_if_requested(data, upload_result)
 
+    continue_to_download = bool(data.get("download_after_submit"))
     selection = "c"
     try:
         selection = logger.logo_end(
@@ -2431,9 +2444,25 @@ def _finish(ctx: _SubmitContext) -> None:
             elapsed=elapsed,
             job_url=job_url,
             report_path=str(report.get_reports_dir()),
+            continue_to_download=continue_to_download,
         )
     except Exception:
         selection = "c"
+
+    if continue_to_download:
+        try:
+            _run_integrated_download(data, str(mods["pkg_name"]))
+        except SystemExit:
+            raise
+        except Exception as exc:
+            logger.warn_block(
+                "The job was submitted, but automatic downloading could not "
+                f"start. You can resume it from Manage & Download.\nDetails: {exc}",
+                severity="error",
+            )
+            _safe_input("\nPress Enter to close.", "")
+            sys.exit(1)
+        sys.exit(0)
 
     # Act on the integrated success prompt.
     if selection == "j":
