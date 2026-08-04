@@ -431,6 +431,53 @@ class FetchJobDetailsTest(unittest.TestCase):
         self.assertEqual(result, ("unknown", 0, 0))
         self.assertEqual(self.fake_logger.warnings, [])
 
+    def test_missing_live_job_falls_back_to_persisted_finished_job(self):
+        self.worker.data.update(
+            {
+                "pocketbase_url": "https://api.example.test",
+                "user_token": "user-token",
+                "project": {"organization_id": "org-1"},
+            }
+        )
+        missing_live = _FakeResponse(
+            body_obj={
+                "status": "success",
+                "body": {
+                    "status": "unknown",
+                    "tasks": {"finished": 0},
+                    "total_tasks": 0,
+                    "missing": True,
+                },
+            }
+        )
+        persisted = _FakeResponse(
+            body_obj={
+                "status": "success",
+                "body": {
+                    "job_data": {
+                        "status": "finished",
+                        "tasks": {"finished": 30},
+                        "total_tasks": 30,
+                    }
+                },
+            }
+        )
+        self.worker.session = MagicMock()
+        self.worker.session.get.side_effect = [missing_live, persisted]
+
+        result = self.worker._fetch_job_details()
+
+        self.assertEqual(result, ("finished", 30, 30))
+        stored_call = self.worker.session.get.call_args_list[1]
+        self.assertEqual(
+            stored_call.args[0],
+            "https://api.example.test/api/jobs/org-1/test-job-id",
+        )
+        self.assertEqual(
+            stored_call.kwargs["headers"],
+            {"Authorization": "user-token"},
+        )
+
     def test_missing_job_placeholder_repeated_polls_no_log_spam(self):
         """Auto-download polls every 5 s. The placeholder is the normal
         case during the sync-pending window, so 60 polls in a row must
@@ -974,6 +1021,51 @@ class AutoDownloaderTest(unittest.TestCase):
         self.assertEqual(self.worker._AUTO_BATCH_FRAMES, 1)
         self.assertLessEqual(self.worker._AUTO_BATCH_SECONDS, 5.0)
         self.assertEqual(self.worker._AUTO_POLL_SECONDS, 1)
+
+    def test_unknown_queue_status_probes_storage_immediately(self):
+        clock = _FakeClock()
+        statuses = iter(
+            [
+                ("unknown", 0, 0),
+                ("finished", 1, 1),
+            ]
+        )
+        copy_calls = []
+
+        def copy_visible_frame(dest_dir, state, label, **_kwargs):
+            copy_calls.append(label)
+            state.listing_passes += 1
+            state.downloaded_files.add("composite/0001.png")
+            state.visible_frame_numbers = {1}
+            state.last_copy_count = 1 if len(copy_calls) == 1 else 0
+            return True
+
+        monotonic_patch, sleep_patch = self._clock_patches(clock)
+        with (
+            tempfile.TemporaryDirectory() as dest_dir,
+            monotonic_patch,
+            sleep_patch,
+            patch.object(
+                self.worker,
+                "_fetch_job_details",
+                side_effect=lambda: next(statuses),
+            ),
+            patch.object(
+                self.worker,
+                "_rclone_copy_output",
+                side_effect=copy_visible_frame,
+            ),
+        ):
+            self.worker.auto_downloader(
+                dest_dir,
+                poll_seconds=1,
+                terminal_stable_passes=1,
+            )
+
+        self.assertEqual(copy_calls[0], "Checking for rendered frames")
+        self.assertGreaterEqual(len(copy_calls), 3)
+        self.worker.logger.transfer_complete.assert_called_with("Downloaded")
+        self.worker.logger.success.assert_called_once_with("1 frames downloaded")
 
     def test_batches_only_new_keys_and_settles_after_late_terminal_visibility(self):
         clock = _FakeClock()

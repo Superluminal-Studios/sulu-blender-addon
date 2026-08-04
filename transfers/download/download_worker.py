@@ -566,6 +566,10 @@ def _int_value(value: object, default: int = 0) -> int:
 
 def _handoff_job_details() -> Tuple[str, int, int]:
     job = data.get("job") or data.get("job_data") or {}
+    return _job_snapshot_details(job)
+
+
+def _job_snapshot_details(job: object) -> Tuple[str, int, int]:
     if not isinstance(job, dict):
         return ("unknown", 0, 0)
 
@@ -590,6 +594,46 @@ def _handoff_job_details() -> Tuple[str, int, int]:
 _JOB_DETAILS_WARNED: set = set()
 
 
+def _fetch_stored_job_details() -> Tuple[str, int, int]:
+    """Read the persisted job when the queue's in-memory record is gone."""
+    unavailable = ("unknown", 0, 0)
+    project = data.get("project") or {}
+    org_id = (
+        str(project.get("organization_id", "") or "").strip()
+        if isinstance(project, dict)
+        else ""
+    )
+    api_url = str(data.get("pocketbase_url", "") or "").rstrip("/")
+    user_token = str(data.get("user_token", "") or "").strip()
+    if not org_id or not api_url or not user_token or not job_id:
+        return unavailable
+
+    try:
+        response = session.get(
+            f"{api_url}/api/jobs/{org_id}/{job_id}",
+            headers={"Authorization": user_token},
+            timeout=20,
+        )
+    except Exception:
+        return unavailable
+    if response.status_code != 200:
+        return unavailable
+    try:
+        payload = response.json()
+    except (TypeError, ValueError):
+        return unavailable
+    body = payload.get("body") if isinstance(payload, dict) else None
+    stored_job = body.get("job_data") if isinstance(body, dict) else None
+    return _job_snapshot_details(stored_job)
+
+
+def _stored_or_handoff_job_details() -> Tuple[str, int, int]:
+    stored = _fetch_stored_job_details()
+    if stored != ("unknown", 0, 0):
+        return stored
+    return _handoff_job_details()
+
+
 def _fetch_job_details() -> Tuple[str, int, int]:
     """
     Returns (status, finished, total) with safe defaults.
@@ -600,7 +644,7 @@ def _fetch_job_details() -> Tuple[str, int, int]:
     and aged out, or were deleted). Sanic wraps that as
     `{"status": "success", "body": null}`, while the gateway can return a
     bare JSON `null`. Both forms are valid protocol responses and fall back to
-    the handoff snapshot without repeating warnings on every poll.
+    the persisted job, then the handoff snapshot, without warning spam.
     """
     if not sarfis_url or not sarfis_token:
         return _handoff_job_details()
@@ -637,19 +681,21 @@ def _fetch_job_details() -> Tuple[str, int, int]:
     # `null` (jobs not in Database.jobs) — silent fallback, this is the
     # expected case for freshly-submitted jobs and aged-out terminal jobs.
     if not isinstance(parsed, dict):
-        return _handoff_job_details()
+        return _stored_or_handoff_job_details()
 
     body = parsed.get("body")
     # Same dict-or-fallback pattern: `body` is None when the wrapped
     # response is `{"status": "success", "body": null}`.
     if not isinstance(body, dict) or not body:
-        return _handoff_job_details()
+        return _stored_or_handoff_job_details()
 
     status = str(body.get("status", "unknown") or "unknown").lower()
     tasks_raw = body.get("tasks") or {}
     tasks = tasks_raw if isinstance(tasks_raw, dict) else {}
     finished = _int_value(tasks.get("finished"), 0)
     total = _int_value(body.get("total_tasks", tasks.get("total")), 0)
+    if body.get("missing") or (status == "unknown" and total <= 0):
+        return _fetch_stored_job_details()
     # Clear the dedupe set so a transient failure doesn't permanently
     # suppress future warnings of the same kind.
     _JOB_DETAILS_WARNED.clear()
@@ -732,6 +778,7 @@ _AUTO_BATCH_FRAMES = 1
 _AUTO_BATCH_SECONDS = 5.0
 _AUTO_POLL_SECONDS = 1
 _AUTO_REFRESH_SECONDS = 60.0
+_AUTO_UNKNOWN_REFRESH_SECONDS = 5.0
 _AUTO_TERMINAL_STABLE_PASSES = 1
 _AUTO_TERMINAL_SETTLE_SECONDS = 30.0
 _AUTO_TERMINAL_QUIET_SECONDS = 10.0
@@ -801,6 +848,7 @@ def auto_downloader(
     now = time.monotonic()
     next_poll = now
     next_refresh = now + refresh_interval
+    next_unknown_refresh = now
     last_synced_finished = 0
     pending_since: Optional[float] = None
     shown_waiting = False
@@ -839,14 +887,29 @@ def auto_downloader(
         batch_due = new_count >= batch_size
         wait_due = pending_since is not None and (now - pending_since) >= batch_wait
         refresh_due = finished > 0 and now >= next_refresh
+        unknown_refresh_due = (
+            terminal_status is None
+            and job_status == "unknown"
+            and finished <= 0
+            and now >= next_unknown_refresh
+        )
         terminal_sync = terminal_status is not None
-        should_sync = first_sync or batch_due or wait_due or refresh_due or terminal_sync
+        should_sync = (
+            first_sync
+            or batch_due
+            or wait_due
+            or refresh_due
+            or unknown_refresh_due
+            or terminal_sync
+        )
 
         if should_sync:
             if copy_state.listing_passes == 0 and finished > 0:
                 progress_label = f"{finished} frames"
             elif new_count > 0:
                 progress_label = f"{new_count} new frames"
+            elif unknown_refresh_due:
+                progress_label = "Checking for rendered frames"
             else:
                 progress_label = "Checking final frame files"
 
@@ -858,6 +921,10 @@ def auto_downloader(
                 reconcile_existing=reconcile_existing,
             )
             sync_finished_at = time.monotonic()
+            if unknown_refresh_due:
+                next_unknown_refresh = (
+                    sync_finished_at + _AUTO_UNKNOWN_REFRESH_SECONDS
+                )
             if ok:
                 next_refresh = sync_finished_at + refresh_interval
                 # Count distinct Blender frame suffixes, not objects. A
