@@ -575,11 +575,11 @@ class SubmitLogger(TranscriptLogger):
 
     # ZIP callbacks (BAT)
 
-    def zip_start(self, total_files: int, total_bytes: int) -> None:
+    def zip_start(self, total_files: int, source_bytes: int) -> None:
         self._zip_entries: List[Dict[str, Any]] = []
         self._zip_progress_seen = False
         self._transfer_cur = 0
-        self._transfer_total = max(int(total_bytes), 0)
+        self._transfer_total = max(int(source_bytes), 0)
         self._progress_bar_width = self._compute_progress_bar_width()
         self._last_progress_time = 0.0
         self._stop_live_progress()
@@ -605,15 +605,15 @@ class SubmitLogger(TranscriptLogger):
         arcname: str,
         file_bytes_done: int,
         file_size: int,
-        total_bytes_done: int,
-        total_bytes: int,
+        source_bytes_done: int,
+        source_bytes: int,
         elapsed: float,
     ) -> None:
         """Render byte progress while the current archive member is written."""
         del file_bytes_done, file_size
         self._zip_progress_seen = True
-        self._transfer_cur = max(int(total_bytes_done), 0)
-        self._transfer_total = max(int(total_bytes), 0)
+        self._transfer_cur = max(int(source_bytes_done), 0)
+        self._transfer_total = max(int(source_bytes), 0)
         rate = self._transfer_cur / elapsed if elapsed > 0 else 0.0
         current_name = Path(arcname).name or str(arcname)
         status_text = f"[{index}/{total_files}] {current_name}"
@@ -688,8 +688,31 @@ class SubmitLogger(TranscriptLogger):
                     f"  {entry['arcname']:<42} {size_str:>10} {entry['method']:>16}"
                 )
 
+    @staticmethod
+    def _zip_size_change(source_bytes: int, archive_bytes: int) -> Tuple[str, str]:
+        """Describe the ZIP delta without treating container overhead as savings."""
+        source = max(int(source_bytes), 0)
+        archive = max(int(archive_bytes), 0)
+        delta = source - archive
+        percentage = abs(delta) / source * 100 if source > 0 else 0.0
+        if percentage == 0:
+            percentage_text = "0.0%"
+        elif percentage < 0.01:
+            percentage_text = "<0.01%"
+        else:
+            percentage_text = f"{percentage:.1f}%"
+        if delta >= 0:
+            return "Reduced by", f"{format_size(delta)} ({percentage_text})"
+        return "Archive overhead", f"{format_size(-delta)} ({percentage_text})"
+
     def zip_done(
-        self, zippath: str, total_files: int, total_bytes: int, elapsed: float
+        self,
+        zippath: str,
+        total_files: int,
+        *,
+        source_bytes: int,
+        archive_bytes: int,
+        elapsed: float,
     ) -> None:
         self._stop_live_progress()
         if getattr(self, "_zip_progress_seen", False) and not self.console:
@@ -697,15 +720,22 @@ class SubmitLogger(TranscriptLogger):
             sys.stderr.flush()
         # Render the zip table first
         self._render_zip_table()
+        change_label, change_value = self._zip_size_change(
+            source_bytes, archive_bytes
+        )
 
         if self.console and Text is not None:
             body = Text()
             body.append(f"{GLYPH_OK} ", style="sulu.ok_b")
             body.append(_count(total_files, "file"), style="sulu.fg")
             body.append("  ·  ", style="sulu.stroke_subtle")
-            body.append(f"{format_size(total_bytes)}", style="sulu.muted")
-            body.append("  ·  ", style="sulu.stroke_subtle")
             body.append(f"{elapsed:.1f}s", style="sulu.muted")
+            body.append("\nSource files (before ZIP)  ", style="sulu.dim")
+            body.append(format_size(source_bytes), style="sulu.fg")
+            body.append("\nZIP archive (after ZIP)    ", style="sulu.dim")
+            body.append(format_size(archive_bytes), style="sulu.fg")
+            body.append(f"\n{change_label}  ", style="sulu.dim")
+            body.append(change_value, style="sulu.muted")
 
             panel = self._panel(
                 body,
@@ -718,8 +748,15 @@ class SubmitLogger(TranscriptLogger):
         else:
             self._log_fn("")
             self._log_fn(
-                f"Archive ready: {_count(total_files, 'file')}, {format_size(total_bytes)}, {elapsed:.1f}s"
+                f"Archive ready: {_count(total_files, 'file')}, {elapsed:.1f}s"
             )
+            self._log_fn(
+                f"  Source files (before ZIP): {format_size(source_bytes)}"
+            )
+            self._log_fn(
+                f"  ZIP archive (after ZIP): {format_size(archive_bytes)}"
+            )
+            self._log_fn(f"  {change_label}: {change_value}")
 
     # Upload and transfer
 

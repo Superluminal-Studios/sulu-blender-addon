@@ -595,23 +595,63 @@ class TestZipProgressRendering(unittest.TestCase):
         stderr = io.StringIO()
 
         with mock.patch.object(sys, "stderr", stderr):
-            logger.zip_start(total_files=2, total_bytes=1000)
+            logger.zip_start(total_files=2, source_bytes=1000)
             logger.zip_progress(
                 index=1,
                 total_files=2,
                 arcname="scenes/scene.blend",
                 file_bytes_done=500,
                 file_size=800,
-                total_bytes_done=500,
-                total_bytes=1000,
+                source_bytes_done=500,
+                source_bytes=1000,
                 elapsed=2.0,
             )
-            logger.zip_done("archive.zip", 2, 1000, 2.0)
+            logger.zip_done(
+                "archive.zip",
+                2,
+                source_bytes=1000,
+                archive_bytes=600,
+                elapsed=2.0,
+            )
 
         output = stderr.getvalue()
         self.assertIn("50.0%", output)
         self.assertIn("[1/2] scene.blend", output)
         self.assertIn("250 B/s", output)
+
+    def test_zip_summary_keeps_source_and_archive_sizes_explicit(self):
+        messages = []
+        logger = _submit_logger.SubmitLogger(log_fn=messages.append)
+        logger.console = None
+
+        logger.zip_start(total_files=2, source_bytes=1500)
+        logger.zip_done(
+            "archive.zip",
+            2,
+            source_bytes=1500,
+            archive_bytes=1000,
+            elapsed=2.0,
+        )
+
+        self.assertIn("  Source files (before ZIP): 1.5 KB", messages)
+        self.assertIn("  ZIP archive (after ZIP): 1.0 KB", messages)
+        self.assertIn("  Reduced by: 500 B (33.3%)", messages)
+
+    def test_zip_summary_names_container_overhead_instead_of_negative_savings(self):
+        messages = []
+        logger = _submit_logger.SubmitLogger(log_fn=messages.append)
+        logger.console = None
+
+        logger.zip_start(total_files=1, source_bytes=1000)
+        logger.zip_done(
+            "archive.zip",
+            1,
+            source_bytes=1000,
+            archive_bytes=1100,
+            elapsed=1.0,
+        )
+
+        self.assertIn("  Archive overhead: 100 B (10.0%)", messages)
 
 
 class TestRcloneFinalizingProgress(unittest.TestCase):

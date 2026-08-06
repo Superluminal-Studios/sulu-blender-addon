@@ -122,12 +122,12 @@ _emit = _default_emit
 _zip_entry_cb = None  # type: ignore[assignment]
 
 # Optional callback when zip is complete.
-# Signature: (zippath, total_files, total_bytes, elapsed) -> None
+# Signature: (zippath, total_files, source_bytes, elapsed) -> None
 _zip_done_cb = None  # type: ignore[assignment]
 
 # Optional callback while a zip member is being written.
 # Signature: (index, total_files, arcname, file_bytes_done, file_size,
-#             total_bytes_done, total_bytes, elapsed_seconds) -> None
+#             source_bytes_done, source_bytes, elapsed_seconds) -> None
 _zip_progress_cb = None  # type: ignore[assignment]
 
 
@@ -285,11 +285,11 @@ class ZipTransferrer(transfer.FileTransferer):
         total_files = len(items)
 
         # Compute total bytes (best effort; missing files count as 0 here)
-        total_bytes = 0
+        source_bytes = 0
         for src, _, _ in items:
             try:
                 if src.is_file():
-                    total_bytes += src.stat().st_size
+                    source_bytes += src.stat().st_size
             except Exception:
                 pass
 
@@ -328,8 +328,8 @@ class ZipTransferrer(transfer.FileTransferer):
                 arcname,
                 bounded_done,
                 bounded_size,
-                min(bytes_done + bounded_done, total_bytes),
-                total_bytes,
+                min(bytes_done + bounded_done, source_bytes),
+                source_bytes,
                 max(0.0, now - t0),
             )
 
@@ -414,7 +414,10 @@ class ZipTransferrer(transfer.FileTransferer):
                 f"verbose={'on' if ZIP_VERBOSE else 'off'}"
             )
             if total_files:
-                _emit(f"Files queued: {total_files}  (size est.: {_human_bytes(total_bytes)})\n")
+                _emit(
+                    f"Files queued: {total_files}  "
+                    f"(source size: {_human_bytes(source_bytes)})\n"
+                )
 
         try:
             with zipfile.ZipFile(

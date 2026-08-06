@@ -1585,10 +1585,10 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
         _zip_started = False
         _zip_dep_size = 0
 
-        def _ensure_zip_started(total, total_bytes):
+        def _ensure_zip_started(total, source_bytes):
             nonlocal _zip_started
             if not _zip_started:
-                logger.zip_start(total, total_bytes)
+                logger.zip_start(total, source_bytes)
                 _zip_started = True
 
         def _on_zip_progress(
@@ -1597,19 +1597,19 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
             arcname,
             file_bytes_done,
             file_size,
-            total_bytes_done,
-            total_bytes,
+            source_bytes_done,
+            source_bytes,
             elapsed,
         ):
-            _ensure_zip_started(total, total_bytes)
+            _ensure_zip_started(total, source_bytes)
             logger.zip_progress(
                 idx,
                 total,
                 arcname,
                 file_bytes_done,
                 file_size,
-                total_bytes_done,
-                total_bytes,
+                source_bytes_done,
+                source_bytes,
                 elapsed,
             )
 
@@ -1621,8 +1621,15 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
             # Log to diagnostic report
             report.add_pack_entry(arcname, arcname, file_size=size, status="ok")
 
-        def _on_zip_done(zippath, total_files, total_bytes, elapsed):
-            logger.zip_done(zippath, total_files, total_bytes, elapsed)
+        def _on_zip_done(zippath, total_files, source_bytes, elapsed):
+            archive_bytes = Path(zippath).stat().st_size
+            logger.zip_done(
+                zippath,
+                total_files,
+                source_bytes=source_bytes,
+                archive_bytes=archive_bytes,
+                elapsed=elapsed,
+            )
 
         def _noop_emit(msg):
             pass
