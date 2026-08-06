@@ -9,6 +9,10 @@ bl_info = {
     "category": "Render",
 }
 
+# Increment when a corrected package must force Blender to reload an earlier
+# build carrying the same public version metadata.
+_PACKAGE_LAYOUT_VERSION = 2
+
 import atexit
 import sys
 

@@ -331,22 +331,33 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         )
         op_anim.mode = "ANIMATION"
 
-        download_col = layout.column(align=True)
-        download_col.prop(
-            props,
-            "download_after_submit",
-            text="Download as frames finish",
-        )
-        download_path = download_col.row(align=True)
-        download_path.active = props.download_after_submit
-        download_path.prop(props, "download_path", text="Save to")
-        create_video = download_col.row(align=True)
-        create_video.active = props.download_after_submit
-        create_video.prop(
+        if hasattr(props, "download_after_submit") and hasattr(
             props,
             "create_mp4_after_download",
-            text="Create MP4 when finished",
-        )
+        ):
+            download_col = layout.column(align=True)
+            download_col.prop(
+                props,
+                "download_after_submit",
+                text="Download as frames finish",
+            )
+            download_path = download_col.row(align=True)
+            download_path.active = props.download_after_submit
+            download_path.prop(props, "download_path", text="Save to")
+            create_video = download_col.row(align=True)
+            create_video.active = props.download_after_submit
+            create_video.prop(
+                props,
+                "create_mp4_after_download",
+                text="Create MP4 when finished",
+            )
+        else:
+            update_warning = layout.row()
+            update_warning.alert = True
+            update_warning.label(
+                text="Add-on update incomplete. Restart Blender after reinstalling.",
+                icon="ERROR",
+            )
 
         if using_video_format:
             r = layout.row()

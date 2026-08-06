@@ -37,3 +37,22 @@ def test_dependency_scan_requires_an_explicit_operator_execution():
     )
 
     assert "scan_dependencies_fast()" in ast.unparse(execute_node)
+
+
+def test_render_panel_tolerates_stale_scene_properties_during_upgrade():
+    tree = ast.parse(PANELS_SOURCE.read_text(encoding="utf-8"))
+    panel_node = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "SUPERLUMINAL_PT_RenderPanel"
+    )
+    draw_node = next(
+        node
+        for node in panel_node.body
+        if isinstance(node, ast.FunctionDef) and node.name == "draw"
+    )
+    draw_source = ast.unparse(draw_node)
+
+    assert "hasattr(props, 'download_after_submit')" in draw_source
+    assert "Add-on update incomplete" in draw_source
