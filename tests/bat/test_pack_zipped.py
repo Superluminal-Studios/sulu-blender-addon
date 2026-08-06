@@ -49,7 +49,7 @@ class ZippedPackTest(AbstractPackTest):
         self.assertEqual(actual, 1)
         self.assertEqual(
             zipped._zip_entry_label(zipfile.ZIP_DEFLATED, zipfile),
-            "Fast Compression",
+            "Deflate-1",
         )
 
     def test_uppercase_blend_uses_measured_zstd_profile(self):
@@ -88,12 +88,14 @@ class ZippedPackTest(AbstractPackTest):
         zippath = self.tpath / "progress.zip"
         progress = []
         completed = []
+        stats = []
 
         worker = zipped.ZipTransferrer(zippath)
         try:
             zipped.set_emit(
                 progress_cb=lambda *values: progress.append(values),
                 done_cb=lambda *values: completed.append(values),
+                stats_cb=lambda *values: stats.append(values),
             )
             with mock.patch.object(zipped, "zstd", None), mock.patch.object(
                 zipped, "ZIP_PRINT_INTERVAL", 0.0
@@ -113,8 +115,32 @@ class ZippedPackTest(AbstractPackTest):
         self.assertEqual(total_progress, sorted(total_progress))
         self.assertEqual(progress[-1][6], source_size)
         self.assertEqual(completed[0][2], source_size)
+        self.assertEqual(stats[0][3], source_size)
+        self.assertEqual(stats[0][4], source_size)
+        self.assertEqual(stats[0][5], "Stored · no Zstandard")
+        self.assertGreaterEqual(stats[0][6], 0.0)
         with zipfile.ZipFile(zippath) as archive:
             self.assertIsNone(archive.testzip())
+
+    def test_deflated_member_reports_source_and_archived_bytes(self):
+        source = self.tpath / "compressible.txt"
+        source.write_bytes(b"compress-me" * zipped.ZIP_IO_BUFSIZE)
+        zippath = self.tpath / "deflate-stats.zip"
+        stats = []
+
+        worker = zipped.ZipTransferrer(zippath)
+        try:
+            zipped.set_emit(stats_cb=lambda *values: stats.append(values))
+            worker.start()
+            worker.queue_copy(source, zippath / source.name)
+            worker.done_and_join()
+        finally:
+            zipped.set_emit()
+
+        self.assertEqual(stats[0][3], source.stat().st_size)
+        self.assertLess(stats[0][4], stats[0][3])
+        self.assertEqual(stats[0][5], "Deflate-1")
+        self.assertGreaterEqual(stats[0][6], 0.0)
 
     def test_zstd_stream_reports_source_byte_progress(self):
         if zipped.zstd is None:

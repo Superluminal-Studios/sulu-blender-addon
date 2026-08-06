@@ -127,20 +127,33 @@ _zip_done_cb = None  # type: ignore[assignment]
 
 # Optional callback while a zip member is being written.
 # Signature: (index, total_files, arcname, file_bytes_done, file_size,
-#             source_bytes_done, source_bytes, elapsed_seconds) -> None
+#             source_bytes_done, source_bytes, method, file_elapsed_seconds,
+#             total_elapsed_seconds) -> None
 _zip_progress_cb = None  # type: ignore[assignment]
 
+# Optional callback with final per-member source/archive byte counts and timing.
+# Signature: (index, total_files, arcname, source_bytes, archive_bytes,
+#             method, elapsed_seconds) -> None
+_zip_stats_cb = None  # type: ignore[assignment]
 
-def set_emit(fn=None, entry_cb=None, done_cb=None, progress_cb=None) -> None:
+
+def set_emit(
+    fn=None,
+    entry_cb=None,
+    done_cb=None,
+    progress_cb=None,
+    stats_cb=None,
+) -> None:
     """Replace the module-level emit function and/or register structured callbacks.
 
     Call with no arguments to reset to defaults.
     """
-    global _emit, _zip_entry_cb, _zip_done_cb, _zip_progress_cb
+    global _emit, _zip_entry_cb, _zip_done_cb, _zip_progress_cb, _zip_stats_cb
     _emit = fn or _default_emit
     _zip_entry_cb = entry_cb
     _zip_done_cb = done_cb
     _zip_progress_cb = progress_cb
+    _zip_stats_cb = stats_cb
 
 
 # -------------------------------------------------------------------
@@ -217,8 +230,8 @@ def _set_zipinfo_compress_level(info, level: int) -> None:
 
 def _zip_entry_label(compress_type: int, zipfile_mod) -> str:
     if compress_type == zipfile_mod.ZIP_STORED:
-        return COMPRESSION_LEVELS[0]
-    return COMPRESSION_LEVELS.get(ZIP_COMPRESSLEVEL, str(ZIP_COMPRESSLEVEL))
+        return "Stored"
+    return f"Deflate-{ZIP_COMPRESSLEVEL}"
 
 
 class ZipPacker(Packer):
@@ -310,6 +323,8 @@ class ZipTransferrer(transfer.FileTransferer):
             arcname: str,
             file_done: int,
             file_size: int,
+            method: str,
+            file_started: float,
             *,
             force: bool = False,
         ) -> None:
@@ -330,6 +345,8 @@ class ZipTransferrer(transfer.FileTransferer):
                 bounded_size,
                 min(bytes_done + bounded_done, source_bytes),
                 source_bytes,
+                method,
+                max(0.0, now - file_started),
                 max(0.0, now - t0),
             )
 
@@ -339,29 +356,67 @@ class ZipTransferrer(transfer.FileTransferer):
             idx: int,
             arcname: str,
             file_size: int,
+            method: str,
+            file_started: float,
         ) -> int:
             copied = 0
-            report_progress(idx, arcname, 0, file_size, force=True)
+            report_progress(
+                idx,
+                arcname,
+                0,
+                file_size,
+                method,
+                file_started,
+                force=True,
+            )
             while True:
                 chunk = source.read(ZIP_IO_BUFSIZE)
                 if not chunk:
                     break
                 target.write(chunk)
                 copied += len(chunk)
-                report_progress(idx, arcname, copied, file_size)
-            report_progress(idx, arcname, copied, file_size, force=True)
+                report_progress(
+                    idx, arcname, copied, file_size, method, file_started
+                )
+            report_progress(
+                idx,
+                arcname,
+                copied,
+                file_size,
+                method,
+                file_started,
+                force=True,
+            )
             return copied
 
         class ProgressReader:
             """File-like reader that reports source bytes consumed by zstd."""
 
-            def __init__(self, source, idx: int, arcname: str, file_size: int):
+            def __init__(
+                self,
+                source,
+                idx: int,
+                arcname: str,
+                file_size: int,
+                method: str,
+                file_started: float,
+            ):
                 self.source = source
                 self.idx = idx
                 self.arcname = arcname
                 self.file_size = file_size
+                self.method = method
+                self.file_started = file_started
                 self.bytes_read = 0
-                report_progress(idx, arcname, 0, file_size, force=True)
+                report_progress(
+                    idx,
+                    arcname,
+                    0,
+                    file_size,
+                    method,
+                    file_started,
+                    force=True,
+                )
 
             def read(self, size: int = -1):
                 data = self.source.read(size)
@@ -371,6 +426,8 @@ class ZipTransferrer(transfer.FileTransferer):
                     self.arcname,
                     self.bytes_read,
                     self.file_size,
+                    self.method,
+                    self.file_started,
                     force=not data,
                 )
                 return data
@@ -457,6 +514,8 @@ class ZipTransferrer(transfer.FileTransferer):
                         else:
                             _emit(f"[{idx}] Zipping {src} ({_human_bytes(size)}) [{comp_label}]")
 
+                    file_started = time.perf_counter()
+                    _entry_label = "Stored"
                     try:
                         # Handle directories (rare in your pack flow, but safe)
                         if src.is_dir():
@@ -508,8 +567,16 @@ class ZipTransferrer(transfer.FileTransferer):
                                         # If Zstandard isn't available in this Python environment,
                                         # preserve the file bytes (still Blender-openable for gzip/plain).
                                         if zstd is None:
-                                            copy_with_progress(fp, zf, idx, arcname, size)
-                                            _entry_label = "Store (no zstd)"
+                                            _entry_label = "Stored · no Zstandard"
+                                            copy_with_progress(
+                                                fp,
+                                                zf,
+                                                idx,
+                                                arcname,
+                                                size,
+                                                _entry_label,
+                                                file_started,
+                                            )
 
                                         # Detect .blend file format and handle appropriately.
                                         # Order matters: check compression magics first, then uncompressed header.
@@ -521,12 +588,28 @@ class ZipTransferrer(transfer.FileTransferer):
                                         #   - Unknown: don't modify (safety)
                                         elif head[:4] == _ZSTD_MAGIC:
                                             # Already Zstd compressed - store as-is
-                                            _entry_label = "Store (zstd)"
-                                            copy_with_progress(fp, zf, idx, arcname, size)
+                                            _entry_label = "Stored · Zstandard source"
+                                            copy_with_progress(
+                                                fp,
+                                                zf,
+                                                idx,
+                                                arcname,
+                                                size,
+                                                _entry_label,
+                                                file_started,
+                                            )
                                         elif head[:2] == _GZIP_MAGIC:
                                             # Already Gzip compressed - store as-is
-                                            _entry_label = "Store (gzip)"
-                                            copy_with_progress(fp, zf, idx, arcname, size)
+                                            _entry_label = "Stored · Gzip source"
+                                            copy_with_progress(
+                                                fp,
+                                                zf,
+                                                idx,
+                                                arcname,
+                                                size,
+                                                _entry_label,
+                                                file_started,
+                                            )
                                         elif head[:7] == _BLENDFILE_MAGIC:
                                             # Uncompressed .blend: level 9 with
                                             # multithreading was the measured
@@ -534,7 +617,7 @@ class ZipTransferrer(transfer.FileTransferer):
                                             # canonical Classroom and Junkshop
                                             # scenes. Fall back for older zstd
                                             # wheels without thread support.
-                                            _entry_label = f"Zstd-{BLEND_ZSTD_LEVEL}"
+                                            _entry_label = f"Zstandard-{BLEND_ZSTD_LEVEL}"
                                             try:
                                                 zstd_compressor = zstd.ZstdCompressor(
                                                     level=BLEND_ZSTD_LEVEL,
@@ -545,7 +628,12 @@ class ZipTransferrer(transfer.FileTransferer):
                                                     level=BLEND_ZSTD_LEVEL
                                                 )
                                             progress_reader = ProgressReader(
-                                                fp, idx, arcname, size
+                                                fp,
+                                                idx,
+                                                arcname,
+                                                size,
+                                                _entry_label,
+                                                file_started,
                                             )
                                             zstd_compressor.copy_stream(
                                                 cast(BinaryIO, progress_reader),
@@ -557,13 +645,23 @@ class ZipTransferrer(transfer.FileTransferer):
                                                 arcname,
                                                 progress_reader.bytes_read,
                                                 size,
+                                                _entry_label,
+                                                file_started,
                                                 force=True,
                                             )
                                         else:
                                             # Unknown format - store as-is to avoid corruption
                                             # This handles future compression formats or corrupted files
-                                            _entry_label = "Store (unknown)"
-                                            copy_with_progress(fp, zf, idx, arcname, size)
+                                            _entry_label = "Stored · unknown format"
+                                            copy_with_progress(
+                                                fp,
+                                                zf,
+                                                idx,
+                                                arcname,
+                                                size,
+                                                _entry_label,
+                                                file_started,
+                                            )
 
                                         if _zip_entry_cb:
                                             _zip_entry_cb(idx, total_files, arcname, size, _entry_label)
@@ -574,7 +672,15 @@ class ZipTransferrer(transfer.FileTransferer):
                                         _entry_label = _zip_entry_label(
                                             compress_type, zipfile
                                         )
-                                        copy_with_progress(fp, zf, idx, arcname, size)
+                                        copy_with_progress(
+                                            fp,
+                                            zf,
+                                            idx,
+                                            arcname,
+                                            size,
+                                            _entry_label,
+                                            file_started,
+                                        )
                                         if _zip_entry_cb:
                                             _zip_entry_cb(idx, total_files, arcname, size, _entry_label)
                                         else:
@@ -584,6 +690,24 @@ class ZipTransferrer(transfer.FileTransferer):
                                                 else ZIP_COMPRESSLEVEL
                                             )
                                             _emit(f"{str(idx).zfill(len(str(total_files)))}/{total_files}{COMPRESS_ICONS.get(_icon_level, '')} {_entry_label}: {shorten_path(arcname)}")
+
+                        file_elapsed = max(0.0, time.perf_counter() - file_started)
+                        try:
+                            archive_member_bytes = int(
+                                outzip.getinfo(arcname).compress_size
+                            )
+                        except (KeyError, AttributeError, TypeError, ValueError):
+                            archive_member_bytes = 0
+                        if _zip_stats_cb:
+                            _zip_stats_cb(
+                                idx,
+                                total_files,
+                                arcname,
+                                size,
+                                archive_member_bytes,
+                                _entry_label,
+                                file_elapsed,
+                            )
 
                         # Delete source if MOVE
                         if act == transfer.Action.MOVE:

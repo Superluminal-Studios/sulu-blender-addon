@@ -604,14 +604,18 @@ class TestZipProgressRendering(unittest.TestCase):
                 file_size=800,
                 source_bytes_done=500,
                 source_bytes=1000,
-                elapsed=2.0,
+                method="Stored · Gzip source",
+                file_elapsed=2.0,
+                total_elapsed=3.0,
             )
             logger.zip_done(
                 "archive.zip",
                 2,
                 source_bytes=1000,
                 archive_bytes=600,
-                elapsed=2.0,
+                preparation_elapsed=1.0,
+                archive_write_elapsed=2.0,
+                total_elapsed=3.0,
             )
 
         output = stderr.getvalue()
@@ -619,23 +623,93 @@ class TestZipProgressRendering(unittest.TestCase):
         self.assertIn("[1/2] scene.blend", output)
         self.assertIn("250 B/s", output)
 
+    def test_zip_progress_keeps_completed_and_current_file_rows(self):
+        logger = _submit_logger.SubmitLogger(log_fn=lambda _message: None)
+        logger.console = None
+
+        with mock.patch.object(sys, "stderr", io.StringIO()):
+            logger.zip_start(total_files=2, source_bytes=1500)
+            logger.zip_progress(
+                index=1,
+                total_files=2,
+                arcname="scenes/scene.blend",
+                file_bytes_done=600,
+                file_size=1200,
+                source_bytes_done=600,
+                source_bytes=1500,
+                method="Zstandard-9",
+                file_elapsed=2.0,
+                total_elapsed=3.0,
+            )
+            logger.zip_entry(
+                1,
+                2,
+                "scenes/scene.blend",
+                1200,
+                800,
+                "Zstandard-9",
+                4.0,
+            )
+            logger.zip_progress(
+                index=2,
+                total_files=2,
+                arcname="textures/board.png",
+                file_bytes_done=150,
+                file_size=300,
+                source_bytes_done=1350,
+                source_bytes=1500,
+                method="Deflate-1",
+                file_elapsed=1.0,
+                total_elapsed=5.0,
+            )
+
+        self.assertEqual(logger._zip_live_rows[1]["done"], 1200)
+        self.assertEqual(logger._zip_live_rows[1]["total"], 1200)
+        self.assertEqual(logger._zip_live_rows[1]["elapsed"], 4.0)
+        self.assertEqual(logger._zip_live_rows[2]["done"], 150)
+        self.assertEqual(logger._zip_live_rows[2]["total"], 300)
+        self.assertEqual(logger._zip_live_rows[2]["method"], "Deflate-1")
+
     def test_zip_summary_keeps_source_and_archive_sizes_explicit(self):
         messages = []
         logger = _submit_logger.SubmitLogger(log_fn=messages.append)
         logger.console = None
 
         logger.zip_start(total_files=2, source_bytes=1500)
+        logger.zip_entry(
+            1,
+            2,
+            "scenes/scene.blend",
+            1200,
+            800,
+            "Zstandard-9",
+            61.0,
+        )
         logger.zip_done(
             "archive.zip",
             2,
             source_bytes=1500,
             archive_bytes=1000,
-            elapsed=2.0,
+            preparation_elapsed=1.0,
+            archive_write_elapsed=2.0,
+            total_elapsed=3.0,
         )
 
         self.assertIn("  Source files (before ZIP): 1.5 KB", messages)
         self.assertIn("  ZIP archive (after ZIP): 1.0 KB", messages)
         self.assertIn("  Reduced by: 500 B (33.3%)", messages)
+        self.assertIn("  Total packing: 3.0s", messages)
+        self.assertIn("  Preparing archive: 1.0s", messages)
+        self.assertIn("  Writing ZIP: 2.0s", messages)
+        self.assertTrue(
+            any(
+                "[100%] scenes/scene.blend" in message
+                and "Source 1.2 KB → ZIP data 800 B" in message
+                and "Zstandard-9" in message
+                and "1m 01s" in message
+                for message in messages
+            )
+        )
 
     def test_zip_summary_names_container_overhead_instead_of_negative_savings(self):
         messages = []
@@ -648,7 +722,9 @@ class TestZipProgressRendering(unittest.TestCase):
             1,
             source_bytes=1000,
             archive_bytes=1100,
-            elapsed=1.0,
+            preparation_elapsed=0.5,
+            archive_write_elapsed=1.0,
+            total_elapsed=1.5,
         )
 
         self.assertIn("  Archive overhead: 100 B (10.0%)", messages)
@@ -2193,6 +2269,41 @@ class TestReportPackDependencySize(unittest.TestCase):
             self.assertEqual(
                 data["stages"]["pack"]["summary"]["dependency_total_size"], 999
             )
+
+    def test_zip_pack_sizes_timings_and_member_stats_are_explicit(self):
+        with tempfile.TemporaryDirectory() as d:
+            report = _diagnostic_report.DiagnosticReport(
+                reports_dir=Path(d), job_id="zip-metrics", blend_name="test"
+            )
+            report.start_stage("pack")
+            report.add_pack_entry(
+                "scene.blend",
+                "scene.blend",
+                file_size=1500,
+                archive_size=1000,
+                method="Zstandard-9",
+                elapsed_seconds=61.0,
+            )
+            report.set_zip_pack_summary(
+                source_bytes=1500,
+                archive_bytes=1150,
+                preparation_elapsed=5.0,
+                archive_write_elapsed=61.0,
+                total_elapsed=66.0,
+            )
+            report.complete_stage("pack")
+
+            entry = report._data["stages"]["pack"]["entries"][0]
+            summary = report._data["stages"]["pack"]["summary"]
+            self.assertEqual(entry["source_size_bytes"], 1500)
+            self.assertEqual(entry["archive_data_size_bytes"], 1000)
+            self.assertEqual(entry["archive_method"], "Zstandard-9")
+            self.assertEqual(entry["elapsed_seconds"], 61.0)
+            self.assertEqual(summary["source_size_bytes"], 1500)
+            self.assertEqual(summary["zip_archive_size_bytes"], 1150)
+            self.assertEqual(summary["preparation_elapsed_seconds"], 5.0)
+            self.assertEqual(summary["archive_write_elapsed_seconds"], 61.0)
+            self.assertEqual(summary["total_elapsed_seconds"], 66.0)
 
 
 # Report v3.0: version and metadata

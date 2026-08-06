@@ -1576,14 +1576,16 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
         logger.stage_header(
             2,
             "Packing",
-            "Creating a compressed archive with all dependencies",
+            "Preparing and writing a ZIP archive with all dependencies",
         )
         report.start_stage("pack")
+        pack_stage_started = time.perf_counter()
 
         abs_blend_norm = _norm_abs_for_detection(blend_path)
 
         _zip_started = False
         _zip_dep_size = 0
+        _zip_done_data = {}
 
         def _ensure_zip_started(total, source_bytes):
             nonlocal _zip_started
@@ -1599,7 +1601,9 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
             file_size,
             source_bytes_done,
             source_bytes,
-            elapsed,
+            method,
+            file_elapsed,
+            total_elapsed,
         ):
             _ensure_zip_started(total, source_bytes)
             logger.zip_progress(
@@ -1610,25 +1614,49 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
                 file_size,
                 source_bytes_done,
                 source_bytes,
-                elapsed,
+                method,
+                file_elapsed,
+                total_elapsed,
             )
 
-        def _on_zip_entry(idx, total, arcname, size, method):
+        def _on_zip_stats(
+            idx,
+            total,
+            arcname,
+            source_bytes,
+            archive_bytes,
+            method,
+            elapsed,
+        ):
             nonlocal _zip_dep_size
-            _zip_dep_size += size
+            _zip_dep_size += source_bytes
             _ensure_zip_started(total, 0)
-            logger.zip_entry(idx, total, arcname, size, method)
+            logger.zip_entry(
+                idx,
+                total,
+                arcname,
+                source_bytes,
+                archive_bytes,
+                method,
+                elapsed,
+            )
             # Log to diagnostic report
-            report.add_pack_entry(arcname, arcname, file_size=size, status="ok")
+            report.add_pack_entry(
+                arcname,
+                arcname,
+                file_size=source_bytes,
+                status="ok",
+                archive_size=archive_bytes,
+                method=method,
+                elapsed_seconds=elapsed,
+            )
 
         def _on_zip_done(zippath, total_files, source_bytes, elapsed):
-            archive_bytes = Path(zippath).stat().st_size
-            logger.zip_done(
-                zippath,
-                total_files,
+            _zip_done_data.update(
+                zippath=zippath,
+                total_files=total_files,
                 source_bytes=source_bytes,
-                archive_bytes=archive_bytes,
-                elapsed=elapsed,
+                archive_write_elapsed=elapsed,
             )
 
         def _noop_emit(msg):
@@ -1641,10 +1669,38 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
             project_path=project_root_str,
             pre_traced_deps=raw_usages,
             zip_emit_fn=_noop_emit,
-            zip_entry_cb=_on_zip_entry,
             zip_done_cb=_on_zip_done,
             zip_progress_cb=_on_zip_progress,
+            zip_stats_cb=_on_zip_stats,
         )
+
+        pack_total_elapsed = max(0.0, time.perf_counter() - pack_stage_started)
+        if _zip_done_data:
+            archive_path = Path(_zip_done_data["zippath"])
+            archive_write_elapsed = float(
+                _zip_done_data["archive_write_elapsed"]
+            )
+            archive_size = archive_path.stat().st_size
+            logger.zip_done(
+                str(archive_path),
+                int(_zip_done_data["total_files"]),
+                source_bytes=int(_zip_done_data["source_bytes"]),
+                archive_bytes=archive_size,
+                preparation_elapsed=max(
+                    0.0, pack_total_elapsed - archive_write_elapsed
+                ),
+                archive_write_elapsed=archive_write_elapsed,
+                total_elapsed=pack_total_elapsed,
+            )
+            report.set_zip_pack_summary(
+                source_bytes=int(_zip_done_data["source_bytes"]),
+                archive_bytes=archive_size,
+                preparation_elapsed=max(
+                    0.0, pack_total_elapsed - archive_write_elapsed
+                ),
+                archive_write_elapsed=archive_write_elapsed,
+                total_elapsed=pack_total_elapsed,
+            )
 
         if not zip_file.exists():
             report.set_status("failed")
