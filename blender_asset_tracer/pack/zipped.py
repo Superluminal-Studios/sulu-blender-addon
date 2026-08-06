@@ -167,15 +167,24 @@ def set_emit(
 #   SULU_ZIP_VERBOSE=1            (prints per-file lines; slower)
 #   SULU_ZIP_NO_COMPRESS=1        (store everything; fastest; biggest zip)
 #   SULU_ZIP_PRINT_INTERVAL=secs  (default 0.2)
-#   SULU_BLEND_ZSTD_LEVEL=1..22   (default 9; measured size/time optimum)
+#   SULU_BLEND_ZSTD_LEVEL=1..22   (default 1 = interactive-speed priority)
 #   SULU_BLEND_ZSTD_THREADS=-1..N (default -1 = all available CPU cores)
 #
-ZIP_COMPRESSLEVEL = max(0, min(_env_int("SULU_ZIP_COMPRESSLEVEL", 1), 9))
+DEFAULT_ZIP_COMPRESSLEVEL = 1
+DEFAULT_BLEND_ZSTD_LEVEL = 1
+
+ZIP_COMPRESSLEVEL = max(
+    0,
+    min(_env_int("SULU_ZIP_COMPRESSLEVEL", DEFAULT_ZIP_COMPRESSLEVEL), 9),
+)
 ZIP_IO_BUFSIZE = max(64 * 1024, _env_int("SULU_ZIP_IO_BUFSIZE", 1024 * 1024))
 ZIP_VERBOSE = _env_bool("SULU_ZIP_VERBOSE", False)
 ZIP_NO_COMPRESS = _env_bool("SULU_ZIP_NO_COMPRESS", False)
 ZIP_PRINT_INTERVAL = max(0.05, _env_float("SULU_ZIP_PRINT_INTERVAL", 0.2))
-BLEND_ZSTD_LEVEL = max(1, min(_env_int("SULU_BLEND_ZSTD_LEVEL", 9), 22))
+BLEND_ZSTD_LEVEL = max(
+    1,
+    min(_env_int("SULU_BLEND_ZSTD_LEVEL", DEFAULT_BLEND_ZSTD_LEVEL), 22),
+)
 BLEND_ZSTD_THREADS = max(-1, _env_int("SULU_BLEND_ZSTD_THREADS", -1))
 
 _store_big_mb = _env_int("SULU_ZIP_STORE_BIG_FILES_MB", 256)
@@ -240,6 +249,13 @@ class ZipPacker(Packer):
     def _create_file_transferer(self) -> transfer.FileTransferer:
         target_path = pathlib.Path(self._target_path)
         return ZipTransferrer(target_path.absolute())
+
+    def _rewrite_output_uncompressed(self) -> bool:
+        # Compressed source blends have already been decompressed for tracing.
+        # Keep rewritten working copies uncompressed so ZipTransferrer can do
+        # one visible, timed Zstandard-1 pass instead of BAT first doing an
+        # invisible Gzip-9 recompression during archive preparation.
+        return True
 
 
 class ZipTransferrer(transfer.FileTransferer):
@@ -611,12 +627,12 @@ class ZipTransferrer(transfer.FileTransferer):
                                                 file_started,
                                             )
                                         elif head[:7] == _BLENDFILE_MAGIC:
-                                            # Uncompressed .blend: level 9 with
-                                            # multithreading was the measured
-                                            # click-to-receipt optimum on the
-                                            # canonical Classroom and Junkshop
-                                            # scenes. Fall back for older zstd
-                                            # wheels without thread support.
+                                            # Uncompressed .blend: prioritize
+                                            # submit latency with Zstandard-1.
+                                            # A size-first level can still be
+                                            # selected explicitly through the
+                                            # environment. Fall back for older
+                                            # zstd wheels without thread support.
                                             _entry_label = f"Zstandard-{BLEND_ZSTD_LEVEL}"
                                             try:
                                                 zstd_compressor = zstd.ZstdCompressor(

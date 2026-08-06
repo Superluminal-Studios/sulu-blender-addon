@@ -17,10 +17,14 @@
 # ***** END GPL LICENCE BLOCK *****
 #
 # (c) 2019, Blender Foundation - Sybren A. Stüvel
+import importlib
+import os
+import shutil
 import zipfile
 from unittest import mock
 from tests.bat.test_pack import AbstractPackTest
 
+from blender_asset_tracer import blendfile
 from blender_asset_tracer.pack import zipped
 
 
@@ -52,7 +56,27 @@ class ZippedPackTest(AbstractPackTest):
             "Deflate-1",
         )
 
-    def test_uppercase_blend_uses_measured_zstd_profile(self):
+    def test_default_compression_profiles_prioritize_submit_speed(self):
+        self.assertEqual(zipped.DEFAULT_ZIP_COMPRESSLEVEL, 1)
+        self.assertEqual(zipped.DEFAULT_BLEND_ZSTD_LEVEL, 1)
+        self.assertTrue(
+            zipped.ZipPacker._rewrite_output_uncompressed(mock.Mock())
+        )
+
+    def test_blend_zstd_environment_override_is_applied_at_worker_import(self):
+        with mock.patch.dict(os.environ, {"SULU_BLEND_ZSTD_LEVEL": "7"}):
+            importlib.reload(zipped)
+            self.assertEqual(zipped.BLEND_ZSTD_LEVEL, 7)
+
+        with mock.patch.dict(os.environ, {"SULU_BLEND_ZSTD_LEVEL": ""}):
+            importlib.reload(zipped)
+            self.assertEqual(
+                zipped.BLEND_ZSTD_LEVEL,
+                zipped.DEFAULT_BLEND_ZSTD_LEVEL,
+            )
+        importlib.reload(zipped)
+
+    def test_uppercase_blend_uses_configured_zstd_profile(self):
         source = self.tpath / "SCENE.BLEND"
         source.write_bytes(b"BLENDER-v510" + b"payload" * 100)
         zippath = self.tpath / "uppercase.zip"
@@ -79,6 +103,41 @@ class ZippedPackTest(AbstractPackTest):
             calls,
             [{"level": zipped.BLEND_ZSTD_LEVEL, "threads": zipped.BLEND_ZSTD_THREADS}],
         )
+
+    def test_rewritten_gzip_blend_skips_gzip_and_uses_zstandard_once(self):
+        source = self.tpath / "scene.blend"
+        shutil.copyfile(
+            self.blendfiles / "linked_cube_compressed.blend",
+            source,
+        )
+        dependency = (self.blendfiles / "basic_file.blend").resolve()
+        bfile = blendfile.BlendFile(source, mode="r+b")
+        library = bfile.code_index[b"LI"][0]
+        library[b"filepath"] = str(dependency).encode()
+        library[b"name"] = str(dependency).encode()
+        bfile.close()
+
+        zippath = self.tpath / "rewritten.zip"
+        stats = []
+        try:
+            zipped.set_emit(
+                fn=lambda _message: None,
+                stats_cb=lambda *values: stats.append(values),
+            )
+            with zipped.ZipPacker(source, self.tpath, zippath) as packer:
+                packer.strategise()
+                self.assertTrue(
+                    any(action.rewrites for action in packer._actions.values())
+                )
+                packer.execute()
+        finally:
+            zipped.set_emit()
+
+        scene_stats = next(row for row in stats if row[2] == source.name)
+        self.assertEqual(scene_stats[5], "Zstandard-1")
+        self.assertLess(scene_stats[4], scene_stats[3])
+        with zipfile.ZipFile(zippath) as archive:
+            self.assertIsNone(archive.testzip())
 
     def test_large_member_reports_byte_progress_before_completion(self):
         source = self.tpath / "large.blend"
@@ -154,10 +213,14 @@ class ZippedPackTest(AbstractPackTest):
         )
         zippath = self.tpath / "zstd-progress.zip"
         progress = []
+        stats = []
 
         worker = zipped.ZipTransferrer(zippath)
         try:
-            zipped.set_emit(progress_cb=lambda *values: progress.append(values))
+            zipped.set_emit(
+                progress_cb=lambda *values: progress.append(values),
+                stats_cb=lambda *values: stats.append(values),
+            )
             with mock.patch.object(zipped, "ZIP_PRINT_INTERVAL", 0.0):
                 worker.start()
                 worker.queue_copy(source, zippath / source.name)
@@ -170,5 +233,6 @@ class ZippedPackTest(AbstractPackTest):
         self.assertEqual(file_progress[0], 0)
         self.assertTrue(any(0 < value < source_size for value in file_progress))
         self.assertEqual(file_progress[-1], source_size)
+        self.assertEqual(stats[0][5], "Zstandard-1")
         with zipfile.ZipFile(zippath) as archive:
             self.assertIsNone(archive.testzip())

@@ -792,6 +792,10 @@ class Packer:
             return filesystem.CompressedFileCopier()
         return filesystem.FileCopier()
 
+    def _rewrite_output_uncompressed(self) -> bool:
+        """Whether rewritten compressed blends should skip recompression."""
+        return False
+
     def _start_file_transferrer(self):
         """Starts the file transferrer thread."""
         self._file_transferer = self._create_file_transferer()
@@ -857,7 +861,11 @@ class Packer:
             log.info("Rewriting %s to %s", bfile_path, bfile_tp)
 
             bfile = blendfile.open_cached(bfile_path, assert_cached=True)
-            bfile.copy_and_rebind(bfile_tp, mode="rb+")
+            bfile.copy_and_rebind(
+                bfile_tp,
+                mode="rb+",
+                uncompressed=self._rewrite_output_uncompressed(),
+            )
 
             for usage in action.rewrites:
                 self._check_aborted()
