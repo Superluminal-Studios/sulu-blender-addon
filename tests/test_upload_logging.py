@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import io
 import json
 import sys
 import tempfile
@@ -573,6 +574,44 @@ class TestFinalizingStatusRendering(unittest.TestCase):
             current_file="",
         )
         self.assertEqual(text, "Checking 3 existing files")
+
+
+class TestZipProgressRendering(unittest.TestCase):
+    def test_packing_status_names_current_archive_member(self):
+        text = _submit_logger.SubmitLogger._progress_status_text(
+            None,
+            checks=0,
+            transfers=0,
+            status="packing",
+            current_file="[1/11] Chess Board V2.blend  ·  8.0 MiB/s",
+        )
+        self.assertEqual(
+            text, "[1/11] Chess Board V2.blend  ·  8.0 MiB/s"
+        )
+
+    def test_plain_zip_progress_shows_total_percent_file_and_rate(self):
+        logger = _submit_logger.SubmitLogger(log_fn=lambda _message: None)
+        logger.console = None
+        stderr = io.StringIO()
+
+        with mock.patch.object(sys, "stderr", stderr):
+            logger.zip_start(total_files=2, total_bytes=1000)
+            logger.zip_progress(
+                index=1,
+                total_files=2,
+                arcname="scenes/scene.blend",
+                file_bytes_done=500,
+                file_size=800,
+                total_bytes_done=500,
+                total_bytes=1000,
+                elapsed=2.0,
+            )
+            logger.zip_done("archive.zip", 2, 1000, 2.0)
+
+        output = stderr.getvalue()
+        self.assertIn("50.0%", output)
+        self.assertIn("[1/2] scene.blend", output)
+        self.assertIn("250 B/s", output)
 
 
 class TestRcloneFinalizingProgress(unittest.TestCase):

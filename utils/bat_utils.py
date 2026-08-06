@@ -456,6 +456,7 @@ def pack_blend(
     zip_emit_fn=None,
     zip_entry_cb=None,
     zip_done_cb=None,
+    zip_progress_cb=None,
 ):
     """Pack a blend.
 
@@ -582,8 +583,13 @@ def pack_blend(
         project_p = Path(project_path) if project_path else Path(infile).parent
 
         # Install structured callbacks if provided (suppresses raw _emit output)
-        if zip_emit_fn or zip_entry_cb or zip_done_cb:
-            zipped.set_emit(fn=zip_emit_fn, entry_cb=zip_entry_cb, done_cb=zip_done_cb)
+        if zip_emit_fn or zip_entry_cb or zip_done_cb or zip_progress_cb:
+            zipped.set_emit(
+                fn=zip_emit_fn,
+                entry_cb=zip_entry_cb,
+                done_cb=zip_done_cb,
+                progress_cb=zip_progress_cb,
+            )
 
         # Suppress BAT's own "Missing file:" log.warning during packing –
         # the caller already reported missing files in the trace stage.

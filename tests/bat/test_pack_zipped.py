@@ -79,3 +79,70 @@ class ZippedPackTest(AbstractPackTest):
             calls,
             [{"level": zipped.BLEND_ZSTD_LEVEL, "threads": zipped.BLEND_ZSTD_THREADS}],
         )
+
+    def test_large_member_reports_byte_progress_before_completion(self):
+        source = self.tpath / "large.blend"
+        source.write_bytes(
+            zipped._GZIP_MAGIC + b"x" * (zipped.ZIP_IO_BUFSIZE * 3)
+        )
+        zippath = self.tpath / "progress.zip"
+        progress = []
+        completed = []
+
+        worker = zipped.ZipTransferrer(zippath)
+        try:
+            zipped.set_emit(
+                progress_cb=lambda *values: progress.append(values),
+                done_cb=lambda *values: completed.append(values),
+            )
+            with mock.patch.object(zipped, "zstd", None), mock.patch.object(
+                zipped, "ZIP_PRINT_INTERVAL", 0.0
+            ):
+                worker.start()
+                worker.queue_copy(source, zippath / source.name)
+                worker.done_and_join()
+        finally:
+            zipped.set_emit()
+
+        source_size = source.stat().st_size
+        file_progress = [values[3] for values in progress]
+        total_progress = [values[5] for values in progress]
+        self.assertEqual(file_progress[0], 0)
+        self.assertTrue(any(0 < value < source_size for value in file_progress))
+        self.assertEqual(file_progress[-1], source_size)
+        self.assertEqual(total_progress, sorted(total_progress))
+        self.assertEqual(progress[-1][6], source_size)
+        self.assertEqual(completed[0][2], source_size)
+        with zipfile.ZipFile(zippath) as archive:
+            self.assertIsNone(archive.testzip())
+
+    def test_zstd_stream_reports_source_byte_progress(self):
+        if zipped.zstd is None:
+            self.skipTest("zstandard is not installed")
+
+        source = self.tpath / "uncompressed.blend"
+        source.write_bytes(
+            zipped._BLENDFILE_MAGIC
+            + b"-v510"
+            + b"scene-data" * zipped.ZIP_IO_BUFSIZE
+        )
+        zippath = self.tpath / "zstd-progress.zip"
+        progress = []
+
+        worker = zipped.ZipTransferrer(zippath)
+        try:
+            zipped.set_emit(progress_cb=lambda *values: progress.append(values))
+            with mock.patch.object(zipped, "ZIP_PRINT_INTERVAL", 0.0):
+                worker.start()
+                worker.queue_copy(source, zippath / source.name)
+                worker.done_and_join()
+        finally:
+            zipped.set_emit()
+
+        source_size = source.stat().st_size
+        file_progress = [values[3] for values in progress]
+        self.assertEqual(file_progress[0], 0)
+        self.assertTrue(any(0 < value < source_size for value in file_progress))
+        self.assertEqual(file_progress[-1], source_size)
+        with zipfile.ZipFile(zippath) as archive:
+            self.assertIsNone(archive.testzip())

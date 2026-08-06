@@ -577,7 +577,71 @@ class SubmitLogger(TranscriptLogger):
 
     def zip_start(self, total_files: int, total_bytes: int) -> None:
         self._zip_entries: List[Dict[str, Any]] = []
+        self._zip_progress_seen = False
+        self._transfer_cur = 0
+        self._transfer_total = max(int(total_bytes), 0)
+        self._progress_bar_width = self._compute_progress_bar_width()
+        self._last_progress_time = 0.0
+        self._stop_live_progress()
         # Table will be printed at zip_done
+
+    def _progress_status_text(
+        self,
+        checks: int,
+        transfers: int,
+        status: str,
+        current_file: str,
+    ) -> str:
+        if status == "packing":
+            return current_file
+        return super()._progress_status_text(
+            checks, transfers, status, current_file
+        )
+
+    def zip_progress(
+        self,
+        index: int,
+        total_files: int,
+        arcname: str,
+        file_bytes_done: int,
+        file_size: int,
+        total_bytes_done: int,
+        total_bytes: int,
+        elapsed: float,
+    ) -> None:
+        """Render byte progress while the current archive member is written."""
+        del file_bytes_done, file_size
+        self._zip_progress_seen = True
+        self._transfer_cur = max(int(total_bytes_done), 0)
+        self._transfer_total = max(int(total_bytes), 0)
+        rate = self._transfer_cur / elapsed if elapsed > 0 else 0.0
+        current_name = Path(arcname).name or str(arcname)
+        status_text = f"[{index}/{total_files}] {current_name}"
+        if rate > 0:
+            status_text += f"  ·  {format_size(int(rate))}/s"
+
+        if self.console and Text is not None:
+            self._render_progress_bar_ext(
+                self._transfer_cur,
+                self._transfer_total,
+                checks=0,
+                transfers=0,
+                status="packing",
+                current_file=status_text,
+            )
+            return
+
+        if self._transfer_total > 0:
+            pct = self._transfer_cur / max(self._transfer_total, 1) * 100
+            line = (
+                f"\r  {format_size(self._transfer_cur)} / "
+                f"{format_size(self._transfer_total)} ({pct:.1f}%)  "
+                f"{status_text} "
+            )
+        else:
+            line = f"\r  {format_size(self._transfer_cur)} packed  {status_text} "
+        sys.stderr.write(line)
+        sys.stderr.flush()
 
     def zip_entry(
         self, index: int, total: int, arcname: str, size: int, method: str
@@ -627,6 +691,10 @@ class SubmitLogger(TranscriptLogger):
     def zip_done(
         self, zippath: str, total_files: int, total_bytes: int, elapsed: float
     ) -> None:
+        self._stop_live_progress()
+        if getattr(self, "_zip_progress_seen", False) and not self.console:
+            sys.stderr.write("\n")
+            sys.stderr.flush()
         # Render the zip table first
         self._render_zip_table()
 

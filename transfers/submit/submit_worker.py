@@ -1585,12 +1585,38 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
         _zip_started = False
         _zip_dep_size = 0
 
-        def _on_zip_entry(idx, total, arcname, size, method):
-            nonlocal _zip_started, _zip_dep_size
-            _zip_dep_size += size
+        def _ensure_zip_started(total, total_bytes):
+            nonlocal _zip_started
             if not _zip_started:
-                logger.zip_start(total, 0)
+                logger.zip_start(total, total_bytes)
                 _zip_started = True
+
+        def _on_zip_progress(
+            idx,
+            total,
+            arcname,
+            file_bytes_done,
+            file_size,
+            total_bytes_done,
+            total_bytes,
+            elapsed,
+        ):
+            _ensure_zip_started(total, total_bytes)
+            logger.zip_progress(
+                idx,
+                total,
+                arcname,
+                file_bytes_done,
+                file_size,
+                total_bytes_done,
+                total_bytes,
+                elapsed,
+            )
+
+        def _on_zip_entry(idx, total, arcname, size, method):
+            nonlocal _zip_dep_size
+            _zip_dep_size += size
+            _ensure_zip_started(total, 0)
             logger.zip_entry(idx, total, arcname, size, method)
             # Log to diagnostic report
             report.add_pack_entry(arcname, arcname, file_size=size, status="ok")
@@ -1610,6 +1636,7 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
             zip_emit_fn=_noop_emit,
             zip_entry_cb=_on_zip_entry,
             zip_done_cb=_on_zip_done,
+            zip_progress_cb=_on_zip_progress,
         )
 
         if not zip_file.exists():
