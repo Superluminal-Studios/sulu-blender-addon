@@ -17,6 +17,11 @@ blender_version_items: List[Tuple[str, str, str]] = [
     ("BLENDER45", "Blender 4.5", "Use Blender 4.5 on the farm"),
     ("BLENDER50", "Blender 5.0", "Use Blender 5.0 on the farm"),
     ("BLENDER51", "Blender 5.1", "Use Blender 5.1 on the farm"),
+    (
+        "BLENDER51SULU",
+        "Blender 5.1-SULU",
+        "Use the SULU Blender 5.1 build with persistent EEVEE on the farm",
+    ),
     ("BLENDER52", "Blender 5.2", "Use Blender 5.2 on the farm"),
     (
         "BLENDER52SULU",
@@ -25,7 +30,10 @@ blender_version_items: List[Tuple[str, str, str]] = [
     ),
 ]
 
-SULU_BUILD_ENUM = "BLENDER52SULU"
+SULU_BUILD_ENUM_BY_NUMBER = {
+    51: "BLENDER51SULU",
+    52: "BLENDER52SULU",
+}
 
 # Build a lookup:  40 -> "BLENDER40", 41 -> "BLENDER41", ...
 _enum_by_number: Dict[int, str] = {
@@ -48,8 +56,10 @@ def enum_from_bpy_version() -> str:
     major, minor, _ = bpy.app.version
     numeric = major * 10 + minor
 
-    if numeric == 52 and "SULU" in getattr(bpy.app, "version_string", "").upper():
-        return SULU_BUILD_ENUM
+    if "SULU" in getattr(bpy.app, "version_string", "").upper():
+        sulu_build_enum = SULU_BUILD_ENUM_BY_NUMBER.get(numeric)
+        if sulu_build_enum is not None:
+            return sulu_build_enum
 
     # Clamp to list boundaries
     if numeric <= _enum_numbers_sorted[0]:
