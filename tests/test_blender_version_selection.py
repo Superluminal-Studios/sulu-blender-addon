@@ -12,7 +12,19 @@ def load_version_utils(monkeypatch, version, version_string):
     return importlib.import_module("utils.version_utils")
 
 
-def test_sulu_build_auto_selects_distinct_farm_runtime(monkeypatch):
+def test_blender_51_sulu_build_auto_selects_distinct_farm_runtime(monkeypatch):
+    version_utils = load_version_utils(
+        monkeypatch, (5, 1, 2), "5.1.2 SULU"
+    )
+
+    assert version_utils.enum_from_bpy_version() == "BLENDER51SULU"
+    assert (
+        version_utils.resolved_worker_blender_value(True, "BLENDER51")
+        == "blender51sulu"
+    )
+
+
+def test_blender_52_sulu_build_auto_selects_distinct_farm_runtime(monkeypatch):
     version_utils = load_version_utils(
         monkeypatch, (5, 2, 0), "5.2.0 SULU"
     )
@@ -22,6 +34,15 @@ def test_sulu_build_auto_selects_distinct_farm_runtime(monkeypatch):
         version_utils.resolved_worker_blender_value(True, "BLENDER52")
         == "blender52sulu"
     )
+
+
+def test_stock_build_keeps_stock_blender_51_runtime(monkeypatch):
+    version_utils = load_version_utils(
+        monkeypatch, (5, 1, 2), "5.1.2"
+    )
+
+    assert version_utils.enum_from_bpy_version() == "BLENDER51"
+    assert version_utils.to_worker_blender_value("BLENDER51SULU") == "blender51sulu"
 
 
 def test_stock_build_keeps_stock_blender_52_runtime(monkeypatch):
