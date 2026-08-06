@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import bpy
 import addon_utils
-import time
 
 from .utils.version_utils import get_blender_version_string
 from .constants import DEFAULT_ADDONS
@@ -26,11 +25,9 @@ _addon_cache: dict = {
     "addon_list": [],     # list of (module_name, pretty_label) tuples
 }
 
-_PROJECT_SCAN_INTERVAL_SECONDS = 2.0
 _project_scan_cache: dict = {
     "blend_path": None,
     "summary": None,
-    "updated_at": 0.0,
 }
 
 
@@ -38,31 +35,42 @@ def _cached_project_scan():
     blend_path = str(getattr(bpy.data, "filepath", "") or "")
     if _project_scan_cache["blend_path"] != blend_path:
         return None
-    if (
-        time.monotonic() - _project_scan_cache["updated_at"]
-        > _PROJECT_SCAN_INTERVAL_SECONDS * 1.5
-    ):
-        return None
     return _project_scan_cache["summary"]
 
 
-def _refresh_project_scan_cache():
-    try:
-        scene = getattr(bpy.context, "scene", None)
-        props = getattr(scene, "superluminal_settings", None) if scene else None
-        if props is not None and props.upload_type == "PROJECT":
+class SUPERLUMINAL_OT_RefreshProjectScan(bpy.types.Operator):
+    """Check project dependencies after an explicit user request."""
+
+    bl_idname = "superluminal.refresh_project_scan"
+    bl_label = "Check Project Dependencies"
+
+    def execute(self, context):
+        scene = getattr(context, "scene", None)
+        props = getattr(scene, "superluminal_settings", None)
+        if props is None or props.upload_type != "PROJECT":
+            self.report({"INFO"}, "Dependency checking only applies to Project uploads.")
+            return {"CANCELLED"}
+
+        try:
             summary = scan_dependencies_fast()
-            _project_scan_cache["blend_path"] = str(bpy.data.filepath or "")
-            _project_scan_cache["summary"] = summary
-            _project_scan_cache["updated_at"] = time.monotonic()
-            for window in getattr(bpy.context.window_manager, "windows", []):
-                screen = getattr(window, "screen", None)
-                for area in getattr(screen, "areas", []):
-                    if area.type == "PROPERTIES":
-                        area.tag_redraw()
-    except Exception:
-        pass
-    return _PROJECT_SCAN_INTERVAL_SECONDS
+        except Exception as exc:
+            self.report({"ERROR"}, f"Could not check project dependencies: {exc}")
+            return {"CANCELLED"}
+
+        _project_scan_cache["blend_path"] = str(bpy.data.filepath or "")
+        _project_scan_cache["summary"] = summary
+        if context.area:
+            context.area.tag_redraw()
+
+        cross_drive_count = summary.cross_drive_count()
+        if cross_drive_count:
+            self.report(
+                {"WARNING"},
+                f"Found {cross_drive_count} dependencies on other drives.",
+            )
+        else:
+            self.report({"INFO"}, "Project dependencies use the same drive.")
+        return {"FINISHED"}
 
 
 class SUPERLUMINAL_PG_AddonItem(bpy.types.PropertyGroup):
@@ -389,6 +397,16 @@ class SUPERLUMINAL_PT_UploadSettings(bpy.types.Panel):
         # Cross-drive dependency warning (only relevant to Project uploads)
         if props.upload_type == "PROJECT":
             summary = _cached_project_scan()
+            check_row = layout.row(align=True)
+            check_row.operator(
+                "superluminal.refresh_project_scan",
+                text=(
+                    "Check Dependency Drives"
+                    if summary is None
+                    else "Refresh Dependency Check"
+                ),
+                icon="FILE_REFRESH",
+            )
             if not bpy.data.is_saved:
                 info_row = layout.row()
                 info_row.alert = True  # treat as warning for visibility
@@ -633,6 +651,7 @@ class SUPERLUMINAL_PT_Jobs(bpy.types.Panel):
 
 
 classes = (
+    SUPERLUMINAL_OT_RefreshProjectScan,
     ToggleAddonSelectionOperator,
     SUPERLUMINAL_PG_AddonItem,
     SUPERLUMINAL_UL_addon_items,
@@ -660,20 +679,11 @@ def register():
         default=0,
         options={"SKIP_SAVE"},
     )
-    if not bpy.app.timers.is_registered(_refresh_project_scan_cache):
-        bpy.app.timers.register(
-            _refresh_project_scan_cache,
-            first_interval=0.1,
-            persistent=True,
-        )
 
 
 def unregister():
-    if bpy.app.timers.is_registered(_refresh_project_scan_cache):
-        bpy.app.timers.unregister(_refresh_project_scan_cache)
     _project_scan_cache["blend_path"] = None
     _project_scan_cache["summary"] = None
-    _project_scan_cache["updated_at"] = 0.0
 
     # Remove WM properties first
     if hasattr(bpy.types.WindowManager, "superluminal_ui_addons"):
