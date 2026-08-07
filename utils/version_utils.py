@@ -16,13 +16,15 @@ blender_version_items: List[Tuple[str, str, str]] = [
     ("BLENDER44", "Blender 4.4", "Use Blender 4.4 on the farm"),
     ("BLENDER45", "Blender 4.5", "Use Blender 4.5 on the farm"),
     ("BLENDER50", "Blender 5.0", "Use Blender 5.0 on the farm"),
+    ("BLENDER51", "Blender 5.1", "Use the official Blender 5.1 build on the farm"),
     (
-        "BLENDER51",
+        "BLENDER51SULU",
         "Blender 5.1 — SULU",
         "Use the Sulu Blender 5.1 build on the farm",
     ),
+    ("BLENDER52", "Blender 5.2", "Use the official Blender 5.2 build on the farm"),
     (
-        "BLENDER52",
+        "BLENDER52SULU",
         "Blender 5.2 — SULU",
         "Use the Sulu Blender 5.2 build on the farm",
     ),
@@ -30,7 +32,9 @@ blender_version_items: List[Tuple[str, str, str]] = [
 
 # Build a lookup:  40 -> "BLENDER40", 41 -> "BLENDER41", ...
 _enum_by_number: Dict[int, str] = {
-    int(code.replace("BLENDER", "")): code for code, *_ in blender_version_items
+    int(code.replace("BLENDER", "")): code
+    for code, *_ in blender_version_items
+    if code.replace("BLENDER", "").isdigit()
 }
 _enum_numbers_sorted = sorted(_enum_by_number)
 
@@ -78,8 +82,8 @@ def resolve_selected_blender_enum(auto_determine: bool, selected_enum: str) -> s
 
 def to_worker_blender_value(enum_key: str) -> str:
     """
-    Convert our enum (e.g. 'BLENDER44') into the value the worker/API expects
-    (currently lowercased e.g. 'blender44').
+    Convert our enum into the value the worker/API expects. Standard builds
+    use values such as ``blender52``; Sulu builds use ``blender52sulu``.
     """
     return enum_key.lower()
 
