@@ -16,8 +16,16 @@ blender_version_items: List[Tuple[str, str, str]] = [
     ("BLENDER44", "Blender 4.4", "Use Blender 4.4 on the farm"),
     ("BLENDER45", "Blender 4.5", "Use Blender 4.5 on the farm"),
     ("BLENDER50", "Blender 5.0", "Use Blender 5.0 on the farm"),
-    ("BLENDER51", "Blender 5.1", "Use Blender 5.1 on the farm"),
-    ("BLENDER52", "Blender 5.2", "Use Blender 5.2 on the farm"),
+    (
+        "BLENDER51",
+        "Blender 5.1 — SULU",
+        "Use the Sulu Blender 5.1 build on the farm",
+    ),
+    (
+        "BLENDER52",
+        "Blender 5.2 — SULU",
+        "Use the Sulu Blender 5.2 build on the farm",
+    ),
 ]
 
 # Build a lookup:  40 -> "BLENDER40", 41 -> "BLENDER41", ...
