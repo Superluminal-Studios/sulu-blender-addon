@@ -19,6 +19,7 @@ import sys
 import tempfile
 import time
 import types
+import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 import traceback
@@ -46,10 +47,13 @@ def _load_handoff_from_argv(argv: List[str]) -> Dict[str, object]:
 def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
     addon_dir = Path(data["addon_dir"]).resolve()
     pkg_name = addon_dir.name.replace("-", "_")
-    sys.path.insert(0, str(addon_dir.parent))
-    pkg = types.ModuleType(pkg_name)
-    pkg.__path__ = [str(addon_dir)]
-    sys.modules[pkg_name] = pkg
+    addon_parent = str(addon_dir.parent)
+    if addon_parent not in sys.path:
+        sys.path.insert(0, addon_parent)
+    if pkg_name not in sys.modules:
+        pkg = types.ModuleType(pkg_name)
+        pkg.__path__ = [str(addon_dir)]
+        sys.modules[pkg_name] = pkg
 
     # Import helpers
     rclone = importlib.import_module(f"{pkg_name}.transfers.rclone_utils")
@@ -67,6 +71,9 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
     # Import download logger
     download_logger_mod = importlib.import_module(f"{pkg_name}.utils.download_logger")
     DownloadLogger = download_logger_mod.DownloadLogger
+    terminal_actions_mod = importlib.import_module(
+        f"{pkg_name}.utils.terminal_actions"
+    )
 
     return {
         "pkg_name": pkg_name,
@@ -78,6 +85,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
         "open_folder": open_folder,
         "fetch_project_storage": fetch_project_storage,
         "DownloadLogger": DownloadLogger,
+        "TerminalKeyReader": terminal_actions_mod.TerminalKeyReader,
         "_build_base": worker_utils._build_base,
         "requests_retry_session": worker_utils.requests_retry_session,
         "CLOUDFLARE_R2_DOMAIN": worker_utils.CLOUDFLARE_R2_DOMAIN,
@@ -108,6 +116,107 @@ fetch_project_storage: Any = None
 _build_base: Any
 requests_retry_session: Any
 CLOUDFLARE_R2_DOMAIN: str
+TerminalKeyReader: Any
+
+
+class _DownloadCancelled(Exception):
+    """Raised after a user requests a graceful, resumable cancellation."""
+
+
+class _DownloadActionController:
+    def __init__(
+        self,
+        reader: Any,
+        *,
+        dest_dir: str,
+        job_url: str = "",
+        report_path: str = "",
+    ) -> None:
+        self.reader = reader
+        self.dest_dir = dest_dir
+        self.job_url = job_url
+        self.report_path = report_path
+        self.active = False
+
+    def start(self) -> bool:
+        self.active = bool(self.reader.start())
+        return self.active
+
+    def stop(self) -> None:
+        self.reader.stop()
+        self.active = False
+
+    def poll(self) -> None:
+        if not self.active:
+            return
+        for raw_key in self.reader.drain():
+            key = str(raw_key or "").lower()
+            if key in {"c", "q", "\x03"}:
+                logger.action_feedback("Stopping download safely…")
+                raise _DownloadCancelled()
+            if key == "j" and self.job_url:
+                try:
+                    opened = webbrowser.open(self.job_url)
+                except Exception:
+                    opened = False
+                if opened is False:
+                    logger.warning("Couldn't open the job page automatically.")
+                else:
+                    logger.action_feedback("Job page opened.")
+            elif key == "r" and self.report_path:
+                open_folder(self.report_path, logger_instance=logger)
+                logger.action_feedback("Diagnostic reports opened.")
+            elif key == "o":
+                _ensure_dir(self.dest_dir)
+                open_folder(self.dest_dir, logger_instance=logger)
+                logger.action_feedback("Download folder opened.")
+            elif key in {"h", "?"}:
+                logger.download_actions(
+                    have_job=bool(self.job_url),
+                    have_report=bool(self.report_path),
+                )
+
+    def wait(self, delay: float) -> None:
+        deadline = time.monotonic() + max(0.0, float(delay))
+        while True:
+            self.poll()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            time.sleep(min(0.1, remaining))
+
+
+_download_actions: Optional[_DownloadActionController] = None
+
+
+def _poll_download_actions() -> None:
+    if _download_actions is not None:
+        _download_actions.poll()
+
+
+def _wait_for_download_actions(delay: float) -> None:
+    if _download_actions is None:
+        time.sleep(delay)
+    else:
+        _download_actions.wait(delay)
+
+
+def _job_page_url(handoff: Dict[str, object]) -> str:
+    explicit = str(handoff.get("job_url", "") or "").strip()
+    if explicit.startswith(("https://", "http://")):
+        return explicit
+    project = handoff.get("project") or {}
+    project_sqid = (
+        str(project.get("sqid", "") or "").strip()
+        if isinstance(project, dict)
+        else ""
+    )
+    handoff_job_id = str(handoff.get("job_id", "") or "").strip()
+    if not project_sqid or not handoff_job_id:
+        return ""
+    return (
+        f"https://superlumin.al/p/{project_sqid}/farm/jobs/{handoff_job_id}"
+    )
 
 
 def _safe_dir_name(name: str, fallback: str) -> str:
@@ -427,6 +536,7 @@ def _run_output_copy(
             local,
             rclone_args,
             logger=logger,
+            action_callback=_poll_download_actions,
         )
         changed_count = len(new_files)
         if reconcile_existing and isinstance(rclone_result, dict):
@@ -456,6 +566,10 @@ def _int_value(value: object, default: int = 0) -> int:
 
 def _handoff_job_details() -> Tuple[str, int, int]:
     job = data.get("job") or data.get("job_data") or {}
+    return _job_snapshot_details(job)
+
+
+def _job_snapshot_details(job: object) -> Tuple[str, int, int]:
     if not isinstance(job, dict):
         return ("unknown", 0, 0)
 
@@ -480,6 +594,46 @@ def _handoff_job_details() -> Tuple[str, int, int]:
 _JOB_DETAILS_WARNED: set = set()
 
 
+def _fetch_stored_job_details() -> Tuple[str, int, int]:
+    """Read the persisted job when the queue's in-memory record is gone."""
+    unavailable = ("unknown", 0, 0)
+    project = data.get("project") or {}
+    org_id = (
+        str(project.get("organization_id", "") or "").strip()
+        if isinstance(project, dict)
+        else ""
+    )
+    api_url = str(data.get("pocketbase_url", "") or "").rstrip("/")
+    user_token = str(data.get("user_token", "") or "").strip()
+    if not org_id or not api_url or not user_token or not job_id:
+        return unavailable
+
+    try:
+        response = session.get(
+            f"{api_url}/api/jobs/{org_id}/{job_id}",
+            headers={"Authorization": user_token},
+            timeout=20,
+        )
+    except Exception:
+        return unavailable
+    if response.status_code != 200:
+        return unavailable
+    try:
+        payload = response.json()
+    except (TypeError, ValueError):
+        return unavailable
+    body = payload.get("body") if isinstance(payload, dict) else None
+    stored_job = body.get("job_data") if isinstance(body, dict) else None
+    return _job_snapshot_details(stored_job)
+
+
+def _stored_or_handoff_job_details() -> Tuple[str, int, int]:
+    stored = _fetch_stored_job_details()
+    if stored != ("unknown", 0, 0):
+        return stored
+    return _handoff_job_details()
+
+
 def _fetch_job_details() -> Tuple[str, int, int]:
     """
     Returns (status, finished, total) with safe defaults.
@@ -490,7 +644,7 @@ def _fetch_job_details() -> Tuple[str, int, int]:
     and aged out, or were deleted). Sanic wraps that as
     `{"status": "success", "body": null}`, while the gateway can return a
     bare JSON `null`. Both forms are valid protocol responses and fall back to
-    the handoff snapshot without repeating warnings on every poll.
+    the persisted job, then the handoff snapshot, without warning spam.
     """
     if not sarfis_url or not sarfis_token:
         return _handoff_job_details()
@@ -527,19 +681,21 @@ def _fetch_job_details() -> Tuple[str, int, int]:
     # `null` (jobs not in Database.jobs) — silent fallback, this is the
     # expected case for freshly-submitted jobs and aged-out terminal jobs.
     if not isinstance(parsed, dict):
-        return _handoff_job_details()
+        return _stored_or_handoff_job_details()
 
     body = parsed.get("body")
     # Same dict-or-fallback pattern: `body` is None when the wrapped
     # response is `{"status": "success", "body": null}`.
     if not isinstance(body, dict) or not body:
-        return _handoff_job_details()
+        return _stored_or_handoff_job_details()
 
     status = str(body.get("status", "unknown") or "unknown").lower()
     tasks_raw = body.get("tasks") or {}
     tasks = tasks_raw if isinstance(tasks_raw, dict) else {}
     finished = _int_value(tasks.get("finished"), 0)
     total = _int_value(body.get("total_tasks", tasks.get("total")), 0)
+    if body.get("missing") or (status == "unknown" and total <= 0):
+        return _fetch_stored_job_details()
     # Clear the dedupe set so a transient failure doesn't permanently
     # suppress future warnings of the same kind.
     _JOB_DETAILS_WARNED.clear()
@@ -622,9 +778,29 @@ _AUTO_BATCH_FRAMES = 1
 _AUTO_BATCH_SECONDS = 5.0
 _AUTO_POLL_SECONDS = 1
 _AUTO_REFRESH_SECONDS = 60.0
+_AUTO_UNKNOWN_REFRESH_SECONDS = 5.0
 _AUTO_TERMINAL_STABLE_PASSES = 1
 _AUTO_TERMINAL_SETTLE_SECONDS = 30.0
 _AUTO_TERMINAL_QUIET_SECONDS = 10.0
+
+_VIDEO_IMAGE_EXTENSIONS = {
+    ".avif",
+    ".bmp",
+    ".cin",
+    ".dpx",
+    ".exr",
+    ".hdr",
+    ".jpeg",
+    ".jpg",
+    ".jp2",
+    ".png",
+    ".rgb",
+    ".tga",
+    ".tif",
+    ".tiff",
+    ".webp",
+}
+_VIDEO_FRAME_SUFFIX = re.compile(r"^(.*?)(\d+)$")
 
 
 def _run_selected_downloader(
@@ -632,20 +808,178 @@ def _run_selected_downloader(
     mode: str,
     status_url: Optional[str],
     status_token: Optional[str],
-) -> None:
+) -> str:
     """Dispatch without bypassing terminal object-visibility reconciliation."""
     if mode == "single":
         single_downloader(dest_dir)
+        return "available"
     elif not status_url or not status_token:
         logger.warning(
             "Can't track job progress. Downloading available frames only."
         )
         single_downloader(dest_dir)
+        return "available"
     else:
         # Always enter the settling loop in auto mode, including when the
         # first status snapshot is already terminal. Queue completion can
         # precede visibility of the final R2 objects.
-        auto_downloader(dest_dir, poll_seconds=_AUTO_POLL_SECONDS)
+        return auto_downloader(dest_dir, poll_seconds=_AUTO_POLL_SECONDS)
+
+
+def _select_video_sequence(dest_dir: str) -> List[Path]:
+    """Return the strongest frame-numbered image sequence in the job folder."""
+    groups: Dict[Tuple[str, str, str], Dict[int, Path]] = {}
+    root = Path(dest_dir)
+    if not root.is_dir():
+        return []
+
+    for path in root.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in _VIDEO_IMAGE_EXTENSIONS:
+            continue
+        match = _VIDEO_FRAME_SUFFIX.match(path.stem)
+        if not match:
+            continue
+        prefix, frame_text = match.groups()
+        key = (str(path.parent), prefix, path.suffix.lower())
+        groups.setdefault(key, {})[int(frame_text)] = path
+
+    if not groups:
+        return []
+
+    def score(
+        item: Tuple[Tuple[str, str, str], Dict[int, Path]],
+    ) -> Tuple[int, int, int, str]:
+        (parent, prefix, _suffix), frames = item
+        relative_parent = Path(parent).relative_to(root)
+        composite = int(
+            "composite" in {part.lower() for part in relative_parent.parts}
+            or "composite" in prefix.lower()
+        )
+        # Prefer more complete sequences, then conventional compositor output,
+        # then the least deeply nested deterministic path.
+        return (len(frames), composite, -len(relative_parent.parts), parent + prefix)
+
+    _key, selected = max(groups.items(), key=score)
+    return [selected[number] for number in sorted(selected)]
+
+
+def _terminate_video_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def _create_mp4(dest_dir: str) -> Optional[str]:
+    files = _select_video_sequence(dest_dir)
+    if len(files) < 2:
+        logger.warning(
+            "MP4 skipped: no frame-numbered image sequence with at least "
+            "two frames was found."
+        )
+        return None
+
+    blender_binary = str(data.get("blender_binary", "") or "").strip()
+    if not blender_binary or not Path(blender_binary).is_file():
+        logger.warning(
+            "Frames are downloaded, but MP4 creation needs the Blender "
+            "executable used to submit the job."
+        )
+        return None
+
+    fps = max(1, int(data.get("video_fps", 24) or 24))
+    fps_base = max(0.001, float(data.get("video_fps_base", 1.0) or 1.0))
+    safe_video_name = _safe_dir_name(job_name, f"job_{job_id}")
+    output_path = Path(dest_dir) / f"{safe_video_name}.mp4"
+    working_path = output_path.with_name(
+        f".{output_path.stem}.{os.getpid()}.creating.mp4"
+    )
+    manifest_path: Optional[Path] = None
+    process: Optional[subprocess.Popen] = None
+
+    logger.info(
+        f"Creating MP4 from {len(files)} frames at {fps / fps_base:g} fps"
+    )
+    try:
+        manifest = {
+            "files": [str(path) for path in files],
+            "output_path": str(working_path),
+            "fps": fps,
+            "fps_base": fps_base,
+        }
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix="superluminal_video_",
+            suffix=".json",
+            delete=False,
+        ) as manifest_file:
+            json.dump(manifest, manifest_file)
+            manifest_path = Path(manifest_file.name)
+        try:
+            os.chmod(manifest_path, 0o600)
+        except OSError:
+            pass
+
+        export_script = (
+            Path(data["addon_dir"]) / "utils" / "blender_video_export.py"
+        )
+        with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as process_log:
+            process = subprocess.Popen(
+                [
+                    blender_binary,
+                    "--background",
+                    "--factory-startup",
+                    "--python",
+                    str(export_script),
+                    "--",
+                    str(manifest_path),
+                ],
+                stdout=process_log,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            try:
+                while process.poll() is None:
+                    _wait_for_download_actions(0.1)
+            except BaseException:
+                _terminate_video_process(process)
+                raise
+
+            if process.returncode != 0:
+                process_log.seek(0)
+                lines = process_log.read().splitlines()
+                detail = next(
+                    (line.strip() for line in reversed(lines) if line.strip()),
+                    "",
+                )
+                suffix = f" ({detail})" if detail else ""
+                raise RuntimeError(
+                    f"Blender's video encoder exited with code {process.returncode}{suffix}"
+                )
+
+        if not working_path.is_file() or working_path.stat().st_size <= 0:
+            raise RuntimeError("Blender finished without writing an MP4")
+        os.replace(working_path, output_path)
+        logger.success(f"MP4 created: {output_path.name}")
+        return str(output_path)
+    finally:
+        if process is not None and process.poll() is None:
+            _terminate_video_process(process)
+        if manifest_path is not None:
+            try:
+                manifest_path.unlink()
+            except OSError:
+                pass
+        if working_path.exists():
+            try:
+                working_path.unlink()
+            except OSError:
+                pass
 
 
 def _next_poll_deadline(previous: float, interval: float, now: float) -> float:
@@ -669,7 +1003,7 @@ def auto_downloader(
     terminal_stable_passes: int = _AUTO_TERMINAL_STABLE_PASSES,
     terminal_settle_seconds: float = _AUTO_TERMINAL_SETTLE_SECONDS,
     terminal_quiet_seconds: float = _AUTO_TERMINAL_QUIET_SECONDS,
-) -> None:
+) -> str:
     """Poll for new frames, copying newly discovered output keys in batches."""
     _ensure_dir(dest_dir)
 
@@ -691,6 +1025,7 @@ def auto_downloader(
     now = time.monotonic()
     next_poll = now
     next_refresh = now + refresh_interval
+    next_unknown_refresh = now
     last_synced_finished = 0
     pending_since: Optional[float] = None
     shown_waiting = False
@@ -704,6 +1039,7 @@ def auto_downloader(
     logger.auto_mode_info()
 
     while True:
+        _poll_download_actions()
         quiet_wake_at: Optional[float] = None
         if terminal_status is None:
             job_status, finished, total = _fetch_job_details()
@@ -728,14 +1064,29 @@ def auto_downloader(
         batch_due = new_count >= batch_size
         wait_due = pending_since is not None and (now - pending_since) >= batch_wait
         refresh_due = finished > 0 and now >= next_refresh
+        unknown_refresh_due = (
+            terminal_status is None
+            and job_status == "unknown"
+            and finished <= 0
+            and now >= next_unknown_refresh
+        )
         terminal_sync = terminal_status is not None
-        should_sync = first_sync or batch_due or wait_due or refresh_due or terminal_sync
+        should_sync = (
+            first_sync
+            or batch_due
+            or wait_due
+            or refresh_due
+            or unknown_refresh_due
+            or terminal_sync
+        )
 
         if should_sync:
             if copy_state.listing_passes == 0 and finished > 0:
                 progress_label = f"{finished} frames"
             elif new_count > 0:
                 progress_label = f"{new_count} new frames"
+            elif unknown_refresh_due:
+                progress_label = "Checking for rendered frames"
             else:
                 progress_label = "Checking final frame files"
 
@@ -747,6 +1098,10 @@ def auto_downloader(
                 reconcile_existing=reconcile_existing,
             )
             sync_finished_at = time.monotonic()
+            if unknown_refresh_due:
+                next_unknown_refresh = (
+                    sync_finished_at + _AUTO_UNKNOWN_REFRESH_SECONDS
+                )
             if ok:
                 next_refresh = sync_finished_at + refresh_interval
                 # Count distinct Blender frame suffixes, not objects. A
@@ -829,7 +1184,9 @@ def auto_downloader(
                     logger.warning(
                         f"Job stopped with errors. {terminal_finished} frames saved."
                     )
-                break
+                if terminal_status == "finished" and not settled:
+                    return "incomplete"
+                return terminal_status
 
         now = time.monotonic()
         next_poll = _next_poll_deadline(next_poll, poll_interval, now)
@@ -840,10 +1197,21 @@ def auto_downloader(
             wake_at = min(wake_at, quiet_wake_at)
         delay = max(0.0, wake_at - now)
         if delay > 0:
-            time.sleep(delay)
+            _wait_for_download_actions(delay)
 
 
-def main() -> None:
+def run_download(
+    handoff: Dict[str, object],
+    *,
+    clear_console: bool = True,
+    integrated: bool = False,
+) -> str:
+    """Run a download in this process and return its destination directory.
+
+    ``integrated`` is used by the submit worker: it preserves the submission
+    transcript and skips the second full-size logo while keeping the same
+    downloader, polling, resume, and completion behavior as manual downloads.
+    """
     global data, session, job_id, job_name, download_path
     global rclone_bin, s3info, bucket, base_cmd
     global download_type, sarfis_url, sarfis_token
@@ -851,27 +1219,24 @@ def main() -> None:
     global run_rclone, ensure_rclone, NOT_FOUND_MARKERS, AUTH_MARKERS
     global open_folder, fetch_project_storage, _build_base
     global requests_retry_session, CLOUDFLARE_R2_DOMAIN
+    global TerminalKeyReader, _download_actions
 
     t_start = time.perf_counter()
-    try:
-        data = _load_handoff_from_argv(sys.argv)
-        mods = _bootstrap_addon_modules(data)
-        run_rclone = mods["run_rclone"]
-        ensure_rclone = mods["ensure_rclone"]
-        NOT_FOUND_MARKERS = mods["NOT_FOUND_MARKERS"]
-        AUTH_MARKERS = mods["AUTH_MARKERS"]
-        open_folder = mods["open_folder"]
-        fetch_project_storage = mods["fetch_project_storage"]
-        _build_base = mods["_build_base"]
-        requests_retry_session = mods["requests_retry_session"]
-        CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
-        DownloadLogger = mods["DownloadLogger"]
+    data = dict(handoff)
+    mods = _bootstrap_addon_modules(data)
+    run_rclone = mods["run_rclone"]
+    ensure_rclone = mods["ensure_rclone"]
+    NOT_FOUND_MARKERS = mods["NOT_FOUND_MARKERS"]
+    AUTH_MARKERS = mods["AUTH_MARKERS"]
+    open_folder = mods["open_folder"]
+    fetch_project_storage = mods["fetch_project_storage"]
+    _build_base = mods["_build_base"]
+    requests_retry_session = mods["requests_retry_session"]
+    CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
+    DownloadLogger = mods["DownloadLogger"]
+    TerminalKeyReader = mods["TerminalKeyReader"]
+    if clear_console:
         mods["clear_console"]()
-    except Exception as exc:
-        print(f"Couldn't start downloader: {exc}")
-        traceback.print_exc()
-        input("\nPress Enter to close.")
-        sys.exit(1)
 
     # Create logger
     logger = DownloadLogger()
@@ -886,7 +1251,11 @@ def main() -> None:
     dest_dir = os.path.abspath(os.path.join(download_path, safe_job_dir))
 
     # Show startup logo
-    logger.logo_start(job_name=job_name, dest_dir=dest_dir)
+    logger.logo_start(
+        job_name=job_name,
+        dest_dir=dest_dir,
+        show_logo=not integrated,
+    )
 
     # Early preflight checks
     run_preflight_checks = mods["run_preflight_checks"]
@@ -939,32 +1308,88 @@ def main() -> None:
     # Make sure the target directory exists
     _ensure_dir(download_path)
 
+    actions = _DownloadActionController(
+        TerminalKeyReader(),
+        dest_dir=dest_dir,
+        job_url=_job_page_url(data),
+        report_path=str(data.get("report_path", "") or "").strip(),
+    )
+    _download_actions = actions
+    if actions.start():
+        logger.download_actions(
+            have_job=bool(actions.job_url),
+            have_report=bool(actions.report_path),
+        )
+
     # Run selected mode
     try:
-        _run_selected_downloader(
+        outcome = _run_selected_downloader(
             dest_dir,
             download_type,
             sarfis_url,
             sarfis_token,
         )
 
+        mp4_path = None
+        if bool(data.get("create_mp4_after_download")):
+            if outcome == "finished":
+                try:
+                    mp4_path = _create_mp4(dest_dir)
+                except _DownloadCancelled:
+                    raise
+                except Exception as exc:
+                    logger.warning(
+                        "Frames downloaded, but MP4 creation failed. "
+                        f"You can retry the download later. Details: {exc}"
+                    )
+            else:
+                logger.warning(
+                    "MP4 will be created only after the complete job downloads successfully."
+                )
+
         elapsed = time.perf_counter() - t_start
 
         # Show success screen
-        choice = logger.logo_end(elapsed=elapsed, dest_dir=dest_dir)
+        actions.stop()
+        choice = logger.logo_end(
+            elapsed=elapsed,
+            dest_dir=dest_dir,
+            mp4_path=mp4_path,
+        )
         if choice == "o":
             open_folder(dest_dir)
+        return dest_dir
 
+    except _DownloadCancelled:
+        actions.stop()
+        choice = logger.cancelled(dest_dir=dest_dir)
+        if choice == "o":
+            open_folder(dest_dir)
+        return dest_dir
     except KeyboardInterrupt:
+        actions.stop()
         logger.warn_block(
             "Download interrupted. Run again to resume.", severity="warning"
         )
-        try:
-            input("\nPress Enter to close.")
-        except Exception:
-            pass
+        if not integrated:
+            try:
+                input("\nPress Enter to close.")
+            except Exception:
+                pass
+        return dest_dir
     except Exception as exc:
+        actions.stop()
         logger.fatal(f"Download stopped: {exc}")
+    finally:
+        actions.stop()
+        _download_actions = None
+
+    return dest_dir
+
+
+def main() -> None:
+    data = _load_handoff_from_argv(sys.argv)
+    run_download(data)
 
 
 if __name__ == "__main__":

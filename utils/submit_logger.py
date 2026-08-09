@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -41,6 +42,8 @@ from .logger_utils import (
     GLYPH_BULLET,
     GLYPH_HEX,
     GLYPH_LINK,
+    BAR_FULL,
+    BAR_EMPTY,
     # Theme and console
     SULU_PANEL_BOX,
     SULU_TABLE_BOX,
@@ -50,6 +53,19 @@ from .logger_utils import (
     TraceEntry,
     BLOCK_TYPE_NAMES,
 )
+
+
+def _format_elapsed(seconds: float) -> str:
+    """Format elapsed time compactly without hiding long packing phases."""
+    value = max(float(seconds), 0.0)
+    if value < 60:
+        return f"{value:.1f}s"
+    total_seconds = int(round(value))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {secs:02d}s"
+    return f"{minutes}m {secs:02d}s"
 
 # Submit logger
 
@@ -71,6 +87,7 @@ class SubmitLogger(TranscriptLogger):
         self._trace_entries: List[TraceEntry] = []
         self._pack_entries: List[Dict[str, Any]] = []
         self._zip_entries: List[Dict[str, Any]] = []
+        self._zip_live_rows: Dict[int, Dict[str, Any]] = {}
 
         # “last known” artifacts so the success screen can show them
         self._last_report_path: Optional[str] = None
@@ -575,20 +592,186 @@ class SubmitLogger(TranscriptLogger):
 
     # ZIP callbacks (BAT)
 
-    def zip_start(self, total_files: int, total_bytes: int) -> None:
+    def zip_start(self, total_files: int, source_bytes: int) -> None:
         self._zip_entries: List[Dict[str, Any]] = []
+        self._zip_live_rows = {}
+        self._zip_progress_seen = False
+        self._transfer_cur = 0
+        self._transfer_total = max(int(source_bytes), 0)
+        self._progress_bar_width = self._compute_progress_bar_width()
+        self._last_progress_time = 0.0
+        self._stop_live_progress()
         # Table will be printed at zip_done
 
+    def _progress_status_text(
+        self,
+        checks: int,
+        transfers: int,
+        status: str,
+        current_file: str,
+    ) -> str:
+        if status == "packing":
+            return current_file
+        return super()._progress_status_text(
+            checks, transfers, status, current_file
+        )
+
+    @staticmethod
+    def _zip_progress_bar(done: int, total: int, width: int = 7) -> Any:
+        pct = max(0.0, min(1.0, done / max(total, 1))) if total > 0 else 1.0
+        filled = int(width * pct)
+        if Text is None:
+            return f"{pct * 100:.0f}%"
+        bar = Text()
+        if filled:
+            bar.append(BAR_FULL * filled, style="sulu.accent")
+        if filled < width:
+            bar.append(BAR_EMPTY * (width - filled), style="sulu.stroke_subtle")
+        bar.append(f" {pct * 100:3.0f}%", style="sulu.muted")
+        return bar
+
+    def _build_zip_live_display(
+        self,
+        source_bytes_done: int,
+        source_bytes: int,
+        total_elapsed: float,
+    ) -> Any:
+        if Table is None or Text is None:
+            return ""
+
+        display = Table.grid(expand=True, padding=(0, 0))
+        display.add_column(ratio=1)
+        display.add_row(
+            self._build_progress_line_ext(
+                source_bytes_done,
+                source_bytes,
+                checks=0,
+                transfers=0,
+                status="packing",
+                current_file=f"Overall  ·  {_format_elapsed(total_elapsed)}",
+            )
+        )
+
+        rows = [self._zip_live_rows[key] for key in sorted(self._zip_live_rows)]
+        hidden = max(0, len(rows) - 10)
+        if hidden:
+            rows = rows[-10:]
+
+        files = Table(
+            show_header=True,
+            header_style="sulu.dim",
+            box=None,
+            padding=(0, 1),
+            expand=True,
+        )
+        files.add_column("File", style="sulu.fg", ratio=4, no_wrap=True)
+        files.add_column("Progress", width=13)
+        files.add_column("Method · Time", style="sulu.muted", ratio=3)
+        if hidden:
+            files.add_row(
+                f"{hidden} earlier file{'s' if hidden != 1 else ''}",
+                Text(f"{BAR_FULL * 7} 100%", style="sulu.ok"),
+                "complete",
+            )
+        for row in rows:
+            files.add_row(
+                row["arcname"],
+                self._zip_progress_bar(row["done"], row["total"]),
+                f"{row['method']}  ·  {_format_elapsed(row['elapsed'])}",
+            )
+        display.add_row(files)
+        return display
+
+    def zip_progress(
+        self,
+        index: int,
+        total_files: int,
+        arcname: str,
+        file_bytes_done: int,
+        file_size: int,
+        source_bytes_done: int,
+        source_bytes: int,
+        method: str,
+        file_elapsed: float,
+        total_elapsed: float,
+    ) -> None:
+        """Render overall and current-file progress while a member is written."""
+        self._zip_progress_seen = True
+        self._transfer_cur = max(int(source_bytes_done), 0)
+        self._transfer_total = max(int(source_bytes), 0)
+        file_done = max(int(file_bytes_done), 0)
+        file_total = max(int(file_size), 0)
+        rate = file_done / file_elapsed if file_elapsed > 0 else 0.0
+        current_name = Path(arcname).name or str(arcname)
+        file_status = (
+            f"[{index}/{total_files}] {current_name}  ·  {method}  ·  "
+            f"{_format_elapsed(file_elapsed)}"
+        )
+        if rate > 0:
+            file_status += f"  ·  {format_size(int(rate))}/s"
+        self._zip_live_rows[index] = {
+            "arcname": str(arcname),
+            "done": file_done,
+            "total": file_total,
+            "method": method,
+            "elapsed": file_elapsed,
+        }
+
+        if self.console and Text is not None and Table is not None:
+            now = time.time()
+            if now - self._last_progress_time < 0.1:
+                return
+            self._last_progress_time = now
+            self._start_live_progress()
+            self._live_update(
+                self._build_zip_live_display(
+                    self._transfer_cur,
+                    self._transfer_total,
+                    total_elapsed,
+                )
+            )
+            return
+
+        if self._transfer_total > 0:
+            overall_pct = self._transfer_cur / max(self._transfer_total, 1) * 100
+            file_pct = file_done / max(file_total, 1) * 100 if file_total else 100.0
+            line = (
+                f"\r  Overall {overall_pct:.1f}%  ·  File {file_pct:.1f}%  ·  "
+                f"{file_status} "
+            )
+        else:
+            line = f"\r  {format_size(self._transfer_cur)} packed  {file_status} "
+        sys.stderr.write(line)
+        sys.stderr.flush()
+
     def zip_entry(
-        self, index: int, total: int, arcname: str, size: int, method: str
+        self,
+        index: int,
+        total: int,
+        arcname: str,
+        source_size: int,
+        archive_size: int,
+        method: str,
+        elapsed: float,
     ) -> None:
         self._zip_entries.append(
             {
+                "index": index,
+                "total": total,
                 "arcname": arcname,
-                "size": size,
+                "source_size": source_size,
+                "archive_size": archive_size,
                 "method": method,
+                "elapsed": elapsed,
             }
         )
+        self._zip_live_rows[index] = {
+            "arcname": str(arcname),
+            "done": max(int(source_size), 0),
+            "total": max(int(source_size), 0),
+            "method": method,
+            "elapsed": max(float(elapsed), 0.0),
+        }
 
     def _render_zip_table(self) -> None:
         """Render the accumulated zip entries as a proper Rich table."""
@@ -604,13 +787,27 @@ class SubmitLogger(TranscriptLogger):
                 padding=(0, 1),
                 expand=True,
             )
-            table.add_column("File", style="#D8DEEC", no_wrap=True, ratio=4)
-            table.add_column("Size", style="#7E828B", justify="right", width=12)
-            table.add_column("Mode", style="#A2A6AF", justify="right", width=16)
+            table.add_column("File", style="#D8DEEC", no_wrap=True, ratio=3)
+            table.add_column("Progress", justify="left", width=12)
+            table.add_column("Before ZIP → ZIP data · Method · Time", ratio=5)
 
             for entry in self._zip_entries:
-                size_str = format_size(entry["size"]) if entry["size"] else "—"
-                table.add_row(entry["arcname"], size_str, entry["method"])
+                complete = Text()
+                complete.append(BAR_FULL * 5, style="sulu.ok")
+                complete.append(" 100%", style="sulu.ok_b")
+                details = Text()
+                details.append(format_size(entry["source_size"]), style="sulu.muted")
+                details.append(" → ", style="sulu.stroke_subtle")
+                details.append(format_size(entry["archive_size"]), style="sulu.fg")
+                details.append("\n")
+                details.append(entry["method"], style="sulu.accent")
+                details.append("  ·  ", style="sulu.stroke_subtle")
+                details.append(_format_elapsed(entry["elapsed"]), style="sulu.muted")
+                table.add_row(
+                    entry["arcname"],
+                    complete,
+                    details,
+                )
 
             self.console.print()
             self.console.print(table)
@@ -619,25 +816,68 @@ class SubmitLogger(TranscriptLogger):
             self._log_fn("Archive:")
             self._log_fn("-" * 70)
             for entry in self._zip_entries:
-                size_str = format_size(entry["size"]) if entry["size"] else ""
                 self._log_fn(
-                    f"  {entry['arcname']:<42} {size_str:>10} {entry['method']:>16}"
+                    f"  [100%] {entry['arcname']}  ·  "
+                    f"Source {format_size(entry['source_size'])} → "
+                    f"ZIP data {format_size(entry['archive_size'])}  ·  "
+                    f"{entry['method']}  ·  {_format_elapsed(entry['elapsed'])}"
                 )
 
+    @staticmethod
+    def _zip_size_change(source_bytes: int, archive_bytes: int) -> Tuple[str, str]:
+        """Describe the ZIP delta without treating container overhead as savings."""
+        source = max(int(source_bytes), 0)
+        archive = max(int(archive_bytes), 0)
+        delta = source - archive
+        percentage = abs(delta) / source * 100 if source > 0 else 0.0
+        if percentage == 0:
+            percentage_text = "0.0%"
+        elif percentage < 0.01:
+            percentage_text = "<0.01%"
+        else:
+            percentage_text = f"{percentage:.1f}%"
+        if delta >= 0:
+            return "Reduced by", f"{format_size(delta)} ({percentage_text})"
+        return "Archive overhead", f"{format_size(-delta)} ({percentage_text})"
+
     def zip_done(
-        self, zippath: str, total_files: int, total_bytes: int, elapsed: float
+        self,
+        zippath: str,
+        total_files: int,
+        *,
+        source_bytes: int,
+        archive_bytes: int,
+        preparation_elapsed: float,
+        archive_write_elapsed: float,
+        total_elapsed: float,
     ) -> None:
+        self._stop_live_progress()
+        if getattr(self, "_zip_progress_seen", False) and not self.console:
+            sys.stderr.write("\n")
+            sys.stderr.flush()
         # Render the zip table first
         self._render_zip_table()
+        change_label, change_value = self._zip_size_change(
+            source_bytes, archive_bytes
+        )
 
         if self.console and Text is not None:
             body = Text()
             body.append(f"{GLYPH_OK} ", style="sulu.ok_b")
             body.append(_count(total_files, "file"), style="sulu.fg")
             body.append("  ·  ", style="sulu.stroke_subtle")
-            body.append(f"{format_size(total_bytes)}", style="sulu.muted")
-            body.append("  ·  ", style="sulu.stroke_subtle")
-            body.append(f"{elapsed:.1f}s", style="sulu.muted")
+            body.append("Total packing  ", style="sulu.dim")
+            body.append(_format_elapsed(total_elapsed), style="sulu.fg")
+            body.append("\nPreparing archive          ", style="sulu.dim")
+            body.append(_format_elapsed(preparation_elapsed), style="sulu.muted")
+            body.append("\nWriting ZIP                ", style="sulu.dim")
+            body.append(_format_elapsed(archive_write_elapsed), style="sulu.muted")
+            body.append("\nSource files (before ZIP)  ", style="sulu.dim")
+            body.append(format_size(source_bytes), style="sulu.fg")
+            body.append("\nZIP archive (after ZIP)    ", style="sulu.dim")
+            body.append(format_size(archive_bytes), style="sulu.fg")
+            body.append(f"\n{change_label}  ", style="sulu.dim")
+            body.append(change_value, style="sulu.muted")
 
             panel = self._panel(
                 body,
@@ -650,8 +890,22 @@ class SubmitLogger(TranscriptLogger):
         else:
             self._log_fn("")
             self._log_fn(
-                f"Archive ready: {_count(total_files, 'file')}, {format_size(total_bytes)}, {elapsed:.1f}s"
+                f"Archive ready: {_count(total_files, 'file')}"
             )
+            self._log_fn(f"  Total packing: {_format_elapsed(total_elapsed)}")
+            self._log_fn(
+                f"  Preparing archive: {_format_elapsed(preparation_elapsed)}"
+            )
+            self._log_fn(
+                f"  Writing ZIP: {_format_elapsed(archive_write_elapsed)}"
+            )
+            self._log_fn(
+                f"  Source files (before ZIP): {format_size(source_bytes)}"
+            )
+            self._log_fn(
+                f"  ZIP archive (after ZIP): {format_size(archive_bytes)}"
+            )
+            self._log_fn(f"  {change_label}: {change_value}")
 
     # Upload and transfer
 
@@ -768,6 +1022,7 @@ class SubmitLogger(TranscriptLogger):
         elapsed: Optional[float] = None,
         job_url: Optional[str] = None,
         report_path: Optional[str] = None,
+        continue_to_download: bool = False,
     ) -> str:
         """
         Success screen with logo and action options.
@@ -805,14 +1060,24 @@ class SubmitLogger(TranscriptLogger):
             headline.justify = "center"
 
             subtitle = Text(
-                "Your job is queued. Rendering begins shortly.",
+                (
+                    "Downloading frames as they finish."
+                    if continue_to_download
+                    else "Your job is queued. Rendering begins shortly."
+                ),
                 style="sulu.muted",
             )
             subtitle.justify = "center"
 
-            action_block = self._success_action_block(
-                have_job=have_job, have_report=have_report
-            )
+            if continue_to_download:
+                action_block = Text()
+                action_block.justify = "center"
+                action_block.append(" NEXT ", style="bold #D8DEEC on #5250FF")
+                action_block.append(" Live download", style="sulu.fg")
+            else:
+                action_block = self._success_action_block(
+                    have_job=have_job, have_report=have_report
+                )
 
             body = Table.grid(padding=(0, 0))
             body.expand = True
@@ -834,6 +1099,9 @@ class SubmitLogger(TranscriptLogger):
                 padding=(1, 2),
             )
             self.console.print(panel)
+
+            if continue_to_download:
+                return "c"
 
             if not self._can_prompt():
                 return "c"
@@ -866,6 +1134,12 @@ class SubmitLogger(TranscriptLogger):
         # Plain text fallback
         self._log_fn("")
         self._log_fn("Submission complete")
+        if continue_to_download:
+            self._log_fn("Downloading frames as they finish.")
+            self._log_fn("")
+            self._log_fn("  [Next] Live download")
+            return "c"
+
         self._log_fn("Your job is queued. Rendering begins shortly.")
         self._log_fn("")
         if have_job:

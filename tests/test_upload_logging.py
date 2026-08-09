@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import io
 import json
 import sys
 import tempfile
@@ -63,6 +64,7 @@ def _synthesize_addon_package() -> str:
 _pkg_name = _synthesize_addon_package()
 _diagnostic_report = importlib.import_module(f"{_pkg_name}.utils.diagnostic_report")
 _logger_utils = importlib.import_module(f"{_pkg_name}.utils.logger_utils")
+_submit_logger = importlib.import_module(f"{_pkg_name}.utils.submit_logger")
 _rclone_utils = importlib.import_module(f"{_pkg_name}.transfers.rclone_utils")
 _submit_worker = importlib.import_module(
     f"{_pkg_name}.transfers.submit.submit_worker"
@@ -418,6 +420,86 @@ class TestUploadResultVisibility(unittest.TestCase):
         emit.assert_called_once_with(payload)
 
 
+class TestIntegratedDownloadHandoff(unittest.TestCase):
+    def _context(self, *, enabled: bool):
+        report = mock.MagicMock()
+        report.get_reports_dir.return_value = Path("/tmp/sulu-reports")
+        logger = mock.MagicMock()
+        logger.logo_end.return_value = "c"
+        return types.SimpleNamespace(
+            data={
+                "job_id": "job-live-download",
+                "job_name": "Nebula Passage",
+                "download_after_submit": enabled,
+                "download_path": "/tmp/renders",
+                "packed_addons": [],
+            },
+            mods={"pkg_name": _pkg_name, "open_folder": mock.Mock()},
+            logger=logger,
+            report=report,
+            t_start=0.0,
+            use_project=False,
+            project_sqid="project-sqid",
+            rel_manifest=[],
+            main_blend_s3="scene.zip",
+            blend_path="/tmp/scene.blend",
+        )
+
+    def test_enabled_handoff_continues_in_same_terminal(self):
+        ctx = self._context(enabled=True)
+
+        with (
+            mock.patch.object(
+                _submit_worker,
+                "_run_integrated_download",
+                return_value="/tmp/renders/Nebula Passage",
+            ) as run_download,
+            self.assertRaises(SystemExit) as raised,
+        ):
+            _submit_worker._finish(ctx)
+
+        self.assertEqual(raised.exception.code, 0)
+        ctx.logger.logo_end.assert_called_once()
+        self.assertTrue(
+            ctx.logger.logo_end.call_args.kwargs["continue_to_download"]
+        )
+        download_handoff = run_download.call_args.args[0]
+        self.assertEqual(run_download.call_args.args[1], _pkg_name)
+        self.assertEqual(
+            download_handoff["job_url"],
+            "https://superlumin.al/p/project-sqid/farm/jobs/job-live-download",
+        )
+        self.assertEqual(download_handoff["report_path"], "/tmp/sulu-reports")
+
+    def test_disabled_handoff_keeps_existing_completion_prompt(self):
+        ctx = self._context(enabled=False)
+
+        with (
+            mock.patch.object(_submit_worker, "_run_integrated_download") as run_download,
+            self.assertRaises(SystemExit) as raised,
+        ):
+            _submit_worker._finish(ctx)
+
+        self.assertEqual(raised.exception.code, 0)
+        self.assertFalse(
+            ctx.logger.logo_end.call_args.kwargs["continue_to_download"]
+        )
+        run_download.assert_not_called()
+
+    def test_transition_screen_never_waits_for_input(self):
+        messages = []
+        input_fn = mock.Mock(return_value="j")
+        logger = _submit_logger.SubmitLogger(log_fn=messages.append, input_fn=input_fn)
+        logger.console = None
+
+        choice = logger.logo_end(continue_to_download=True)
+
+        self.assertEqual(choice, "c")
+        input_fn.assert_not_called()
+        self.assertIn("Downloading frames as they finish.", messages)
+        self.assertIn("  [Next] Live download", messages)
+
+
 class TestSubmitHandoffCleanup(unittest.TestCase):
     def test_malformed_handoff_is_still_removed(self):
         with tempfile.NamedTemporaryFile(
@@ -494,6 +576,160 @@ class TestFinalizingStatusRendering(unittest.TestCase):
         self.assertEqual(text, "Checking 3 existing files")
 
 
+class TestZipProgressRendering(unittest.TestCase):
+    def test_packing_status_names_current_archive_member(self):
+        text = _submit_logger.SubmitLogger._progress_status_text(
+            None,
+            checks=0,
+            transfers=0,
+            status="packing",
+            current_file="[1/11] Chess Board V2.blend  ·  8.0 MiB/s",
+        )
+        self.assertEqual(
+            text, "[1/11] Chess Board V2.blend  ·  8.0 MiB/s"
+        )
+
+    def test_plain_zip_progress_shows_total_percent_file_and_rate(self):
+        logger = _submit_logger.SubmitLogger(log_fn=lambda _message: None)
+        logger.console = None
+        stderr = io.StringIO()
+
+        with mock.patch.object(sys, "stderr", stderr):
+            logger.zip_start(total_files=2, source_bytes=1000)
+            logger.zip_progress(
+                index=1,
+                total_files=2,
+                arcname="scenes/scene.blend",
+                file_bytes_done=500,
+                file_size=800,
+                source_bytes_done=500,
+                source_bytes=1000,
+                method="Stored · Gzip source",
+                file_elapsed=2.0,
+                total_elapsed=3.0,
+            )
+            logger.zip_done(
+                "archive.zip",
+                2,
+                source_bytes=1000,
+                archive_bytes=600,
+                preparation_elapsed=1.0,
+                archive_write_elapsed=2.0,
+                total_elapsed=3.0,
+            )
+
+        output = stderr.getvalue()
+        self.assertIn("50.0%", output)
+        self.assertIn("[1/2] scene.blend", output)
+        self.assertIn("250 B/s", output)
+
+    def test_zip_progress_keeps_completed_and_current_file_rows(self):
+        logger = _submit_logger.SubmitLogger(log_fn=lambda _message: None)
+        logger.console = None
+
+        with mock.patch.object(sys, "stderr", io.StringIO()):
+            logger.zip_start(total_files=2, source_bytes=1500)
+            logger.zip_progress(
+                index=1,
+                total_files=2,
+                arcname="scenes/scene.blend",
+                file_bytes_done=600,
+                file_size=1200,
+                source_bytes_done=600,
+                source_bytes=1500,
+                method="Zstandard-9",
+                file_elapsed=2.0,
+                total_elapsed=3.0,
+            )
+            logger.zip_entry(
+                1,
+                2,
+                "scenes/scene.blend",
+                1200,
+                800,
+                "Zstandard-9",
+                4.0,
+            )
+            logger.zip_progress(
+                index=2,
+                total_files=2,
+                arcname="textures/board.png",
+                file_bytes_done=150,
+                file_size=300,
+                source_bytes_done=1350,
+                source_bytes=1500,
+                method="Deflate-1",
+                file_elapsed=1.0,
+                total_elapsed=5.0,
+            )
+
+        self.assertEqual(logger._zip_live_rows[1]["done"], 1200)
+        self.assertEqual(logger._zip_live_rows[1]["total"], 1200)
+        self.assertEqual(logger._zip_live_rows[1]["elapsed"], 4.0)
+        self.assertEqual(logger._zip_live_rows[2]["done"], 150)
+        self.assertEqual(logger._zip_live_rows[2]["total"], 300)
+        self.assertEqual(logger._zip_live_rows[2]["method"], "Deflate-1")
+
+    def test_zip_summary_keeps_source_and_archive_sizes_explicit(self):
+        messages = []
+        logger = _submit_logger.SubmitLogger(log_fn=messages.append)
+        logger.console = None
+
+        logger.zip_start(total_files=2, source_bytes=1500)
+        logger.zip_entry(
+            1,
+            2,
+            "scenes/scene.blend",
+            1200,
+            800,
+            "Zstandard-9",
+            61.0,
+        )
+        logger.zip_done(
+            "archive.zip",
+            2,
+            source_bytes=1500,
+            archive_bytes=1000,
+            preparation_elapsed=1.0,
+            archive_write_elapsed=2.0,
+            total_elapsed=3.0,
+        )
+
+        self.assertIn("  Source files (before ZIP): 1.5 KB", messages)
+        self.assertIn("  ZIP archive (after ZIP): 1.0 KB", messages)
+        self.assertIn("  Reduced by: 500 B (33.3%)", messages)
+        self.assertIn("  Total packing: 3.0s", messages)
+        self.assertIn("  Preparing archive: 1.0s", messages)
+        self.assertIn("  Writing ZIP: 2.0s", messages)
+        self.assertTrue(
+            any(
+                "[100%] scenes/scene.blend" in message
+                and "Source 1.2 KB → ZIP data 800 B" in message
+                and "Zstandard-9" in message
+                and "1m 01s" in message
+                for message in messages
+            )
+        )
+
+    def test_zip_summary_names_container_overhead_instead_of_negative_savings(self):
+        messages = []
+        logger = _submit_logger.SubmitLogger(log_fn=messages.append)
+        logger.console = None
+
+        logger.zip_start(total_files=1, source_bytes=1000)
+        logger.zip_done(
+            "archive.zip",
+            1,
+            source_bytes=1000,
+            archive_bytes=1100,
+            preparation_elapsed=0.5,
+            archive_write_elapsed=1.0,
+            total_elapsed=1.5,
+        )
+
+        self.assertIn("  Archive overhead: 100 B (10.0%)", messages)
+
+
 class TestRcloneFinalizingProgress(unittest.TestCase):
     """100% is emitted only after the rclone process confirms success."""
 
@@ -527,8 +763,14 @@ class TestRcloneFinalizingProgress(unittest.TestCase):
         def __exit__(self, exc_type, exc, traceback):
             return False
 
-        def wait(self):
+        def wait(self, timeout=None):
             return self.exit_code
+
+        def terminate(self):
+            self.terminated = True
+
+        def kill(self):
+            self.killed = True
 
     def test_holds_at_99_9_until_process_exit_and_records_boundary(self):
         stats_line = json.dumps(
@@ -690,6 +932,34 @@ class TestRcloneFinalizingProgress(unittest.TestCase):
         self.assertNotIn((999, 1000, "finalizing"), logger.calls)
         self.assertIsNone(result["reported_bytes_complete_time"])
         self.assertIsNone(result["finalization_time"])
+
+    def test_action_callback_cancels_active_rclone_process(self):
+        process = self._Process(["working\n"])
+
+        class CancelDownload(Exception):
+            pass
+
+        with mock.patch.object(
+            _rclone_utils,
+            "_rclone_supports_flag",
+            return_value=False,
+        ), mock.patch.object(
+            _rclone_utils.subprocess,
+            "Popen",
+            return_value=process,
+        ):
+            with self.assertRaises(CancelDownload):
+                _rclone_utils.run_rclone(
+                    ["rclone"],
+                    "copy",
+                    ":s3:bucket/results/",
+                    "/tmp/results",
+                    action_callback=lambda: (_ for _ in ()).throw(
+                        CancelDownload()
+                    ),
+                )
+
+        self.assertTrue(process.terminated)
 
 
 class TestSubmitPhaseTimings(unittest.TestCase):
@@ -1999,6 +2269,41 @@ class TestReportPackDependencySize(unittest.TestCase):
             self.assertEqual(
                 data["stages"]["pack"]["summary"]["dependency_total_size"], 999
             )
+
+    def test_zip_pack_sizes_timings_and_member_stats_are_explicit(self):
+        with tempfile.TemporaryDirectory() as d:
+            report = _diagnostic_report.DiagnosticReport(
+                reports_dir=Path(d), job_id="zip-metrics", blend_name="test"
+            )
+            report.start_stage("pack")
+            report.add_pack_entry(
+                "scene.blend",
+                "scene.blend",
+                file_size=1500,
+                archive_size=1000,
+                method="Zstandard-9",
+                elapsed_seconds=61.0,
+            )
+            report.set_zip_pack_summary(
+                source_bytes=1500,
+                archive_bytes=1150,
+                preparation_elapsed=5.0,
+                archive_write_elapsed=61.0,
+                total_elapsed=66.0,
+            )
+            report.complete_stage("pack")
+
+            entry = report._data["stages"]["pack"]["entries"][0]
+            summary = report._data["stages"]["pack"]["summary"]
+            self.assertEqual(entry["source_size_bytes"], 1500)
+            self.assertEqual(entry["archive_data_size_bytes"], 1000)
+            self.assertEqual(entry["archive_method"], "Zstandard-9")
+            self.assertEqual(entry["elapsed_seconds"], 61.0)
+            self.assertEqual(summary["source_size_bytes"], 1500)
+            self.assertEqual(summary["zip_archive_size_bytes"], 1150)
+            self.assertEqual(summary["preparation_elapsed_seconds"], 5.0)
+            self.assertEqual(summary["archive_write_elapsed_seconds"], 61.0)
+            self.assertEqual(summary["total_elapsed_seconds"], 66.0)
 
 
 # Report v3.0: version and metadata

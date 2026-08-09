@@ -8,6 +8,7 @@ Calm, confident, concise.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Callable, Optional
 
 from .worker_utils import format_size
@@ -115,13 +116,20 @@ class DownloadLogger(TranscriptLogger):
 
     # Logo
 
-    def logo_start(self, job_name: str = "", dest_dir: str = "") -> None:
+    def logo_start(
+        self,
+        job_name: str = "",
+        dest_dir: str = "",
+        *,
+        show_logo: bool = True,
+    ) -> None:
         """Show startup logo with job info panel."""
         self._dest_dir = dest_dir
         width = self._get_width()
 
         if self.console and Text is not None:
-            self._print_logo(gradient_bg=True)
+            if show_logo:
+                self._print_logo(gradient_bg=True)
 
             # Job info panel
             if job_name or dest_dir:
@@ -142,10 +150,11 @@ class DownloadLogger(TranscriptLogger):
                 panel = self._panel(body, title=title, padding=(0, 2))
                 self.console.print(panel)
         else:
-            logo_str = _get_logo_mark(width)
-            if logo_str:
-                self._log_fn(logo_str)
-            self._log_fn("")
+            if show_logo:
+                logo_str = _get_logo_mark(width)
+                if logo_str:
+                    self._log_fn(logo_str)
+                self._log_fn("")
             if job_name:
                 self._log_fn(f"Downloading: {job_name}")
             if dest_dir:
@@ -177,6 +186,54 @@ class DownloadLogger(TranscriptLogger):
             self._log_fn("")
             self._log_fn("Auto-download: Downloading frames as they render.")
             self._log_fn("Close anytime. Run again to resume.")
+
+    def download_actions(self, *, have_job: bool, have_report: bool) -> None:
+        """Show persistent single-key actions available during the download."""
+        if self.console and Text is not None and Panel is not None:
+            self.console.print()
+
+            title = Text()
+            title.append(f"{GLYPH_INFO} ", style="sulu.accent")
+            title.append("While downloading", style="sulu.dim")
+
+            actions = Text()
+            action_count = 0
+
+            def add_action(key: str, label: str, style: str) -> None:
+                nonlocal action_count
+                if action_count:
+                    actions.append("   ", style="sulu.dim")
+                actions.append(f" {key} ", style=style)
+                actions.append(f" {label}", style="sulu.fg")
+                action_count += 1
+
+            if have_job:
+                add_action("J", "Job page", "bold #15171E on #1EA138")
+            if have_report:
+                add_action("R", "Diagnostics", "bold #D8DEEC on #5250FF")
+            add_action("O", "Folder", "bold #D8DEEC on #24272E")
+            add_action("C", "Cancel", "bold #F4D8D8 on #6E2930")
+
+            panel = self._panel(
+                Align.center(actions) if Align is not None else actions,
+                title=title,
+                border_style="sulu.accent",
+                padding=(0, 2),
+            )
+            self.console.print(panel)
+        else:
+            actions = []
+            if have_job:
+                actions.append("[J] Job page")
+            if have_report:
+                actions.append("[R] Diagnostics")
+            actions.extend(("[O] Folder", "[C] Cancel"))
+            self._log_fn("")
+            self._log_fn("While downloading: " + "  ".join(actions))
+
+    def action_feedback(self, message: str) -> None:
+        """Acknowledge a shortcut without disturbing the transfer transcript."""
+        self.info(message)
 
     def resume_info(self, cached_count: int) -> None:
         """Show resume info panel when frames were previously downloaded."""
@@ -244,7 +301,77 @@ class DownloadLogger(TranscriptLogger):
 
     # End screen
 
-    def logo_end(self, elapsed: Optional[float] = None, dest_dir: Optional[str] = None) -> str:
+    def cancelled(self, dest_dir: Optional[str] = None) -> str:
+        """Show a calm cancellation screen. Returns 'o' (open) or 'c'."""
+        self._stop_live()
+        dest = dest_dir or self._dest_dir
+
+        if (
+            self.console
+            and Text is not None
+            and Panel is not None
+            and Table is not None
+            and Align is not None
+        ):
+            self.console.print()
+            headline = Text("Download stopped", style="sulu.warn_b")
+            subtitle = Text(
+                "Downloaded frames are safe. Run again anytime to resume.",
+                style="sulu.muted",
+            )
+            actions = Text()
+            actions.append(" O ", style="bold #15171E on #1EA138")
+            actions.append(" Open folder", style="sulu.fg")
+            actions.append("    ")
+            actions.append(" ENTER ", style="bold #D8DEEC on #24272E")
+            actions.append(" Close", style="sulu.muted")
+
+            body = Table.grid(padding=(0, 0))
+            body.expand = True
+            body.add_column(justify="center")
+            body.add_row(Align.center(headline))
+            body.add_row(Align.center(subtitle))
+            if dest:
+                body.add_row(Align.center(Text(dest, style="sulu.dim")))
+            body.add_row(Text(""))
+            body.add_row(Align.center(actions))
+            self.console.print(
+                self._panel(
+                    body,
+                    border_style="sulu.warn",
+                    padding=(1, 2),
+                )
+            )
+            if not self._can_prompt():
+                return "c"
+            try:
+                raw = self._input_fn("", "")
+            except (EOFError, KeyboardInterrupt):
+                return "c"
+            return "o" if (raw or "").strip().lower() in {"o", "open"} else "c"
+
+        self._log_fn("")
+        self._log_fn("Download stopped")
+        self._log_fn("Downloaded frames are safe. Run again anytime to resume.")
+        if dest:
+            self._log_fn(f"  {dest}")
+        self._log_fn("")
+        self._log_fn("  [O] Open folder")
+        self._log_fn("  [Enter] Close")
+        if not self._can_prompt():
+            return "c"
+        try:
+            raw = self._input_fn("> ", "")
+        except (EOFError, KeyboardInterrupt):
+            return "c"
+        return "o" if (raw or "").strip().lower() in {"o", "open"} else "c"
+
+    def logo_end(
+        self,
+        elapsed: Optional[float] = None,
+        dest_dir: Optional[str] = None,
+        mp4_path: Optional[str] = None,
+    ) -> str:
         """Show completion and prompt. Returns 'o' (open) or 'c' (close)."""
         self._stop_live()
         dest = dest_dir or self._dest_dir
@@ -261,7 +388,10 @@ class DownloadLogger(TranscriptLogger):
             if elapsed is not None:
                 panel_title.append(f"  {elapsed:.1f}s", style="sulu.muted")
 
-            headline = Text("Download complete", style="sulu.ok_b")
+            headline = Text(
+                "Download and MP4 complete" if mp4_path else "Download complete",
+                style="sulu.ok_b",
+            )
 
             # Action row
             actions = Text()
@@ -283,6 +413,10 @@ class DownloadLogger(TranscriptLogger):
             if dest:
                 dest_text = Text(dest, style="sulu.dim")
                 body.add_row(Align.center(dest_text))
+            if mp4_path:
+                body.add_row(
+                    Align.center(Text(Path(mp4_path).name, style="sulu.accent"))
+                )
             body.add_row(Text(""))
             body.add_row(Align.center(actions))
 
@@ -315,9 +449,13 @@ class DownloadLogger(TranscriptLogger):
             self._log_fn(f"Done  {elapsed:.1f}s")
         else:
             self._log_fn("Done")
-        self._log_fn("Download complete")
+        self._log_fn(
+            "Download and MP4 complete" if mp4_path else "Download complete"
+        )
         if dest:
             self._log_fn(f"  {dest}")
+        if mp4_path:
+            self._log_fn(f"  {Path(mp4_path).name}")
         self._log_fn("")
         self._log_fn("  [O] Open folder")
         self._log_fn("  [Enter] Close")

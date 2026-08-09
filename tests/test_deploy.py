@@ -47,6 +47,13 @@ class TestDeployBuildProvenance(unittest.TestCase):
 
         self.assertIn('BUILD_CHANNEL = "development"', build_info)
 
+    def test_artifact_excludes_workstation_metadata(self):
+        archive = self._build("--version", "1.3.15")
+
+        self.assertFalse(
+            any(Path(name).name == ".DS_Store" for name in archive.namelist())
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

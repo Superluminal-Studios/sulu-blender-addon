@@ -756,7 +756,17 @@ def _classify_failure(
 # Main runner
 
 
-def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, total_bytes=None):
+def run_rclone(
+    base,
+    verb,
+    src,
+    dst,
+    extra=None,
+    logger=None,
+    file_count=None,
+    total_bytes=None,
+    action_callback=None,
+):
     """
     Execute rclone safely with a friendly progress display.
     Raises RuntimeError on failure (message is user-friendly, no emoji).
@@ -779,6 +789,9 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
         file_count: (unused) Number of files being transferred
         total_bytes: Pre-calculated total bytes for multi-file transfers.
                      When provided, enables percentage progress bar from the start.
+        action_callback: Optional non-blocking terminal action pump. If it
+                         raises, rclone is terminated before the exception is
+                         propagated to the caller.
 
     Reliability patches:
     - Automatically add --local-unicode-normalization when supported
@@ -1010,7 +1023,25 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
         encoding="utf-8",
         errors="replace",
     ) as proc:
+        def _pump_actions() -> None:
+            if action_callback is None:
+                return
+            try:
+                action_callback()
+            except BaseException:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=3)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                _progress_stop()
+                raise
+
         for raw in proc.stdout:
+            _pump_actions()
             fragments = raw.rstrip("\n").split("\r")
             for frag in fragments:
                 line = frag.strip()
@@ -1062,6 +1093,7 @@ def run_rclone(base, verb, src, dst, extra=None, logger=None, file_count=None, t
                 if logger is None:
                     print(line)
 
+        _pump_actions()
         code = proc.wait()
         process_finished_at = time.perf_counter()
 

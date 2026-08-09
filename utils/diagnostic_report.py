@@ -110,7 +110,12 @@ class DiagnosticReport:
                     "summary": {
                         "files_packed": 0,
                         "total_size": 0,
+                        "source_size_bytes": 0,
+                        "zip_archive_size_bytes": 0,
                         "dependency_total_size": 0,
+                        "preparation_elapsed_seconds": 0.0,
+                        "archive_write_elapsed_seconds": 0.0,
+                        "total_elapsed_seconds": 0.0,
                     },
                 },
                 "upload": {
@@ -297,6 +302,7 @@ class DiagnosticReport:
                     total_size = sum(e.get("file_size", 0) for e in entries)
                     self._data["stages"]["pack"]["summary"]["files_packed"] = len(entries)
                     self._data["stages"]["pack"]["summary"]["total_size"] = total_size
+                    self._data["stages"]["pack"]["summary"]["source_size_bytes"] = total_size
 
                 # Compute upload summary across all steps
                 elif stage == "upload":
@@ -377,6 +383,9 @@ class DiagnosticReport:
         dest_key: str,
         file_size: int = 0,
         status: str = "ok",
+        archive_size: Optional[int] = None,
+        method: Optional[str] = None,
+        elapsed_seconds: Optional[float] = None,
     ) -> None:
         """
         Add a pack/manifest entry.
@@ -386,6 +395,10 @@ class DiagnosticReport:
             dest_key: Destination key/path in archive or manifest
             file_size: File size in bytes
             status: "ok" or error status
+            archive_size: Final member data size inside the ZIP, excluding
+                container metadata
+            method: Human-readable archive method used for this member
+            elapsed_seconds: Time spent writing this member
         """
         with self._lock:
             entry = {
@@ -394,7 +407,38 @@ class DiagnosticReport:
                 "file_size": file_size,
                 "status": status,
             }
+            if archive_size is not None:
+                entry["source_size_bytes"] = file_size
+                entry["archive_data_size_bytes"] = max(int(archive_size), 0)
+            if method is not None:
+                entry["archive_method"] = str(method)
+            if elapsed_seconds is not None:
+                entry["elapsed_seconds"] = max(float(elapsed_seconds), 0.0)
             self._data["stages"]["pack"]["entries"].append(entry)
+            self._entries_since_flush += 1
+            self._maybe_flush()
+
+    def set_zip_pack_summary(
+        self,
+        *,
+        source_bytes: int,
+        archive_bytes: int,
+        preparation_elapsed: float,
+        archive_write_elapsed: float,
+        total_elapsed: float,
+    ) -> None:
+        """Record explicitly named ZIP sizes and phase timings."""
+        with self._lock:
+            summary = self._data["stages"]["pack"]["summary"]
+            summary["source_size_bytes"] = max(int(source_bytes), 0)
+            summary["zip_archive_size_bytes"] = max(int(archive_bytes), 0)
+            summary["preparation_elapsed_seconds"] = max(
+                float(preparation_elapsed), 0.0
+            )
+            summary["archive_write_elapsed_seconds"] = max(
+                float(archive_write_elapsed), 0.0
+            )
+            summary["total_elapsed_seconds"] = max(float(total_elapsed), 0.0)
             self._entries_since_flush += 1
             self._maybe_flush()
 

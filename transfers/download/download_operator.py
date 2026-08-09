@@ -49,7 +49,7 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
 
         handoff = {
             "addon_dir": str(get_addon_dir()),
-            "download_path": props.download_path,
+            "download_path": bpy.path.abspath(props.download_path),
             "project": selected_project,
             "job_id": self.job_id,
             "job_name": self.job_name,

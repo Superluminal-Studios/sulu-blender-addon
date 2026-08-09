@@ -183,6 +183,213 @@ def _make_session(response: _FakeResponse):
 # Tests
 
 
+class IntegratedDownloadRunnerTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.worker = _load_worker_module()
+
+    def test_integrated_run_preserves_terminal_and_uses_auto_mode(self):
+        global_names = (
+            "data",
+            "session",
+            "job_id",
+            "job_name",
+            "download_path",
+            "download_type",
+            "sarfis_url",
+            "sarfis_token",
+            "logger",
+            "run_rclone",
+            "ensure_rclone",
+            "open_folder",
+            "fetch_project_storage",
+            "_build_base",
+            "requests_retry_session",
+            "CLOUDFLARE_R2_DOMAIN",
+            "TerminalKeyReader",
+            "_download_actions",
+        )
+        previous_globals = {
+            name: getattr(self.worker, name, None) for name in global_names
+        }
+        self.addCleanup(
+            lambda: [
+                setattr(self.worker, name, value)
+                for name, value in previous_globals.items()
+            ]
+        )
+
+        fake_logger = MagicMock()
+        fake_logger.logo_end.return_value = "c"
+        clear_console = MagicMock()
+        worker_session = MagicMock()
+        storage_record = {
+            "bucket_name": "render-test",
+            "access_key_id": "key",
+            "secret_access_key": "secret",
+        }
+        mods = {
+            "run_rclone": MagicMock(),
+            "ensure_rclone": MagicMock(return_value="/tmp/rclone"),
+            "NOT_FOUND_MARKERS": (),
+            "AUTH_MARKERS": (),
+            "open_folder": MagicMock(),
+            "fetch_project_storage": MagicMock(
+                return_value={"items": [storage_record]}
+            ),
+            "_build_base": MagicMock(return_value=["rclone"]),
+            "requests_retry_session": MagicMock(return_value=worker_session),
+            "CLOUDFLARE_R2_DOMAIN": "example.r2.cloudflarestorage.com",
+            "DownloadLogger": MagicMock(return_value=fake_logger),
+            "TerminalKeyReader": MagicMock(
+                return_value=MagicMock(
+                    start=MagicMock(return_value=False),
+                    stop=MagicMock(),
+                )
+            ),
+            "clear_console": clear_console,
+            "run_preflight_checks": MagicMock(return_value=(True, [])),
+        }
+        handoff = {
+            "addon_dir": str(REPO_ROOT),
+            "job_id": "job-live-download",
+            "job_name": "Nebula Passage",
+            "download_path": tempfile.mkdtemp(prefix="sulu_integrated_dl_"),
+            "download_type": "auto",
+            "pocketbase_url": "https://api.invalid",
+            "user_token": "redacted",
+            "project": {"id": "project-1"},
+            "sarfis_url": "https://farm.invalid/project-1",
+            "sarfis_token": "redacted",
+            "create_mp4_after_download": True,
+        }
+
+        with (
+            patch.object(self.worker, "_bootstrap_addon_modules", return_value=mods),
+            patch.object(
+                self.worker,
+                "_run_selected_downloader",
+                return_value="finished",
+            ) as downloader,
+            patch.object(
+                self.worker,
+                "_create_mp4",
+                return_value="/tmp/renders/Nebula Passage.mp4",
+            ) as create_mp4,
+        ):
+            destination = self.worker.run_download(
+                handoff,
+                clear_console=False,
+                integrated=True,
+            )
+
+        clear_console.assert_not_called()
+        fake_logger.logo_start.assert_called_once_with(
+            job_name="Nebula Passage",
+            dest_dir=destination,
+            show_logo=False,
+        )
+        downloader.assert_called_once_with(
+            destination,
+            "auto",
+            "https://farm.invalid/project-1",
+            "redacted",
+        )
+        create_mp4.assert_called_once_with(destination)
+        self.assertEqual(
+            fake_logger.logo_end.call_args.kwargs["mp4_path"],
+            "/tmp/renders/Nebula Passage.mp4",
+        )
+
+
+class DownloadActionControllerTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.worker = _load_worker_module()
+
+    class _Reader:
+        def __init__(self, keys):
+            self.keys = list(keys)
+            self.stopped = False
+
+        def start(self):
+            return True
+
+        def drain(self):
+            keys, self.keys = self.keys, []
+            return keys
+
+        def stop(self):
+            self.stopped = True
+
+    def setUp(self):
+        self.original_logger = getattr(self.worker, "logger", None)
+        self.original_open_folder = getattr(self.worker, "open_folder", None)
+        self.worker.logger = MagicMock()
+        self.worker.open_folder = MagicMock()
+        self.addCleanup(setattr, self.worker, "logger", self.original_logger)
+        self.addCleanup(
+            setattr,
+            self.worker,
+            "open_folder",
+            self.original_open_folder,
+        )
+
+    def test_shortcuts_open_job_reports_folder_and_help(self):
+        reader = self._Reader(["j", "r", "o", "?"])
+        controller = self.worker._DownloadActionController(
+            reader,
+            dest_dir="/tmp/renders/Nebula Passage",
+            job_url="https://superlumin.al/jobs/123",
+            report_path="/tmp/reports",
+        )
+
+        with patch.object(self.worker.webbrowser, "open") as open_web:
+            self.assertTrue(controller.start())
+            controller.poll()
+
+        open_web.assert_called_once_with("https://superlumin.al/jobs/123")
+        self.worker.open_folder.assert_any_call(
+            "/tmp/reports",
+            logger_instance=self.worker.logger,
+        )
+        self.worker.open_folder.assert_any_call(
+            "/tmp/renders/Nebula Passage",
+            logger_instance=self.worker.logger,
+        )
+        self.worker.logger.download_actions.assert_called_once_with(
+            have_job=True,
+            have_report=True,
+        )
+
+    def test_cancel_shortcut_raises_resumable_cancellation(self):
+        controller = self.worker._DownloadActionController(
+            self._Reader(["c"]),
+            dest_dir="/tmp/renders",
+        )
+        controller.start()
+
+        with self.assertRaises(self.worker._DownloadCancelled):
+            controller.poll()
+
+        self.worker.logger.action_feedback.assert_called_once_with(
+            "Stopping download safely…"
+        )
+
+    def test_manual_download_derives_job_page_from_project(self):
+        url = self.worker._job_page_url(
+            {
+                "job_id": "job-123",
+                "project": {"sqid": "project-sqid"},
+            }
+        )
+
+        self.assertEqual(
+            url,
+            "https://superlumin.al/p/project-sqid/farm/jobs/job-123",
+        )
+
+
 class FetchJobDetailsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -238,6 +445,53 @@ class FetchJobDetailsTest(unittest.TestCase):
         result = self.worker._fetch_job_details()
         self.assertEqual(result, ("unknown", 0, 0))
         self.assertEqual(self.fake_logger.warnings, [])
+
+    def test_missing_live_job_falls_back_to_persisted_finished_job(self):
+        self.worker.data.update(
+            {
+                "pocketbase_url": "https://api.example.test",
+                "user_token": "user-token",
+                "project": {"organization_id": "org-1"},
+            }
+        )
+        missing_live = _FakeResponse(
+            body_obj={
+                "status": "success",
+                "body": {
+                    "status": "unknown",
+                    "tasks": {"finished": 0},
+                    "total_tasks": 0,
+                    "missing": True,
+                },
+            }
+        )
+        persisted = _FakeResponse(
+            body_obj={
+                "status": "success",
+                "body": {
+                    "job_data": {
+                        "status": "finished",
+                        "tasks": {"finished": 30},
+                        "total_tasks": 30,
+                    }
+                },
+            }
+        )
+        self.worker.session = MagicMock()
+        self.worker.session.get.side_effect = [missing_live, persisted]
+
+        result = self.worker._fetch_job_details()
+
+        self.assertEqual(result, ("finished", 30, 30))
+        stored_call = self.worker.session.get.call_args_list[1]
+        self.assertEqual(
+            stored_call.args[0],
+            "https://api.example.test/api/jobs/org-1/test-job-id",
+        )
+        self.assertEqual(
+            stored_call.kwargs["headers"],
+            {"Authorization": "user-token"},
+        )
 
     def test_missing_job_placeholder_repeated_polls_no_log_spam(self):
         """Auto-download polls every 5 s. The placeholder is the normal
@@ -691,6 +945,51 @@ class _FakeClock:
         self.now += seconds
 
 
+class VideoSequenceSelectionTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.worker = _load_worker_module()
+
+    def test_selects_largest_frame_numbered_sequence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            composite = root / "composite"
+            preview = root / "preview"
+            composite.mkdir()
+            preview.mkdir()
+            for name in (
+                "beauty_0001.png",
+                "beauty_0002.png",
+                "beauty_0003.png",
+            ):
+                (composite / name).touch()
+            for name in ("preview_0001.jpg", "preview_0002.jpg"):
+                (preview / name).touch()
+            (root / "reference.png").touch()
+
+            selected = self.worker._select_video_sequence(temp_dir)
+
+        self.assertEqual(
+            [path.name for path in selected],
+            ["beauty_0001.png", "beauty_0002.png", "beauty_0003.png"],
+        )
+
+    def test_composite_sequence_wins_an_equal_length_tie(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            composite = root / "composite"
+            alternate = root / "alternate"
+            composite.mkdir()
+            alternate.mkdir()
+            for directory in (alternate, composite):
+                (directory / "0001.png").touch()
+                (directory / "0002.png").touch()
+
+            selected = self.worker._select_video_sequence(temp_dir)
+
+        self.assertEqual(selected[0].parent.name, "composite")
+
+
 class AutoDownloaderTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -721,9 +1020,13 @@ class AutoDownloaderTest(unittest.TestCase):
         with (
             patch.object(self.worker, "_fetch_job_details") as fetch_details,
             patch.object(self.worker, "single_downloader") as single,
-            patch.object(self.worker, "auto_downloader") as automatic,
+            patch.object(
+                self.worker,
+                "auto_downloader",
+                return_value="finished",
+            ) as automatic,
         ):
-            self.worker._run_selected_downloader(
+            outcome = self.worker._run_selected_downloader(
                 "/tmp/download",
                 "auto",
                 "https://farm.example",
@@ -736,6 +1039,7 @@ class AutoDownloaderTest(unittest.TestCase):
             "/tmp/download",
             poll_seconds=self.worker._AUTO_POLL_SECONDS,
         )
+        self.assertEqual(outcome, "finished")
 
     def test_polling_uses_deadlines_instead_of_sleeping_after_work(self):
         clock = _FakeClock()
@@ -782,6 +1086,51 @@ class AutoDownloaderTest(unittest.TestCase):
         self.assertEqual(self.worker._AUTO_BATCH_FRAMES, 1)
         self.assertLessEqual(self.worker._AUTO_BATCH_SECONDS, 5.0)
         self.assertEqual(self.worker._AUTO_POLL_SECONDS, 1)
+
+    def test_unknown_queue_status_probes_storage_immediately(self):
+        clock = _FakeClock()
+        statuses = iter(
+            [
+                ("unknown", 0, 0),
+                ("finished", 1, 1),
+            ]
+        )
+        copy_calls = []
+
+        def copy_visible_frame(dest_dir, state, label, **_kwargs):
+            copy_calls.append(label)
+            state.listing_passes += 1
+            state.downloaded_files.add("composite/0001.png")
+            state.visible_frame_numbers = {1}
+            state.last_copy_count = 1 if len(copy_calls) == 1 else 0
+            return True
+
+        monotonic_patch, sleep_patch = self._clock_patches(clock)
+        with (
+            tempfile.TemporaryDirectory() as dest_dir,
+            monotonic_patch,
+            sleep_patch,
+            patch.object(
+                self.worker,
+                "_fetch_job_details",
+                side_effect=lambda: next(statuses),
+            ),
+            patch.object(
+                self.worker,
+                "_rclone_copy_output",
+                side_effect=copy_visible_frame,
+            ),
+        ):
+            self.worker.auto_downloader(
+                dest_dir,
+                poll_seconds=1,
+                terminal_stable_passes=1,
+            )
+
+        self.assertEqual(copy_calls[0], "Checking for rendered frames")
+        self.assertGreaterEqual(len(copy_calls), 3)
+        self.worker.logger.transfer_complete.assert_called_with("Downloaded")
+        self.worker.logger.success.assert_called_once_with("1 frames downloaded")
 
     def test_batches_only_new_keys_and_settles_after_late_terminal_visibility(self):
         clock = _FakeClock()
@@ -1083,7 +1432,7 @@ class AutoDownloaderTest(unittest.TestCase):
                 return_value=([], []),
             ) as list_files,
         ):
-            self.worker.auto_downloader(
+            outcome = self.worker.auto_downloader(
                 dest_dir,
                 poll_seconds=5,
                 terminal_stable_passes=2,
@@ -1097,6 +1446,7 @@ class AutoDownloaderTest(unittest.TestCase):
             any("did not stabilize within 12s" in message for message in warning_messages)
         )
         self.worker.logger.success.assert_not_called()
+        self.assertEqual(outcome, "incomplete")
 
     def test_finished_paused_and_error_terminal_messages(self):
         expected = {
@@ -1125,13 +1475,14 @@ class AutoDownloaderTest(unittest.TestCase):
                         return_value=([], []),
                     ),
                 ):
-                    self.worker.auto_downloader(
+                    outcome = self.worker.auto_downloader(
                         dest_dir,
                         poll_seconds=5,
                         terminal_stable_passes=1,
                     )
 
                 getattr(self.worker.logger, method).assert_called_with(message)
+                self.assertEqual(outcome, status)
 
 
 if __name__ == "__main__":

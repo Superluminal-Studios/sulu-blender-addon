@@ -17,7 +17,7 @@ EXCLUDE = {
     # the legacy SuperluminalRender add-on release.
     "extensions",
     # files
-    ".gitignore", ".gitkeep", ".gitattributes",
+    ".gitignore", ".gitkeep", ".gitattributes", ".DS_Store",
     "README.md", "AGENTS.md", "CLAUDE.md", "pytest.ini",
     "deploy.py",
     "dev_config.json", "dev_config.example.json",

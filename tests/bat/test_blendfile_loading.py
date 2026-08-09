@@ -476,6 +476,19 @@ class BlendFileCacheTest(AbstractBlendFileTest):
         other = self.tpath / "copy.blend"
         self._open_and_rebind_test(infile, other)
 
+    def test_open_and_rebind_compressed_as_uncompressed(self):
+        infile = self.blendfiles / "linked_cube_compressed.blend"
+        other = self.tpath / "copy-uncompressed.blend"
+        bf = blendfile.open_cached(infile)
+
+        bf.copy_and_rebind(other, mode="rb+", uncompressed=True)
+
+        self.assertFalse(bf.is_compressed)
+        self.assertEqual(other, bf.filepath)
+        self.assertEqual(other, bf.raw_filepath)
+        with other.open("rb") as output:
+            self.assertEqual(b"BLENDER", output.read(7))
+
     def _open_and_rebind_test(self, infile: pathlib.Path, other: pathlib.Path):
         self.assertFalse(other.exists())
 

@@ -1576,27 +1576,88 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
         logger.stage_header(
             2,
             "Packing",
-            "Creating a compressed archive with all dependencies",
+            "Preparing and writing a ZIP archive with all dependencies",
         )
         report.start_stage("pack")
+        pack_stage_started = time.perf_counter()
 
         abs_blend_norm = _norm_abs_for_detection(blend_path)
 
         _zip_started = False
         _zip_dep_size = 0
+        _zip_done_data = {}
 
-        def _on_zip_entry(idx, total, arcname, size, method):
-            nonlocal _zip_started, _zip_dep_size
-            _zip_dep_size += size
+        def _ensure_zip_started(total, source_bytes):
+            nonlocal _zip_started
             if not _zip_started:
-                logger.zip_start(total, 0)
+                logger.zip_start(total, source_bytes)
                 _zip_started = True
-            logger.zip_entry(idx, total, arcname, size, method)
-            # Log to diagnostic report
-            report.add_pack_entry(arcname, arcname, file_size=size, status="ok")
 
-        def _on_zip_done(zippath, total_files, total_bytes, elapsed):
-            logger.zip_done(zippath, total_files, total_bytes, elapsed)
+        def _on_zip_progress(
+            idx,
+            total,
+            arcname,
+            file_bytes_done,
+            file_size,
+            source_bytes_done,
+            source_bytes,
+            method,
+            file_elapsed,
+            total_elapsed,
+        ):
+            _ensure_zip_started(total, source_bytes)
+            logger.zip_progress(
+                idx,
+                total,
+                arcname,
+                file_bytes_done,
+                file_size,
+                source_bytes_done,
+                source_bytes,
+                method,
+                file_elapsed,
+                total_elapsed,
+            )
+
+        def _on_zip_stats(
+            idx,
+            total,
+            arcname,
+            source_bytes,
+            archive_bytes,
+            method,
+            elapsed,
+        ):
+            nonlocal _zip_dep_size
+            _zip_dep_size += source_bytes
+            _ensure_zip_started(total, 0)
+            logger.zip_entry(
+                idx,
+                total,
+                arcname,
+                source_bytes,
+                archive_bytes,
+                method,
+                elapsed,
+            )
+            # Log to diagnostic report
+            report.add_pack_entry(
+                arcname,
+                arcname,
+                file_size=source_bytes,
+                status="ok",
+                archive_size=archive_bytes,
+                method=method,
+                elapsed_seconds=elapsed,
+            )
+
+        def _on_zip_done(zippath, total_files, source_bytes, elapsed):
+            _zip_done_data.update(
+                zippath=zippath,
+                total_files=total_files,
+                source_bytes=source_bytes,
+                archive_write_elapsed=elapsed,
+            )
 
         def _noop_emit(msg):
             pass
@@ -1608,9 +1669,38 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
             project_path=project_root_str,
             pre_traced_deps=raw_usages,
             zip_emit_fn=_noop_emit,
-            zip_entry_cb=_on_zip_entry,
             zip_done_cb=_on_zip_done,
+            zip_progress_cb=_on_zip_progress,
+            zip_stats_cb=_on_zip_stats,
         )
+
+        pack_total_elapsed = max(0.0, time.perf_counter() - pack_stage_started)
+        if _zip_done_data:
+            archive_path = Path(_zip_done_data["zippath"])
+            archive_write_elapsed = float(
+                _zip_done_data["archive_write_elapsed"]
+            )
+            archive_size = archive_path.stat().st_size
+            logger.zip_done(
+                str(archive_path),
+                int(_zip_done_data["total_files"]),
+                source_bytes=int(_zip_done_data["source_bytes"]),
+                archive_bytes=archive_size,
+                preparation_elapsed=max(
+                    0.0, pack_total_elapsed - archive_write_elapsed
+                ),
+                archive_write_elapsed=archive_write_elapsed,
+                total_elapsed=pack_total_elapsed,
+            )
+            report.set_zip_pack_summary(
+                source_bytes=int(_zip_done_data["source_bytes"]),
+                archive_bytes=archive_size,
+                preparation_elapsed=max(
+                    0.0, pack_total_elapsed - archive_write_elapsed
+                ),
+                archive_write_elapsed=archive_write_elapsed,
+                total_elapsed=pack_total_elapsed,
+            )
 
         if not zip_file.exists():
             report.set_status("failed")
@@ -2392,6 +2482,18 @@ def _register_job(ctx: _SubmitContext) -> None:
         )
 
 
+def _run_integrated_download(data: Dict[str, object], pkg_name: str) -> str:
+    """Hand a successful submission to the downloader in this terminal."""
+    download_worker = importlib.import_module(
+        f"{pkg_name}.transfers.download.download_worker"
+    )
+    return download_worker.run_download(
+        data,
+        clear_console=False,
+        integrated=True,
+    )
+
+
 def _finish(ctx: _SubmitContext) -> None:
     data = ctx.data
     mods = ctx.mods
@@ -2424,6 +2526,7 @@ def _finish(ctx: _SubmitContext) -> None:
     )
     _emit_upload_success_payload_if_requested(data, upload_result)
 
+    continue_to_download = bool(data.get("download_after_submit"))
     selection = "c"
     try:
         selection = logger.logo_end(
@@ -2431,9 +2534,32 @@ def _finish(ctx: _SubmitContext) -> None:
             elapsed=elapsed,
             job_url=job_url,
             report_path=str(report.get_reports_dir()),
+            continue_to_download=continue_to_download,
         )
     except Exception:
         selection = "c"
+
+    if continue_to_download:
+        download_handoff = dict(data)
+        download_handoff.update(
+            {
+                "job_url": job_url,
+                "report_path": str(report.get_reports_dir()),
+            }
+        )
+        try:
+            _run_integrated_download(download_handoff, str(mods["pkg_name"]))
+        except SystemExit:
+            raise
+        except Exception as exc:
+            logger.warn_block(
+                "The job was submitted, but automatic downloading could not "
+                f"start. You can resume it from Manage & Download.\nDetails: {exc}",
+                severity="error",
+            )
+            _safe_input("\nPress Enter to close.", "")
+            sys.exit(1)
+        sys.exit(0)
 
     # Act on the integrated success prompt.
     if selection == "j":

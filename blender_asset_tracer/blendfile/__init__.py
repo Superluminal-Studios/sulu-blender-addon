@@ -196,21 +196,51 @@ class BlendFile:
     def __exit__(self, exctype, excvalue, traceback) -> None:
         self.close()
 
-    def copy_and_rebind(self, path: pathlib.Path, mode="rb") -> None:
+    def copy_and_rebind(
+        self,
+        path: pathlib.Path,
+        mode="rb",
+        *,
+        uncompressed: bool = False,
+    ) -> None:
         """Change which file is bound to this BlendFile.
 
         This allows cloning a previously opened file, and rebinding it to reuse
-        the already-loaded DNA structs and data blocks.
+        the already-loaded DNA structs and data blocks. When ``uncompressed``
+        is true, a compressed source is cloned from its already-decompressed
+        working copy. This lets a downstream archive compressor handle the
+        rewritten file without an intermediate Gzip recompression.
         """
         log.debug("Rebinding %r to %s", self, path)
 
-        self.close()
-        _uncache(self.filepath)
-
-        self.log.debug("Copying %s to %s", self.filepath, path)
-        # TODO(Sybren): remove str() calls when targeting Python 3.6+
-        # dst needs to be a file and not a directory
-        shutil.copyfile(str(self.filepath), str(path))
+        previous_path = self.filepath
+        if uncompressed and self.is_compressed:
+            self.fileobj.flush()
+            self.log.debug(
+                "Copying decompressed %s to %s",
+                self.raw_filepath,
+                path,
+            )
+            # The decompressed source is an open NamedTemporaryFile and
+            # disappears when close() runs. Copy through its existing handle
+            # so Windows does not have to reopen a delete-on-close file.
+            previous_position = self.fileobj.tell()
+            self.fileobj.seek(0, os.SEEK_SET)
+            with path.open("wb") as target:
+                shutil.copyfileobj(
+                    self.fileobj,
+                    target,
+                    length=FILE_BUFFER_SIZE,
+                )
+            self.fileobj.seek(previous_position, os.SEEK_SET)
+            self.close()
+        else:
+            self.close()
+            self.log.debug("Copying %s to %s", previous_path, path)
+            # TODO(Sybren): remove str() calls when targeting Python 3.6+
+            # dst needs to be a file and not a directory
+            shutil.copyfile(str(previous_path), str(path))
+        _uncache(previous_path)
 
         self.fileobj = self._open_file(path, mode=mode)
         _cache(path, self)
