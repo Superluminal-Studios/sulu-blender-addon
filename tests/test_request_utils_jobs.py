@@ -438,6 +438,52 @@ class TestRequestUtilsJobs(unittest.TestCase):
                 [{"id": "project-1"}],
             )
 
+    def test_get_render_queue_key_returns_existing_key_without_repair(self):
+        with patch.object(
+            request_utils,
+            "authorized_request",
+            return_value=_FakeResponse({"items": [{"user_key": "user-key"}]}),
+        ) as request:
+            self.assertEqual(
+                request_utils.get_render_queue_key("org-id"),
+                "user-key",
+            )
+
+        request.assert_called_once_with(
+            "GET",
+            f"{request_utils.POCKETBASE_URL}/api/collections/render_queues/records",
+            params={"filter": "(organization_id='org-id')"},
+        )
+
+    def test_get_render_queue_key_repairs_missing_record_via_farm_status(self):
+        responses = [
+            _FakeResponse({"items": []}),
+            _FakeResponse({"ready": True}),
+            _FakeResponse({"items": [{"user_key": "recovered-user-key"}]}),
+        ]
+        with patch.object(
+            request_utils,
+            "authorized_request",
+            side_effect=responses,
+        ) as request:
+            self.assertEqual(
+                request_utils.get_render_queue_key("org-id"),
+                "recovered-user-key",
+            )
+
+        self.assertEqual(request.call_count, 3)
+        self.assertEqual(
+            request.call_args_list[1].args,
+            (
+                "GET",
+                f"{request_utils.POCKETBASE_URL}/api/farm_status/org-id",
+            ),
+        )
+        self.assertEqual(
+            request.call_args_list[1].kwargs,
+            {"isolated_session": True},
+        )
+
     def test_selected_project_identity_returns_id_and_sqid(self):
         original = request_utils.Storage.data.get("projects")
         try:

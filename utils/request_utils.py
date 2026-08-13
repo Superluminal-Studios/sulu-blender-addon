@@ -222,15 +222,31 @@ def fetch_projects():
     return projects
 
 
-def get_render_queue_key(org_id: str) -> str:
-    """Return the ``user_key`` for *org_id*'s render‑queue."""
+def _fetch_render_queue_items(org_id: str) -> list[dict]:
     rq_resp = authorized_request(
         "GET",
         f"{POCKETBASE_URL}/api/collections/render_queues/records",
         params={"filter": f"(organization_id='{org_id}')"},
     )
     payload = rq_resp.json() or {}
-    items = payload.get("items") or []
+    return payload.get("items") or []
+
+
+def get_render_queue_key(org_id: str) -> str:
+    """Return the ``user_key`` for *org_id*'s render‑queue."""
+    items = _fetch_render_queue_items(org_id)
+    if not items:
+        # A Process Manager outage during asynchronous organization creation
+        # can leave the organization valid but without its queue record. The
+        # authenticated farm-status route now repairs that record from the
+        # Process Manager's authoritative session response.
+        authorized_request(
+            "GET",
+            f"{POCKETBASE_URL}/api/farm_status/{org_id}",
+            isolated_session=True,
+        )
+        items = _fetch_render_queue_items(org_id)
+
     if not items:
         raise ProjectContextError(
             f"No render queue is available for organization '{org_id}'."
