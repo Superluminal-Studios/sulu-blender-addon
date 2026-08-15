@@ -1,5 +1,10 @@
 # Sulu Blender Add-on
 
+> **Secret source:** In the Sulu superrepo checkout, resolve real credentials
+> through `../.secrets/SECRETS_INDEX.md` and verify them with the superrepo
+> secret audit. This README documents variable names and runtime destinations
+> only; never source the add-on from `.secrets/discovered/` evidence.
+
 ## Role in Sulu System
 
 | Field | Value |
