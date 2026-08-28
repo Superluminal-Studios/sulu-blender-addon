@@ -154,12 +154,12 @@ FIXTURE = textwrap.dedent(
         @staticmethod
         def draw_framerate(layout, rd):
             layout.prop(rd, "fps")
-            layout.prop(rd, "fps_base", text="Base")
+            layout.prop(rd, "fps_base", text="Base", slider=False)
 
         def draw(self, context):
             layout = self.layout
             rd = context.scene.render
-            layout.prop(rd, "resolution_x", text="Resolution X")
+            layout.prop(rd, "resolution_x", text="Resolution X", slider=True)
             layout.prop(rd, "views_format", expand=True)
             self.draw_framerate(layout, rd)
             layout.template_image_settings(rd.image_settings, color_management=False)
@@ -332,6 +332,12 @@ class LayoutParserTests(unittest.TestCase):
         views = next(p for p in props if p["path"] == "render.views_format")
         self.assertTrue(views.get("expand"))
         self.assertFalse(any(p.get("expand") for p in props if p["path"] == "render.resolution_x"))
+        # slider=True is layout presentation metadata, not an inference from
+        # RNA bounds. Missing slider stays absent for old-layout compatibility.
+        resolution = next(p for p in props if p["path"] == "render.resolution_x")
+        self.assertTrue(resolution.get("slider"))
+        self.assertFalse(any(p.get("slider") for p in props if p["path"] == "render.fps"))
+        self.assertFalse(any(p.get("slider") for p in props if p["path"] == "render.fps_base"))
 
     def test_panels_follow_registration_tuple_order(self):
         _, doc = build()

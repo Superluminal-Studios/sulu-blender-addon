@@ -39,7 +39,7 @@ import os
 from typing import Any, Optional
 
 _LAYOUT_VERSION = 1
-_TARGET_CONTEXTS = ("render", "output", "view_layer")
+_TARGET_CONTEXTS = ("scene", "render", "output", "view_layer")
 _MAX_INLINE_DEPTH = 3
 
 # Layout factory methods returning sub-layouts we keep walking into.
@@ -546,6 +546,10 @@ class _Translator:
             elif kw.arg == "expand" and _literal(kw.value) is True:
                 # Blender draws the enum as a row of buttons instead of a menu
                 node["expand"] = True
+            elif kw.arg == "slider" and _literal(kw.value) is True:
+                # This is presentation metadata from the layout call site,
+                # distinct from the property's RNA soft bounds.
+                node["slider"] = True
         if has_text:
             node["text"] = text if isinstance(text, str) else None
         self.emit(layout, node)
@@ -841,6 +845,7 @@ def collect_layout(bpy_module: Any = None) -> Optional[dict]:
             ("properties_render", os.path.join(bl_ui, "properties_render.py")),
             ("properties_output", os.path.join(bl_ui, "properties_output.py")),
             ("properties_view_layer", os.path.join(bl_ui, "properties_view_layer.py")),
+            ("properties_scene", os.path.join(bl_ui, "properties_scene.py")),
         ]
         for addons_dir_name in ("addons_core", "addons"):
             cycles_ui = os.path.join(scripts_dir, addons_dir_name, "cycles", "ui.py")
