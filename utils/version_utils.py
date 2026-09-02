@@ -28,11 +28,18 @@ blender_version_items: List[Tuple[str, str, str]] = [
         "Blender 5.2 — SULU",
         "Use the Sulu Blender 5.2 build with persistent EEVEE on the farm",
     ),
+    ("BLENDER53", "Blender 5.3", "Use the official Blender 5.3 build on the farm"),
+    (
+        "BLENDER53SULU",
+        "Blender 5.3 — SULU",
+        "Use the Sulu Blender 5.3 build with live Cycles previews on the farm",
+    ),
 ]
 
 SULU_BUILD_ENUM_BY_NUMBER = {
     51: "BLENDER51SULU",
     52: "BLENDER52SULU",
+    53: "BLENDER53SULU",
 }
 
 # Build a lookup:  40 -> "BLENDER40", 41 -> "BLENDER41", ...
