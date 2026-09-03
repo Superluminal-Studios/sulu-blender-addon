@@ -6,7 +6,7 @@ This repo is the Blender add-on that submits render jobs to Sulu and downloads
 results. It also wraps Blender Asset Tracer for ZIP and PROJECT dependency
 packing.
 
-Superrepo skill: `../.codex/skills/sulu-lead-engineer/SKILL.md` (`BLENDER` mode)
+Domain guidance: `obsidian-vault-fable/Agents/Domain Modes.md` (`BLENDER` mode)
 
 ## Key Paths
 
