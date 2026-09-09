@@ -681,6 +681,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     )
     DiagnosticReport = diagnostic_report_mod.DiagnosticReport
     generate_test_report = diagnostic_report_mod.generate_test_report
+    environment_mod = importlib.import_module(f"{pkg_name}.environment")
 
     return {
         "pkg_name": pkg_name,
@@ -701,6 +702,8 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "ensure_rclone": ensure_rclone,
         "DiagnosticReport": DiagnosticReport,
         "generate_test_report": generate_test_report,
+        "validate_handoff_environment": environment_mod.validate_handoff_environment,
+        "job_page_url": environment_mod.job_page_url,
     }
 
 
@@ -969,6 +972,7 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
         _preflight_user_override,
     )
     report.set_environment("transfer_mode", "oauth-authorized-receipt")
+    report.set_environment("sulu_environment", str(data["environment"]))
 
     if _source_unpack_blocked:
         report.set_metadata("farm_unpack_blocked_entries", _source_unpack_blocked)
@@ -2065,7 +2069,11 @@ def _finish(ctx: _SubmitContext) -> None:
     report.finalize()
 
     elapsed = time.perf_counter() - t_start
-    job_url = f"https://superlumin.al/p/{project_sqid}/farm/jobs/{data['job_id']}"
+    job_url = mods["job_page_url"](
+        data["environment"],
+        project_sqid,
+        data["job_id"],
+    )
     upload_result = _build_upload_success_payload(
         job_id=data["job_id"],
         job_name=data["job_name"],
@@ -2142,6 +2150,7 @@ def main() -> None:
     t_start = time.perf_counter()
     data = _load_handoff_from_argv(sys.argv)
     mods = _bootstrap_addon_modules(data)
+    mods["validate_handoff_environment"](data)
     proj = data["project"]
 
     mods["clear_console"]()

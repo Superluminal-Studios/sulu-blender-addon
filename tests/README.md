@@ -62,7 +62,9 @@ CI runs `python -m pytest` (see `.github/workflows/`).
 
 `tests/realworld/` talks to the live farm and is excluded from unit runs via
 `--ignore=tests/realworld` in `pytest.ini`. `test_farm_upload.py` defaults to
-dry-run mode; real job creation requires an explicit live flag:
+dry-run mode; real job creation requires an explicit live flag. The script
+uses the fixed Production or Test profile saved in `session.json`, including
+that profile's API, farm, projects, and token:
 
 ```bash
 python tests/realworld/test_farm_upload.py
@@ -70,7 +72,10 @@ python tests/realworld/test_farm_upload.py --live-upload
 ```
 
 Never run `--live-upload` casually: it creates real jobs and uploads real
-data. Manual farm verification guidance is owned by the superrepo:
+data. Confirm the Environment shown in Blender and sign in there immediately
+before the run. A Test job can remain queued when no lab GPU reservation is
+active; the Test profile never claims production capacity automatically.
+Manual farm verification guidance is owned by the superrepo:
 
 - <https://github.com/Superluminal-Studios/sulu-super-repo/blob/main/docs/repos/sulu-blender-addon/testing/farm-verification.md>
 

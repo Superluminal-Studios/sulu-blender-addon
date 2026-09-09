@@ -209,5 +209,12 @@ class RenderCoordinatorClient:
 def recovery_identity(data):
     # Existing handoff job_id is an immutable local submit intent, not the new
     # backend job ID. It remains stable if the same worker handoff is resumed.
-    value = [data.get("user_id"), data["project"]["organization_id"], data["project"]["id"], data["job_id"]]
+    value = [
+        data.get("user_id"),
+        data["project"]["organization_id"],
+        data["project"]["id"],
+        data["job_id"],
+    ]
+    if not data.get("_environment_was_implicit"):
+        value.insert(0, data.get("environment", "production"))
     return hashlib.sha256(json.dumps(value, separators=(",", ":")).encode()).hexdigest()

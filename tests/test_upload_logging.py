@@ -69,6 +69,7 @@ _rclone_utils = importlib.import_module(f"{_pkg_name}.transfers.rclone_utils")
 _submit_worker = importlib.import_module(
     f"{_pkg_name}.transfers.submit.submit_worker"
 )
+_environment = importlib.import_module(f"{_pkg_name}.environment")
 _farm_upload_harness = _load_module_directly(
     "farm_upload_harness", _addon_dir / "tests" / "realworld" / "test_farm_upload.py"
 )
@@ -146,6 +147,43 @@ class TestZipUploadTuning(unittest.TestCase):
 
 
 class TestStorageCredentialPrefetch(unittest.TestCase):
+    def test_main_rejects_mixed_environment_before_starting_work(self):
+        clear_console = mock.Mock()
+        session_factory = mock.Mock()
+        mods = {
+            "validate_handoff_environment": _environment.validate_handoff_environment,
+            "clear_console": clear_console,
+            "requests_retry_session": session_factory,
+        }
+        handoff = {
+            "environment": "test",
+            "pocketbase_url": "https://api.superlumin.al",
+            "project": {
+                "id": "project-1",
+                "organization_id": "org-1",
+                "sqid": "Project1",
+            },
+            "job_id": "job-1",
+        }
+
+        with (
+            mock.patch.object(
+                _submit_worker,
+                "_load_handoff_from_argv",
+                return_value=handoff,
+            ),
+            mock.patch.object(
+                _submit_worker,
+                "_bootstrap_addon_modules",
+                return_value=mods,
+            ),
+            self.assertRaisesRegex(ValueError, "mixes Sulu environments"),
+        ):
+            _submit_worker.main()
+
+        clear_console.assert_not_called()
+        session_factory.assert_not_called()
+
     def test_pack_time_prefetch_removes_credential_request_from_upload_boundary(self):
         payload = {"items": [{"bucket_name": "redacted"}]}
         worker_session = mock.MagicMock()
@@ -283,6 +321,7 @@ class TestStorageCredentialPrefetch(unittest.TestCase):
                     "clear_console": mock.Mock(),
                     "create_logger": mock.Mock(return_value=logger),
                     "requests_retry_session": mock.Mock(return_value=session),
+                    "validate_handoff_environment": mock.Mock(),
                 }
 
                 def mark_prefetch_started(ctx):
@@ -430,11 +469,18 @@ class TestIntegratedDownloadHandoff(unittest.TestCase):
             data={
                 "job_id": "job-live-download",
                 "job_name": "Nebula Passage",
+                "environment": "production",
                 "download_after_submit": enabled,
                 "download_path": "/tmp/renders",
                 "packed_addons": [],
             },
-            mods={"pkg_name": _pkg_name, "open_folder": mock.Mock()},
+            mods={
+                "pkg_name": _pkg_name,
+                "open_folder": mock.Mock(),
+                "job_page_url": lambda _environment, project, job: (
+                    f"https://superlumin.al/p/{project}/farm/jobs/{job}"
+                ),
+            },
             logger=logger,
             report=report,
             t_start=0.0,
@@ -469,7 +515,7 @@ class TestIntegratedDownloadHandoff(unittest.TestCase):
             download_handoff["job_url"],
             "https://superlumin.al/p/project-sqid/farm/jobs/job-live-download",
         )
-        self.assertEqual(download_handoff["report_path"], "/tmp/sulu-reports")
+        self.assertEqual(download_handoff["report_path"], str(Path("/tmp/sulu-reports")))
 
     def test_disabled_handoff_keeps_existing_completion_prompt(self):
         ctx = self._context(enabled=False)

@@ -74,6 +74,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
     terminal_actions_mod = importlib.import_module(
         f"{pkg_name}.utils.terminal_actions"
     )
+    environment_mod = importlib.import_module(f"{pkg_name}.environment")
 
     return {
         "pkg_name": pkg_name,
@@ -90,6 +91,8 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
         "requests_retry_session": worker_utils.requests_retry_session,
         "CLOUDFLARE_R2_DOMAIN": worker_utils.CLOUDFLARE_R2_DOMAIN,
         "run_preflight_checks": worker_utils.run_preflight_checks,
+        "validate_handoff_environment": environment_mod.validate_handoff_environment,
+        "job_page_url": environment_mod.job_page_url,
     }
 
 
@@ -201,10 +204,7 @@ def _wait_for_download_actions(delay: float) -> None:
         _download_actions.wait(delay)
 
 
-def _job_page_url(handoff: Dict[str, object]) -> str:
-    explicit = str(handoff.get("job_url", "") or "").strip()
-    if explicit.startswith(("https://", "http://")):
-        return explicit
+def _job_page_url(handoff: Dict[str, object], builder=None) -> str:
     project = handoff.get("project") or {}
     project_sqid = (
         str(project.get("sqid", "") or "").strip()
@@ -214,9 +214,31 @@ def _job_page_url(handoff: Dict[str, object]) -> str:
     handoff_job_id = str(handoff.get("job_id", "") or "").strip()
     if not project_sqid or not handoff_job_id:
         return ""
-    return (
-        f"https://superlumin.al/p/{project_sqid}/farm/jobs/{handoff_job_id}"
-    )
+    if builder is None:
+        # Standalone compatibility for focused tests and old integrations. Do
+        # not make the fallback an arbitrary-URL escape hatch; the real worker
+        # passes the canonical builder imported during bootstrap.
+        environment = str(handoff.get("environment") or "production").strip().lower()
+        web_url = {
+            "production": "https://superlumin.al",
+            "test": "https://lab.superlumin.al",
+        }.get(environment)
+        if not web_url:
+            return ""
+        supplied_web_url = str(handoff.get("web_url") or web_url).rstrip("/")
+        if supplied_web_url != web_url:
+            return ""
+        expected = f"{web_url}/p/{project_sqid}/farm/jobs/{handoff_job_id}"
+    else:
+        expected = builder(
+            handoff.get("environment"),
+            project_sqid,
+            handoff_job_id,
+        )
+    explicit = str(handoff.get("job_url", "") or "").strip()
+    if explicit and explicit != expected:
+        return ""
+    return expected
 
 
 def _safe_dir_name(name: str, fallback: str) -> str:
@@ -1224,6 +1246,7 @@ def run_download(
     t_start = time.perf_counter()
     data = dict(handoff)
     mods = _bootstrap_addon_modules(data)
+    mods["validate_handoff_environment"](data)
     run_rclone = mods["run_rclone"]
     ensure_rclone = mods["ensure_rclone"]
     NOT_FOUND_MARKERS = mods["NOT_FOUND_MARKERS"]
@@ -1312,7 +1335,7 @@ def run_download(
     actions = _DownloadActionController(
         TerminalKeyReader(),
         dest_dir=dest_dir,
-        job_url=_job_page_url(data),
+        job_url=_job_page_url(data, mods["job_page_url"]),
         report_path=str(data.get("report_path", "") or "").strip(),
     )
     _download_actions = actions

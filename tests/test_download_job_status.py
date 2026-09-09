@@ -23,6 +23,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from environment import job_page_url, validate_handoff_environment
+
 # Make repo root importable so `_load_worker_module` can manipulate
 # sys.modules under the addon's package name.
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -249,6 +253,9 @@ class IntegratedDownloadRunnerTest(unittest.TestCase):
             ),
             "clear_console": clear_console,
             "run_preflight_checks": MagicMock(return_value=(True, [])),
+            "validate_handoff_environment": validate_handoff_environment,
+            "job_page_url": job_page_url,
+            "pkg_name": REPO_ROOT.name.replace("-", "_"),
         }
         handoff = {
             "addon_dir": str(REPO_ROOT),
@@ -256,10 +263,14 @@ class IntegratedDownloadRunnerTest(unittest.TestCase):
             "job_name": "Nebula Passage",
             "download_path": tempfile.mkdtemp(prefix="sulu_integrated_dl_"),
             "download_type": "auto",
-            "pocketbase_url": "https://api.invalid",
+            "pocketbase_url": "https://api.superlumin.al",
             "user_token": "redacted",
-            "project": {"id": "project-1"},
-            "sarfis_url": "https://farm.invalid/project-1",
+            "project": {
+                "id": "project-1",
+                "organization_id": "org-1",
+                "sqid": "Project1",
+            },
+            "sarfis_url": "http://178.156.167.251/farm/org-1",
             "sarfis_token": "redacted",
             "create_mp4_after_download": True,
         }
@@ -292,7 +303,7 @@ class IntegratedDownloadRunnerTest(unittest.TestCase):
         downloader.assert_called_once_with(
             destination,
             "auto",
-            "https://farm.invalid/project-1",
+            "http://178.156.167.251/farm/org-1",
             "redacted",
         )
         create_mp4.assert_called_once_with(destination)
@@ -313,15 +324,17 @@ def test_coordinated_handoff_never_requests_legacy_storage_or_farm(tmp_path):
     )}
     mods.update({"NOT_FOUND_MARKERS": (), "AUTH_MARKERS": (), "CLOUDFLARE_R2_DOMAIN": "unused.invalid",
                  "DownloadLogger": MagicMock(return_value=logger),
-                 "run_preflight_checks": MagicMock(return_value=(True, [])), "pkg_name": "fixture_addon"})
+                 "run_preflight_checks": MagicMock(return_value=(True, [])), "pkg_name": "fixture_addon",
+                 "validate_handoff_environment": validate_handoff_environment,
+                 "job_page_url": job_page_url})
     artifact = MagicMock()
     artifact.run.return_value = "finished"
     artifact_module = types.SimpleNamespace(ArtifactDownloader=MagicMock(return_value=artifact))
     coordinator_module = types.SimpleNamespace(RenderCoordinatorClient=MagicMock())
     handoff = {"addon_dir": str(tmp_path), "job_id": "job-coordinated", "job_name": "Render output",
                "download_path": str(tmp_path), "download_type": "auto", "render_coordinator": True,
-               "pocketbase_url": "https://api.fixture.invalid", "user_token": "synthetic-fixture",
-               "project": {"id": "project-a", "organization_id": "org-a"}}
+               "pocketbase_url": "https://api.superlumin.al", "user_token": "synthetic-fixture",
+               "project": {"id": "project-a", "organization_id": "org-a", "sqid": "ProjectA"}}
     try:
         with (patch.object(worker, "_bootstrap_addon_modules", return_value=mods),
               patch.object(worker, "_DownloadActionController") as actions,
@@ -340,6 +353,37 @@ def test_coordinated_handoff_never_requests_legacy_storage_or_farm(tmp_path):
             assert artifact_module.ArtifactDownloader.call_args.args[1:3] == ("org-a", "job-coordinated")
     finally:
         worker.__dict__.update(previous)
+
+
+def test_download_rejects_mixed_environment_before_preflight(tmp_path):
+    worker = _load_worker_module()
+    clear_console = MagicMock()
+    session_factory = MagicMock()
+    mods = {
+        "validate_handoff_environment": validate_handoff_environment,
+        "clear_console": clear_console,
+        "requests_retry_session": session_factory,
+    }
+    handoff = {
+        "environment": "test",
+        "pocketbase_url": "https://api.superlumin.al",
+        "project": {
+            "id": "project-a",
+            "organization_id": "org-a",
+            "sqid": "ProjectA",
+        },
+        "job_id": "job-a",
+        "download_path": str(tmp_path),
+    }
+
+    with (
+        patch.object(worker, "_bootstrap_addon_modules", return_value=mods),
+        pytest.raises(ValueError, match="mixes Sulu environments"),
+    ):
+        worker.run_download(handoff)
+
+    clear_console.assert_not_called()
+    session_factory.assert_not_called()
 
 
 class DownloadActionControllerTest(unittest.TestCase):
@@ -428,6 +472,19 @@ class DownloadActionControllerTest(unittest.TestCase):
             url,
             "https://superlumin.al/p/project-sqid/farm/jobs/job-123",
         )
+
+    def test_manual_test_download_derives_only_the_fixed_lab_job_page(self):
+        handoff = {
+            "environment": "test",
+            "job_id": "job-123",
+            "project": {"sqid": "project-sqid"},
+        }
+        self.assertEqual(
+            self.worker._job_page_url(handoff),
+            "https://lab.superlumin.al/p/project-sqid/farm/jobs/job-123",
+        )
+        handoff["web_url"] = "https://operator.example"
+        self.assertEqual(self.worker._job_page_url(handoff), "")
 
 
 class FetchJobDetailsTest(unittest.TestCase):

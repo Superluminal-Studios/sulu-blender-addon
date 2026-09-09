@@ -69,10 +69,21 @@ def main():
         print("\nERROR: No projects in session.json - please fetch projects first")
         sys.exit(1)
 
-    project = projects[0]
-    org_id = Storage.data.get("org_id", "")
+    selected_project_id = str(Storage.data.get("project_id") or "")
+    project = next(
+        (
+            item
+            for item in projects
+            if str(item.get("id") or "") == selected_project_id
+        ),
+        projects[0],
+    )
+    from environment import environment_handoff_values
 
-    from constants import POCKETBASE_URL, FARM_IP
+    environment_values = environment_handoff_values(
+        Storage.data.get("environment", "production"),
+        project.get("organization_id"),
+    )
 
     # Build handoff JSON
     job_id = str(uuid.uuid4())
@@ -97,12 +108,12 @@ def main():
         "render_engine": "CYCLES",
         "blender_version": "blender42",
         "ignore_errors": False,
-        "pocketbase_url": POCKETBASE_URL,
+        **environment_values,
         "user_token": token,
         "project": project,
         "use_bserver": False,
         "use_async_upload": True,
-        "farm_url": f"{FARM_IP}/farm/{org_id}/api/",
+        "render_coordinator": True,
         # Test mode flags
         "test_mode": config.get("dry_run", True),
         "no_submit": config.get("no_submit", True),

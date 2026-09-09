@@ -30,6 +30,7 @@ sys.modules.setdefault("sulu_blender_addon", pkg)
 
 request_utils = importlib.import_module("sulu_blender_addon.utils.request_utils")
 pocketbase_auth = importlib.import_module("sulu_blender_addon.pocketbase_auth")
+_API_URL = pocketbase_auth.profile_for_environment("production").api_url
 
 
 class _FakeResponse:
@@ -155,7 +156,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
             start.wait(timeout=1)
             return pocketbase_auth.authorized_request(
                 "GET",
-                "https://example.invalid/jobs",
+                f"{_API_URL}/jobs",
                 isolated_session=True,
             )
 
@@ -235,7 +236,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
             second_request_started.set()
             return pocketbase_auth.authorized_request(
                 "GET",
-                "https://example.invalid/jobs/second",
+                f"{_API_URL}/jobs/second",
                 stored_job_session=True,
             )
 
@@ -252,7 +253,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
                 first = executor.submit(
                     pocketbase_auth.authorized_request,
                     "GET",
-                    "https://example.invalid/jobs/first",
+                    f"{_API_URL}/jobs/first",
                     stored_job_session=True,
                 )
                 self.assertTrue(session.first_request_started.wait(timeout=1))
@@ -307,7 +308,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
                 request = executor.submit(
                     pocketbase_auth.authorized_request,
                     "GET",
-                    "https://example.invalid/jobs/active",
+                    f"{_API_URL}/jobs/active",
                     stored_job_session=True,
                 )
                 self.assertTrue(first_session.started.wait(timeout=1))
@@ -322,7 +323,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
 
                 response = pocketbase_auth.authorized_request(
                     "GET",
-                    "https://example.invalid/jobs/recreated",
+                    f"{_API_URL}/jobs/recreated",
                     stored_job_session=True,
                 )
                 self.assertEqual(response.json(), {"ok": True})
@@ -367,7 +368,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
                 ):
                     pocketbase_auth.authorized_request(
                         "GET",
-                        "https://example.invalid/jobs",
+                        f"{_API_URL}/jobs",
                         stored_job_session=True,
                     )
 

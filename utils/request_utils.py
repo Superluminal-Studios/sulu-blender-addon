@@ -7,7 +7,8 @@ from urllib.parse import quote
 
 import bpy
 
-from ..constants import POCKETBASE_URL
+from ..constants import POCKETBASE_URL  # compatibility alias for older callers/tests
+from ..environment import active_profile
 from ..pocketbase_auth import (
     NotAuthenticated,
     NotFound,
@@ -201,6 +202,7 @@ def _merge_job_sources(
 
 def fetch_projects():
     """Return all visible projects."""
+    api_url = active_profile().api_url
     projects = []
     page = 1
     seen_ids = set()
@@ -208,7 +210,7 @@ def fetch_projects():
     while True:
         resp = authorized_request(
             "GET",
-            f"{POCKETBASE_URL}/api/collections/projects/records",
+            f"{api_url}/api/collections/projects/records",
             params={"page": page, "perPage": _PROJECTS_PER_PAGE},
         )
         payload = resp.json() or {}
@@ -240,9 +242,10 @@ def fetch_projects():
 
 
 def _fetch_render_queue_items(org_id: str) -> list[dict]:
+    api_url = active_profile().api_url
     rq_resp = authorized_request(
         "GET",
-        f"{POCKETBASE_URL}/api/collections/render_queues/records",
+        f"{api_url}/api/collections/render_queues/records",
         params={"filter": f"(organization_id='{org_id}')"},
     )
     payload = rq_resp.json() or {}
@@ -259,7 +262,7 @@ def get_render_queue_key(org_id: str) -> str:
         # Process Manager's authoritative session response.
         authorized_request(
             "GET",
-            f"{POCKETBASE_URL}/api/farm_status/{org_id}",
+            f"{active_profile().api_url}/api/farm_status/{org_id}",
             isolated_session=True,
         )
         items = _fetch_render_queue_items(org_id)
@@ -289,9 +292,10 @@ def _request_stored_jobs(
     if project_id := str(project_id or "").strip():
         params["project_id"] = project_id
 
+    api_url = active_profile().api_url
     resp = authorized_request(
         "GET",
-        f"{POCKETBASE_URL}/api/jobs/{org_id}",
+        f"{api_url}/api/jobs/{org_id}",
         params=params,
         stored_job_session=True,
     )
@@ -301,9 +305,10 @@ def _request_stored_jobs(
 
 
 def _wake_queue_manager(org_id: str, user_key: str) -> None:
+    api_url = active_profile().api_url
     authorized_request(
         "GET",
-        f"{POCKETBASE_URL}/api/farm_status/{org_id}",
+        f"{api_url}/api/farm_status/{org_id}",
         headers={"Auth-Token": user_key},
         isolated_session=True,
     )
@@ -316,9 +321,10 @@ def _request_live_jobs(
     *,
     allow_queue_manager_wake: bool = True,
 ) -> dict:
+    api_url = active_profile().api_url
     jobs_resp = authorized_request(
         "GET",
-        f"{POCKETBASE_URL}/farm/{org_id}/api/job_list",
+        f"{api_url}/farm/{org_id}/api/job_list",
         headers={"Auth-Token": user_key},
         isolated_session=True,
     )
@@ -670,11 +676,12 @@ def _request_jobs_unlocked(
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", org) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", project):
         raise ProjectContextError("Select an accessible organization and project before loading jobs.")
     jobs, cursors, cursor = {}, set(), None
+    api_url = active_profile().api_url
     while True:
         params = {"project_id": project, "limit": 200}
         if cursor:
             params["cursor"] = cursor
-        response = authorized_request("GET", f"{POCKETBASE_URL}/api/render/v1/browser/jobs/{quote(org, safe='')}", params=params, stored_job_session=True)
+        response = authorized_request("GET", f"{api_url}/api/render/v1/browser/jobs/{quote(org, safe='')}", params=params, stored_job_session=True)
         payload = response.json()
         page = payload.get("body") if isinstance(payload, dict) else None
         if not isinstance(page, dict) or len(page) > 200:

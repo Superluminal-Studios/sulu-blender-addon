@@ -12,7 +12,7 @@ import os
 from ...utils.worker_utils import launch_worker_secure
 from ...build_info import BUILD_CHANNEL
 from .addon_packer import bundle_addons
-from ...constants import POCKETBASE_URL, FARM_IP
+from ...environment import environment_handoff_values
 from ...utils.version_utils import resolved_worker_blender_value
 from ...storage import Storage
 from ...utils.prefs import get_prefs, get_addon_dir
@@ -152,6 +152,12 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
         Storage.data["org_id"] = org_id
         Storage.data["user_key"] = user_key
         Storage.save()
+        auth_context = Storage.auth_context()
+        token = auth_context[2]
+        if not token:
+            self.report({"ERROR"}, "Your Sulu session changed. Sign in and try again.")
+            return {"CANCELLED"}
+        environment_values = environment_handoff_values(auth_context[0], org_id)
 
         # Validate custom project path if automatic is disabled
         if props.upload_type == "PROJECT":
@@ -280,13 +286,12 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "settings_schema_key": settings_schema_key,
             "blender_version": blender_version_payload,  # <- single source of truth
             "ignore_errors": props.ignore_errors,
-            "pocketbase_url": POCKETBASE_URL,
+            **environment_values,
             "user_token": token,
             "project": project,
             "debug_mode": bool(getattr(prefs, "debug_mode", False)),
             "use_bserver": props.use_bserver,
             "use_async_upload": True,
-            "farm_url": f"{FARM_IP}/farm/{org_id}/api/",
             # Optional worker handoff: after registration, the same terminal
             # switches to the resumable downloader and follows the live job.
             "download_after_submit": bool(props.download_after_submit),
@@ -300,13 +305,20 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "blender_binary": str(bpy.app.binary_path),
             "video_fps": int(scene.render.fps),
             "video_fps_base": float(scene.render.fps_base or 1.0),
-            "sarfis_url": f"{FARM_IP.rstrip('/')}/farm/{org_id}",
             "render_coordinator": True,
         }
 
         worker = Path(__file__).with_name("submit_worker.py")
 
         handoff["packed_addons"] = bundle_addons(handoff["packed_addons_path"])
+        if not Storage.auth_context_matches(
+            auth_context[0], auth_context[1], auth_context[2]
+        ):
+            self.report(
+                {"ERROR"},
+                "Your Sulu session or environment changed. Submit again.",
+            )
+            return {"CANCELLED"}
         try:
             launch_worker_secure(
                 worker,

@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from ...utils.worker_utils import launch_worker_secure
-from ...constants import POCKETBASE_URL
+from ...environment import environment_handoff_values
 from ...utils.prefs import get_prefs, get_addon_dir
 from ...storage import Storage
 
@@ -47,15 +47,30 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
         if job_snapshot and not job_snapshot.get("id"):
             job_snapshot["id"] = self.job_id
 
+        try:
+            auth_context = Storage.auth_context()
+            if not auth_context[2]:
+                raise ValueError("Missing Sulu session")
+            environment_values = environment_handoff_values(
+                auth_context[0],
+                selected_project.get("organization_id")
+            )
+        except ValueError:
+            self.report(
+                {"ERROR"},
+                "Selected project metadata is incomplete. Refresh projects and try again.",
+            )
+            return {"CANCELLED"}
+
         handoff = {
+            **environment_values,
             "addon_dir": str(get_addon_dir()),
             "download_path": bpy.path.abspath(props.download_path),
             "project": selected_project,
             "job_id": self.job_id,
             "job_name": self.job_name,
             "job": job_snapshot,
-            "pocketbase_url": POCKETBASE_URL,
-            "user_token": Storage.data["user_token"],
+            "user_token": auth_context[2],
             "render_coordinator": True,
             "download_type": "auto",
             "debug_mode": bool(getattr(prefs, "debug_mode", False)),
@@ -63,6 +78,14 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
 
         worker = Path(__file__).with_name("download_worker.py")
 
+        if not Storage.auth_context_matches(
+            auth_context[0], auth_context[1], auth_context[2]
+        ):
+            self.report(
+                {"ERROR"},
+                "Your Sulu session or environment changed. Download again.",
+            )
+            return {"CANCELLED"}
         try:
             launch_worker_secure(
                 worker,

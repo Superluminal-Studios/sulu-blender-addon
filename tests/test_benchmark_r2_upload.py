@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -44,6 +45,40 @@ def test_size_parser_uses_explicit_decimal_and_binary_units():
     assert benchmark.parse_size("64MB") == 64_000_000
 
 
+def test_authenticated_benchmark_session_uses_its_fixed_environment(tmp_path):
+    session = tmp_path / "session.json"
+    session.write_text(
+        json.dumps(
+            {
+                "environment": "test",
+                "user_token": "opaque-token",
+                "project_id": "project-1",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert benchmark._load_session(session) == (
+        "opaque-token",
+        "project-1",
+        "test",
+        "https://lab-api.superlumin.al",
+    )
+
+
+def test_benchmark_legacy_session_defaults_to_production(tmp_path):
+    session = tmp_path / "session.json"
+    session.write_text(
+        json.dumps({"user_token": "opaque-token", "project_id": "project-1"}),
+        encoding="utf-8",
+    )
+
+    assert benchmark._load_session(session)[2:] == (
+        "production",
+        "https://api.superlumin.al",
+    )
+
+
 def test_cleanup_timeout_is_contained_without_exposing_the_command():
     timeout = subprocess.TimeoutExpired(
         ["rclone", "purge", ":s3:secret-bucket/secret-prefix"],
@@ -77,7 +112,16 @@ def test_cleanup_timeout_reaches_main_as_a_sanitized_failure(tmp_path, capsys):
     run_id = mock.Mock()
     run_id.hex = secret_run_id
     with (
-        mock.patch.object(benchmark, "_load_session", return_value=("token", "project")),
+        mock.patch.object(
+            benchmark,
+            "_load_session",
+            return_value=(
+                "token",
+                "project",
+                "production",
+                "https://api.superlumin.al",
+            ),
+        ),
         mock.patch.object(benchmark, "_fetch_storage", return_value=({}, secret_bucket)),
         mock.patch.object(
             benchmark,

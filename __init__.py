@@ -35,9 +35,19 @@ def _purge_cached_submodules() -> bool:
     cached_storage = getattr(cached_storage_module, "Storage", None)
     if cached_storage is not None:
         cached_storage.enable_job_thread = False
+        cached_invalidate = getattr(
+            cached_storage,
+            "invalidate_runtime_contexts",
+            None,
+        )
+        if callable(cached_invalidate):
+            cached_invalidate()
         cached_save = getattr(cached_storage, "save", None)
         if callable(cached_save):
             atexit.unregister(cached_save)
+        cached_close_sessions = getattr(cached_storage, "close_retired_sessions", None)
+        if callable(cached_close_sessions):
+            atexit.unregister(cached_close_sessions)
 
     # ``from . import child`` consults attributes retained in the reloaded
     # root module before sys.modules, so clear those direct child references
@@ -92,6 +102,7 @@ def register():
     global _atexit_registered
     if not _atexit_registered:
         atexit.register(Storage.save)
+        atexit.register(Storage.close_retired_sessions)
         _atexit_registered = True
     icons.register()
     properties.register()
@@ -105,6 +116,7 @@ def register():
 
 def unregister():
     unregister_job_refresh_infrastructure()
+    Storage.invalidate_runtime_contexts()
     operators.unregister()
     panels.unregister()
     download_operator.unregister()
