@@ -302,6 +302,46 @@ class IntegratedDownloadRunnerTest(unittest.TestCase):
         )
 
 
+def test_coordinated_handoff_never_requests_legacy_storage_or_farm(tmp_path):
+    worker = _load_worker_module()
+    previous = worker.__dict__.copy()
+    logger = MagicMock()
+    logger.logo_end.return_value = "c"
+    mods = {name: MagicMock() for name in (
+        "run_rclone", "ensure_rclone", "open_folder", "fetch_project_storage",
+        "_build_base", "requests_retry_session", "TerminalKeyReader", "clear_console",
+    )}
+    mods.update({"NOT_FOUND_MARKERS": (), "AUTH_MARKERS": (), "CLOUDFLARE_R2_DOMAIN": "unused.invalid",
+                 "DownloadLogger": MagicMock(return_value=logger),
+                 "run_preflight_checks": MagicMock(return_value=(True, [])), "pkg_name": "fixture_addon"})
+    artifact = MagicMock()
+    artifact.run.return_value = "finished"
+    artifact_module = types.SimpleNamespace(ArtifactDownloader=MagicMock(return_value=artifact))
+    coordinator_module = types.SimpleNamespace(RenderCoordinatorClient=MagicMock())
+    handoff = {"addon_dir": str(tmp_path), "job_id": "job-coordinated", "job_name": "Render output",
+               "download_path": str(tmp_path), "download_type": "auto", "render_coordinator": True,
+               "pocketbase_url": "https://api.fixture.invalid", "user_token": "synthetic-fixture",
+               "project": {"id": "project-a", "organization_id": "org-a"}}
+    try:
+        with (patch.object(worker, "_bootstrap_addon_modules", return_value=mods),
+              patch.object(worker, "_DownloadActionController") as actions,
+              patch.object(worker, "_run_selected_downloader") as legacy,
+              patch.object(worker, "_refresh_storage_credentials") as credentials,
+              patch.dict(sys.modules, {"fixture_addon.transfers.submit.coordinator_client": coordinator_module,
+                                       "fixture_addon.transfers.download.artifact_client": artifact_module})):
+            actions.return_value.start.return_value = False
+            worker.run_download(handoff, clear_console=False, integrated=True)
+            legacy.assert_not_called()
+            credentials.assert_not_called()
+            mods["ensure_rclone"].assert_not_called()
+            mods["fetch_project_storage"].assert_not_called()
+            artifact.run.assert_called_once_with(automatic=True)
+            artifact.close.assert_called_once()
+            assert artifact_module.ArtifactDownloader.call_args.args[1:3] == ("org-a", "job-coordinated")
+    finally:
+        worker.__dict__.update(previous)
+
+
 class DownloadActionControllerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -4,7 +4,7 @@ import bpy
 from .storage            import Storage
 from .utils.date_utils   import format_submitted
 from .icons              import get_status_icon_id, get_fallback_icon
-from .utils.request_utils import fetch_jobs, fetch_projects, get_render_queue_key
+from .utils.request_utils import fetch_jobs, fetch_projects
 from .utils.job_list import (
     get_indexed_item,
     int_value,
@@ -66,11 +66,12 @@ def apply_project_context(project_id: str, *, refresh_jobs: bool = True) -> dict
         return None
 
     cached_org_id = str(Storage.data.get("org_id") or "").strip()
-    cached_user_key = str(Storage.data.get("user_key") or "").strip()
+    cached_user_key = ""
+    Storage.data["user_key"] = ""
     if (
         Storage.data.get("project_id") == project_id
         and cached_org_id
-        and cached_user_key
+        and validate_project_identity(next((p for p in Storage.data.get("projects", []) if p.get("id") == project_id), None))[0]
     ):
         if refresh_jobs:
             fetch_jobs(cached_org_id, cached_user_key, project_id)
@@ -104,7 +105,7 @@ def apply_project_context(project_id: str, *, refresh_jobs: bool = True) -> dict
             missing_fields=missing,
         )
 
-    org_id, user_key = resolve_org_context(project, get_render_queue_key)
+    org_id, user_key = resolve_org_context(project)
     Storage.data["project_id"] = project_id
     Storage.data["org_id"] = org_id
     Storage.data["user_key"] = user_key

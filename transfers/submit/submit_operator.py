@@ -17,7 +17,7 @@ from ...utils.version_utils import resolved_worker_blender_value
 from ...storage import Storage
 from ...utils.prefs import get_prefs, get_addon_dir
 from ...utils.project_scan import quick_cross_drive_hint
-from ...utils.request_utils import fetch_projects, get_render_queue_key
+from ...utils.request_utils import fetch_projects
 from ...utils.project_context import (
     ProjectContextError,
     resolve_org_context,
@@ -141,7 +141,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             return {"CANCELLED"}
 
         try:
-            org_id, user_key = resolve_org_context(project, get_render_queue_key)
+            org_id, user_key = resolve_org_context(project)
         except ProjectContextError as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
@@ -301,7 +301,7 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "video_fps": int(scene.render.fps),
             "video_fps_base": float(scene.render.fps_base or 1.0),
             "sarfis_url": f"{FARM_IP.rstrip('/')}/farm/{org_id}",
-            "sarfis_token": user_key,
+            "render_coordinator": True,
         }
 
         worker = Path(__file__).with_name("submit_worker.py")

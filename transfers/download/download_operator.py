@@ -55,9 +55,9 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
             "job_name": self.job_name,
             "job": job_snapshot,
             "pocketbase_url": POCKETBASE_URL,
-            "sarfis_url": f"https://api.superlumin.al/farm/{Storage.data['org_id']}",
             "user_token": Storage.data["user_token"],
-            "sarfis_token": Storage.data["user_key"],
+            "render_coordinator": True,
+            "download_type": "auto",
             "debug_mode": bool(getattr(prefs, "debug_mode", False)),
         }
 

@@ -874,12 +874,12 @@ def _terminate_video_process(process: subprocess.Popen) -> None:
         process.wait(timeout=5)
 
 
-def _create_mp4(dest_dir: str) -> Optional[str]:
-    files = _select_video_sequence(dest_dir)
+def _create_mp4(dest_dir: str, files: Optional[List[Path]] = None) -> Optional[str]:
+    files = _select_video_sequence(dest_dir) if files is None else files
     if len(files) < 2:
         logger.warning(
             "MP4 skipped: no frame-numbered image sequence with at least "
-            "two frames was found."
+            "two unambiguous frames was found. Retried outputs remain separate; choose the intended attempts locally."
         )
         return None
 
@@ -1290,20 +1290,21 @@ def run_download(
     else:
         download_type = "auto" if sarfis_url and sarfis_token else "single"
 
-    # Prepare rclone
-    try:
-        rclone_bin = ensure_rclone(logger=logger)
-    except Exception as exc:
-        logger.fatal(f"Couldn't set up transfer tool: {exc}")
-
-    # Obtain R2 credentials
-    try:
-        _refresh_storage_credentials()
-    except (RuntimeError, requests.RequestException, KeyError) as exc:
-        logger.fatal(
-            "Couldn't get storage credentials. Check your connection and try again.\n"
-            f"Details: {exc}"
-        )
+    coordinated = data.get("render_coordinator") is True
+    # New clients never obtain project storage credentials or call raw farm
+    # endpoints. Only explicitly older handoffs retain the old worker path.
+    if not coordinated:
+        try:
+            rclone_bin = ensure_rclone(logger=logger)
+        except Exception as exc:
+            logger.fatal(f"Couldn't set up transfer tool: {exc}")
+        try:
+            _refresh_storage_credentials()
+        except (RuntimeError, requests.RequestException, KeyError) as exc:
+            logger.fatal(
+                "Couldn't get storage credentials. Check your connection and try again.\n"
+                f"Details: {exc}"
+            )
 
     # Make sure the target directory exists
     _ensure_dir(download_path)
@@ -1322,19 +1323,26 @@ def run_download(
         )
 
     # Run selected mode
+    downloader = None
     try:
-        outcome = _run_selected_downloader(
-            dest_dir,
-            download_type,
-            sarfis_url,
-            sarfis_token,
-        )
+        if coordinated:
+            client_module = importlib.import_module(f"{mods['pkg_name']}.transfers.submit.coordinator_client")
+            artifact_module = importlib.import_module(f"{mods['pkg_name']}.transfers.download.artifact_client")
+            identity = str(data["project"]["organization_id"]) + ":" + job_id
+            client = client_module.RenderCoordinatorClient(data["pocketbase_url"], data["user_token"], session,
+                Path(data["addon_dir"]) / "reports" / ("download-" + job_id + ".json"), identity, lambda *_: False)
+            downloader = artifact_module.ArtifactDownloader(client, data["project"]["organization_id"], job_id, dest_dir,
+                poll=_poll_download_actions, wait=_wait_for_download_actions)
+            logger.info("Downloading authorized outputs by layout and generation. No storage credentials are requested.")
+            outcome = downloader.run(automatic=download_type == "auto")
+        else:
+            outcome = _run_selected_downloader(dest_dir, download_type, sarfis_url, sarfis_token)
 
         mp4_path = None
         if bool(data.get("create_mp4_after_download")):
             if outcome == "finished":
                 try:
-                    mp4_path = _create_mp4(dest_dir)
+                    mp4_path = _create_mp4(dest_dir, files=downloader.video_sequence(_VIDEO_IMAGE_EXTENSIONS)) if coordinated else _create_mp4(dest_dir)
                 except _DownloadCancelled:
                     raise
                 except Exception as exc:
@@ -1381,6 +1389,8 @@ def run_download(
         actions.stop()
         logger.fatal(f"Download stopped: {exc}")
     finally:
+        if coordinated and downloader is not None:
+            downloader.close()
         actions.stop()
         _download_actions = None
 

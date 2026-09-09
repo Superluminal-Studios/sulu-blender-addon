@@ -1005,12 +1005,17 @@ class TestSubmitPhaseTimings(unittest.TestCase):
             "reported_bytes_complete_to_process_exit",
         )
 
-    def test_registration_records_schema_and_job_post_durations(self):
+    def test_registration_records_schema_and_coordinator_durations(self):
         report = self._Report()
         response = mock.MagicMock()
         response.raise_for_status.return_value = None
         session = mock.MagicMock()
         session.post.return_value = response
+        coordinator = mock.MagicMock()
+        coordinator.completed.return_value = None
+        coordinator.journal = {}
+        coordinator.tool.return_value = {"quote_token": "quote-a"}
+        coordinator.mutate.return_value = {"job_id": "durable-job"}
         ctx = types.SimpleNamespace(
             data={
                 "job_id": "job-1",
@@ -1047,6 +1052,9 @@ class TestSubmitPhaseTimings(unittest.TestCase):
             render_tasks=[1],
             required_storage=1000,
             phase_timings={},
+            proj={"id": "project-1"},
+            upload_receipt="receipt-a",
+            coordinator_client=coordinator,
         )
 
         with mock.patch.object(
@@ -1068,15 +1076,15 @@ class TestSubmitPhaseTimings(unittest.TestCase):
         self.assertEqual(registration["outcome"], "completed")
         self.assertGreaterEqual(registration["duration_ms"], 0)
         self.assertGreater(registration["schema_payload_bytes"], 0)
-        self.assertGreaterEqual(registration["job_post_ms"], 0)
-        session.post.assert_called_once()
-        posted = json.loads(session.post.call_args.kwargs["data"])
+        self.assertGreaterEqual(registration["coordinator_ms"], 0)
+        session.post.assert_not_called()
+        posted = coordinator.mutate.call_args.args[1]
         self.assertEqual(
-            posted["settings_schema_registration"]["schema_key"],
+            coordinator.register_schema.call_args.args[0]["schema_key"],
             "bl510-timing",
         )
         self.assertEqual(
-            posted["job_data"]["settings_schema_key"],
+            posted["template"]["settings_schema_key"],
             "bl510-timing",
         )
 
