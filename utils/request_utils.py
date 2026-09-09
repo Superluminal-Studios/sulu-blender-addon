@@ -2,10 +2,13 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 import threading
 import time
+import re
+from urllib.parse import quote
 
 import bpy
 
-from ..constants import POCKETBASE_URL
+from ..constants import POCKETBASE_URL  # compatibility alias for older callers/tests
+from ..environment import active_profile
 from ..pocketbase_auth import (
     NotAuthenticated,
     NotFound,
@@ -199,23 +202,39 @@ def _merge_job_sources(
 
 def fetch_projects():
     """Return all visible projects."""
+    api_url = active_profile().api_url
     projects = []
     page = 1
-    total_pages = 1
+    seen_ids = set()
 
-    while page <= total_pages:
+    while True:
         resp = authorized_request(
             "GET",
-            f"{POCKETBASE_URL}/api/collections/projects/records",
+            f"{api_url}/api/collections/projects/records",
             params={"page": page, "perPage": _PROJECTS_PER_PAGE},
         )
         payload = resp.json() or {}
-        projects.extend(payload.get("items") or [])
+        items = payload.get("items") or []
+        if not isinstance(items, list):
+            raise ProjectContextError("Project listing returned an invalid page.")
+        fresh = [item for item in items if isinstance(item, dict) and item.get("id") not in seen_ids]
+        if items and not fresh:
+            raise ProjectContextError("Project listing repeated a page; refresh projects to try again.")
+        projects.extend(fresh)
+        seen_ids.update(item.get("id") for item in fresh)
 
         try:
-            total_pages = int(payload.get("totalPages") or 1)
+            total_pages = int(payload.get("totalPages") or -1)
         except (TypeError, ValueError):
-            total_pages = 1
+            total_pages = -1
+
+        # skipTotal=1 deliberately returns -1. Never interpret that as the end
+        # of the list: with unknown totals a short page is the terminal signal.
+        if total_pages >= 0:
+            if page >= total_pages:
+                break
+        elif len(items) < _PROJECTS_PER_PAGE:
+            break
 
         page += 1
 
@@ -223,9 +242,10 @@ def fetch_projects():
 
 
 def _fetch_render_queue_items(org_id: str) -> list[dict]:
+    api_url = active_profile().api_url
     rq_resp = authorized_request(
         "GET",
-        f"{POCKETBASE_URL}/api/collections/render_queues/records",
+        f"{api_url}/api/collections/render_queues/records",
         params={"filter": f"(organization_id='{org_id}')"},
     )
     payload = rq_resp.json() or {}
@@ -242,7 +262,7 @@ def get_render_queue_key(org_id: str) -> str:
         # Process Manager's authoritative session response.
         authorized_request(
             "GET",
-            f"{POCKETBASE_URL}/api/farm_status/{org_id}",
+            f"{active_profile().api_url}/api/farm_status/{org_id}",
             isolated_session=True,
         )
         items = _fetch_render_queue_items(org_id)
@@ -272,9 +292,10 @@ def _request_stored_jobs(
     if project_id := str(project_id or "").strip():
         params["project_id"] = project_id
 
+    api_url = active_profile().api_url
     resp = authorized_request(
         "GET",
-        f"{POCKETBASE_URL}/api/jobs/{org_id}",
+        f"{api_url}/api/jobs/{org_id}",
         params=params,
         stored_job_session=True,
     )
@@ -284,9 +305,10 @@ def _request_stored_jobs(
 
 
 def _wake_queue_manager(org_id: str, user_key: str) -> None:
+    api_url = active_profile().api_url
     authorized_request(
         "GET",
-        f"{POCKETBASE_URL}/api/farm_status/{org_id}",
+        f"{api_url}/api/farm_status/{org_id}",
         headers={"Auth-Token": user_key},
         isolated_session=True,
     )
@@ -299,9 +321,10 @@ def _request_live_jobs(
     *,
     allow_queue_manager_wake: bool = True,
 ) -> dict:
+    api_url = active_profile().api_url
     jobs_resp = authorized_request(
         "GET",
-        f"{POCKETBASE_URL}/farm/{org_id}/api/job_list",
+        f"{api_url}/farm/{org_id}/api/job_list",
         headers={"Auth-Token": user_key},
         isolated_session=True,
     )
@@ -643,6 +666,50 @@ def _request_jobs_unlocked(
     *,
     refresh_identity: tuple[int, int] | None = None,
 ) -> dict:
+    """One pure backend snapshot path; errors never wake or fall back to a farm."""
+    if refresh_identity is None:
+        refresh_identity = _current_refresh_identity()
+    org = str(org_id or "").strip()
+    requested_project = str(project_id or "").strip()
+    project, project_sqid = _selected_project_identity(requested_project)
+    project = project or requested_project
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", org) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", project):
+        raise ProjectContextError("Select an accessible organization and project before loading jobs.")
+    jobs, cursors, cursor = {}, set(), None
+    api_url = active_profile().api_url
+    while True:
+        params = {"project_id": project, "limit": 200}
+        if cursor:
+            params["cursor"] = cursor
+        response = authorized_request("GET", f"{api_url}/api/render/v1/browser/jobs/{quote(org, safe='')}", params=params, stored_job_session=True)
+        payload = response.json()
+        page = payload.get("body") if isinstance(payload, dict) else None
+        if not isinstance(page, dict) or len(page) > 200:
+            raise ProjectContextError("Render discovery returned an invalid page.")
+        for job_id, job in page.items():
+            if not isinstance(job, dict) or job_id in jobs:
+                raise ProjectContextError("Render discovery repeated an item. Refresh to retry.")
+            jobs[job_id] = job
+        cursor = payload.get("next_cursor")
+        if not cursor:
+            break
+        if not isinstance(cursor, str) or len(cursor) > 4096 or cursor in cursors:
+            raise ProjectContextError("Render discovery repeated a page. Refresh to retry.")
+        cursors.add(cursor)
+    jobs = _filter_jobs_for_project(jobs, project, project_sqid)
+    if refresh_identity == _current_refresh_identity() and _storage_context_values_match(org, user_key, requested_project, project, project_sqid):
+        Storage.data["jobs"] = jobs
+        _request_properties_redraw()
+    return jobs
+
+
+def _request_legacy_jobs_unlocked(
+    org_id: str,
+    user_key: str,
+    project_id: str,
+    *,
+    refresh_identity: tuple[int, int] | None = None,
+) -> dict:
     # Worker threads update Storage only; Blender collections are rebuilt on the main thread.
     if refresh_identity is None:
         refresh_identity = _current_refresh_identity()
@@ -707,7 +774,7 @@ def _request_jobs_unlocked(
 
 
 def request_jobs(org_id: str, user_key: str, project_id: str):
-    """Return persisted project jobs with live farm state overlaid when available."""
+    """Return project jobs through the authenticated pure render facade."""
     global _last_job_refresh_context
     global _last_job_refresh_completed_at
     global _last_job_refresh_result

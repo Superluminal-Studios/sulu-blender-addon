@@ -27,9 +27,18 @@ def _load_purge_function(fake_modules, fake_atexit, cached_globals=None):
 def test_purge_cached_submodules_replaces_stale_addon_children():
     class CachedStorage:
         enable_job_thread = True
+        invalidated = False
+
+        @classmethod
+        def invalidate_runtime_contexts(cls):
+            cls.invalidated = True
 
         @classmethod
         def save(cls):
+            pass
+
+        @classmethod
+        def close_retired_sessions(cls):
             pass
 
     cached_storage_module = types.SimpleNamespace(Storage=CachedStorage)
@@ -56,7 +65,11 @@ def test_purge_cached_submodules_replaces_stale_addon_children():
 
     assert purge() is True
     assert CachedStorage.enable_job_thread is False
-    assert unregistered_callbacks == [CachedStorage.save]
+    assert CachedStorage.invalidated is True
+    assert unregistered_callbacks == [
+        CachedStorage.save,
+        CachedStorage.close_retired_sessions,
+    ]
     assert "utils" not in namespace
     assert fake_modules == {
         "SuperluminalRender": root_module,

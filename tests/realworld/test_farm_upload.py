@@ -58,7 +58,7 @@ from tests.helpers import (
 
 # Import storage for credentials
 from storage import Storage
-from constants import POCKETBASE_URL, FARM_IP
+from environment import environment_handoff_values, profile_for_environment
 
 
 # TEST CONFIGURATION
@@ -162,6 +162,8 @@ def load_credentials() -> Tuple[bool, str, Dict]:
         org_id = Storage.data.get("org_id", "")
         user_key = Storage.data.get("user_key", "")
         projects = Storage.data.get("projects", [])
+        environment = Storage.data.get("environment", "production")
+        profile = profile_for_environment(environment)
 
         if not token:
             return False, "No user_token in session.json - please log in first", {}
@@ -177,6 +179,9 @@ def load_credentials() -> Tuple[bool, str, Dict]:
             "org_id": org_id,
             "user_key": user_key,
             "projects": projects,
+            "project_id": Storage.data.get("project_id", ""),
+            "environment": profile.key,
+            "api_url": profile.api_url,
         }
 
     except Exception as e:
@@ -200,7 +205,7 @@ def verify_auth(credentials: Dict) -> Tuple[bool, str]:
 
         headers = {"Authorization": token}
         response = requests.get(
-            f"{POCKETBASE_URL}/api/collections/projects/records",
+            f"{credentials['api_url']}/api/collections/projects/records",
             headers=headers,
             timeout=30
         )
@@ -425,9 +430,23 @@ def perform_upload(
     start_time = time.time()
 
     try:
-        # Select first project
-        project = credentials["projects"][0] if credentials["projects"] else {}
+        # Use the project that owns the persisted context; falling back to the
+        # first entry is retained only for sessions written by older releases.
+        selected_project_id = str(credentials.get("project_id") or "")
+        project = next(
+            (
+                item
+                for item in credentials["projects"]
+                if str(item.get("id") or "") == selected_project_id
+            ),
+            credentials["projects"][0] if credentials["projects"] else {},
+        )
         project_name = project.get("name", "Test")
+        organization_id = project.get("organization_id")
+        environment_values = environment_handoff_values(
+            credentials["environment"],
+            organization_id,
+        )
 
         # Build handoff JSON (similar to submit_operator.py)
         handoff = {
@@ -455,12 +474,12 @@ def perform_upload(
             "render_engine": "CYCLES",
             "blender_version": config.blender_version,
             "ignore_errors": True,  # Skip prompts for missing files in automated tests
-            "pocketbase_url": POCKETBASE_URL,
+            **environment_values,
             "user_token": credentials["token"],
             "project": project,
             "use_bserver": False,
             "use_async_upload": True,
-            "farm_url": f"{FARM_IP}/farm/{credentials['org_id']}/api/",
+            "render_coordinator": True,
         }
 
         # Write handoff

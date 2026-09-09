@@ -1,5 +1,14 @@
-POCKETBASE_URL = "https://api.superlumin.al"
-FARM_IP = "http://178.156.167.251/"
+try:
+    from .environment import profile_for_environment
+except ImportError:  # pragma: no cover - standalone developer utilities
+    from environment import profile_for_environment
+
+
+# Compatibility aliases for external developer utilities.  Runtime paths use
+# the selected fixed environment profile instead of importing these constants.
+_PRODUCTION_PROFILE = profile_for_environment("production")
+POCKETBASE_URL = _PRODUCTION_PROFILE.api_url
+FARM_IP = _PRODUCTION_PROFILE.farm_url
 
 
 DEFAULT_ADDONS = {

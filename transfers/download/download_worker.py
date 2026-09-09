@@ -74,6 +74,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
     terminal_actions_mod = importlib.import_module(
         f"{pkg_name}.utils.terminal_actions"
     )
+    environment_mod = importlib.import_module(f"{pkg_name}.environment")
 
     return {
         "pkg_name": pkg_name,
@@ -90,6 +91,8 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
         "requests_retry_session": worker_utils.requests_retry_session,
         "CLOUDFLARE_R2_DOMAIN": worker_utils.CLOUDFLARE_R2_DOMAIN,
         "run_preflight_checks": worker_utils.run_preflight_checks,
+        "validate_handoff_environment": environment_mod.validate_handoff_environment,
+        "job_page_url": environment_mod.job_page_url,
     }
 
 
@@ -201,10 +204,7 @@ def _wait_for_download_actions(delay: float) -> None:
         _download_actions.wait(delay)
 
 
-def _job_page_url(handoff: Dict[str, object]) -> str:
-    explicit = str(handoff.get("job_url", "") or "").strip()
-    if explicit.startswith(("https://", "http://")):
-        return explicit
+def _job_page_url(handoff: Dict[str, object], builder=None) -> str:
     project = handoff.get("project") or {}
     project_sqid = (
         str(project.get("sqid", "") or "").strip()
@@ -214,9 +214,31 @@ def _job_page_url(handoff: Dict[str, object]) -> str:
     handoff_job_id = str(handoff.get("job_id", "") or "").strip()
     if not project_sqid or not handoff_job_id:
         return ""
-    return (
-        f"https://superlumin.al/p/{project_sqid}/farm/jobs/{handoff_job_id}"
-    )
+    if builder is None:
+        # Standalone compatibility for focused tests and old integrations. Do
+        # not make the fallback an arbitrary-URL escape hatch; the real worker
+        # passes the canonical builder imported during bootstrap.
+        environment = str(handoff.get("environment") or "production").strip().lower()
+        web_url = {
+            "production": "https://superlumin.al",
+            "test": "https://lab.superlumin.al",
+        }.get(environment)
+        if not web_url:
+            return ""
+        supplied_web_url = str(handoff.get("web_url") or web_url).rstrip("/")
+        if supplied_web_url != web_url:
+            return ""
+        expected = f"{web_url}/p/{project_sqid}/farm/jobs/{handoff_job_id}"
+    else:
+        expected = builder(
+            handoff.get("environment"),
+            project_sqid,
+            handoff_job_id,
+        )
+    explicit = str(handoff.get("job_url", "") or "").strip()
+    if explicit and explicit != expected:
+        return ""
+    return expected
 
 
 def _safe_dir_name(name: str, fallback: str) -> str:
@@ -874,12 +896,12 @@ def _terminate_video_process(process: subprocess.Popen) -> None:
         process.wait(timeout=5)
 
 
-def _create_mp4(dest_dir: str) -> Optional[str]:
-    files = _select_video_sequence(dest_dir)
+def _create_mp4(dest_dir: str, files: Optional[List[Path]] = None) -> Optional[str]:
+    files = _select_video_sequence(dest_dir) if files is None else files
     if len(files) < 2:
         logger.warning(
             "MP4 skipped: no frame-numbered image sequence with at least "
-            "two frames was found."
+            "two unambiguous frames was found. Retried outputs remain separate; choose the intended attempts locally."
         )
         return None
 
@@ -1224,6 +1246,7 @@ def run_download(
     t_start = time.perf_counter()
     data = dict(handoff)
     mods = _bootstrap_addon_modules(data)
+    mods["validate_handoff_environment"](data)
     run_rclone = mods["run_rclone"]
     ensure_rclone = mods["ensure_rclone"]
     NOT_FOUND_MARKERS = mods["NOT_FOUND_MARKERS"]
@@ -1290,20 +1313,21 @@ def run_download(
     else:
         download_type = "auto" if sarfis_url and sarfis_token else "single"
 
-    # Prepare rclone
-    try:
-        rclone_bin = ensure_rclone(logger=logger)
-    except Exception as exc:
-        logger.fatal(f"Couldn't set up transfer tool: {exc}")
-
-    # Obtain R2 credentials
-    try:
-        _refresh_storage_credentials()
-    except (RuntimeError, requests.RequestException, KeyError) as exc:
-        logger.fatal(
-            "Couldn't get storage credentials. Check your connection and try again.\n"
-            f"Details: {exc}"
-        )
+    coordinated = data.get("render_coordinator") is True
+    # New clients never obtain project storage credentials or call raw farm
+    # endpoints. Only explicitly older handoffs retain the old worker path.
+    if not coordinated:
+        try:
+            rclone_bin = ensure_rclone(logger=logger)
+        except Exception as exc:
+            logger.fatal(f"Couldn't set up transfer tool: {exc}")
+        try:
+            _refresh_storage_credentials()
+        except (RuntimeError, requests.RequestException, KeyError) as exc:
+            logger.fatal(
+                "Couldn't get storage credentials. Check your connection and try again.\n"
+                f"Details: {exc}"
+            )
 
     # Make sure the target directory exists
     _ensure_dir(download_path)
@@ -1311,7 +1335,7 @@ def run_download(
     actions = _DownloadActionController(
         TerminalKeyReader(),
         dest_dir=dest_dir,
-        job_url=_job_page_url(data),
+        job_url=_job_page_url(data, mods["job_page_url"]),
         report_path=str(data.get("report_path", "") or "").strip(),
     )
     _download_actions = actions
@@ -1322,19 +1346,26 @@ def run_download(
         )
 
     # Run selected mode
+    downloader = None
     try:
-        outcome = _run_selected_downloader(
-            dest_dir,
-            download_type,
-            sarfis_url,
-            sarfis_token,
-        )
+        if coordinated:
+            client_module = importlib.import_module(f"{mods['pkg_name']}.transfers.submit.coordinator_client")
+            artifact_module = importlib.import_module(f"{mods['pkg_name']}.transfers.download.artifact_client")
+            identity = str(data["project"]["organization_id"]) + ":" + job_id
+            client = client_module.RenderCoordinatorClient(data["pocketbase_url"], data["user_token"], session,
+                Path(data["addon_dir"]) / "reports" / ("download-" + job_id + ".json"), identity, lambda *_: False)
+            downloader = artifact_module.ArtifactDownloader(client, data["project"]["organization_id"], job_id, dest_dir,
+                poll=_poll_download_actions, wait=_wait_for_download_actions)
+            logger.info("Downloading authorized outputs by layout and generation. No storage credentials are requested.")
+            outcome = downloader.run(automatic=download_type == "auto")
+        else:
+            outcome = _run_selected_downloader(dest_dir, download_type, sarfis_url, sarfis_token)
 
         mp4_path = None
         if bool(data.get("create_mp4_after_download")):
             if outcome == "finished":
                 try:
-                    mp4_path = _create_mp4(dest_dir)
+                    mp4_path = _create_mp4(dest_dir, files=downloader.video_sequence(_VIDEO_IMAGE_EXTENSIONS)) if coordinated else _create_mp4(dest_dir)
                 except _DownloadCancelled:
                     raise
                 except Exception as exc:
@@ -1381,6 +1412,8 @@ def run_download(
         actions.stop()
         logger.fatal(f"Download stopped: {exc}")
     finally:
+        if coordinated and downloader is not None:
+            downloader.close()
         actions.stop()
         _download_actions = None
 

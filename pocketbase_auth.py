@@ -15,7 +15,7 @@ import time
 import requests
 from requests.adapters import HTTPAdapter
 
-from .constants import POCKETBASE_URL
+from .environment import profile_for_environment, validate_api_url
 from .storage import Storage
 from .utils.worker_utils import _request_endpoint
 
@@ -63,7 +63,7 @@ def request_timing_logs_enabled() -> bool:
 
 def logged_session_request(session, method: str, url: str, **kwargs):
     start = time.perf_counter()
-    if session is Storage.session:
+    if Storage.manages_session(session):
         with Storage.session_lock:
             res = session.request(method, url, **kwargs)
     else:
@@ -137,34 +137,46 @@ def reset_stored_job_session() -> None:
     _stored_job_session_manager.reset()
 
 
-def _token_refresh_due() -> bool:
-    token_time = Storage.data.get("user_token_time")
+def _token_refresh_due(token_time=None) -> bool:
+    if token_time is None:
+        token_time = Storage.data.get("user_token_time")
     if not token_time:
         return False
     return int(time.time()) - int(token_time) > AUTH_REFRESH_INTERVAL_SECONDS
 
 
-def _refresh_token_if_due() -> str:
+def _refresh_token_if_due(auth_context=None) -> str:
     """Refresh an expired token once, even when independent requests race."""
-    token = str(Storage.data.get("user_token") or "")
+    if auth_context is None:
+        auth_context = Storage.auth_context()
+    environment, generation, token, token_time = auth_context
     if not token:
         raise NotAuthenticated("Not logged in")
-    if not _token_refresh_due():
+    if not _token_refresh_due(token_time):
         return token
 
     with _auth_refresh_lock:
-        token = str(Storage.data.get("user_token") or "")
-        if not token:
+        current = Storage.auth_context()
+        current_environment, current_generation, current_token, current_time = current
+        if (
+            current_environment != environment
+            or current_generation != generation
+        ):
+            raise NotAuthenticated("Sulu environment changed. Try again.")
+        if not current_token:
             raise NotAuthenticated("Not logged in")
-        if not _token_refresh_due():
-            return token
+        if not _token_refresh_due(current_time):
+            return current_token
 
-        refresh_url = f"{POCKETBASE_URL}/api/collections/users/auth-refresh"
+        refresh_url = (
+            profile_for_environment(environment).api_url
+            + "/api/collections/users/auth-refresh"
+        )
         res = logged_session_request(
             Storage.session,
             "POST",
             refresh_url,
-            headers={"Authorization": token},
+            headers={"Authorization": current_token},
             timeout=Storage.timeout,
         )
         if res.status_code != 200:
@@ -173,24 +185,31 @@ def _refresh_token_if_due() -> str:
 
         refreshed_token = str((res.json() or {}).get("token") or "")
         if refreshed_token:
-            current_token = str(Storage.data.get("user_token") or "")
-            if current_token != token:
-                if not current_token:
-                    raise NotAuthenticated("Not logged in")
-                return current_token
-            Storage.data["user_token"] = refreshed_token
-            Storage.data["user_token_time"] = int(time.time())
-            Storage.save()
-            token = refreshed_token
+            if not Storage.save_refreshed_token(
+                environment,
+                generation,
+                current_token,
+                refreshed_token,
+            ):
+                raise NotAuthenticated("Sulu environment changed. Try again.")
+            current_token = refreshed_token
 
-    return token
+    return current_token
 
 
-def _raise_classified_status(res, *, clear_expired_session: bool = False) -> None:
+def _raise_classified_status(
+    res,
+    *,
+    clear_expired_session: bool = False,
+    auth_context=None,
+) -> None:
     status_code = int(res.status_code)
     if status_code in (401, 403):
         if clear_expired_session and status_code == 401:
-            Storage.clear()
+            if auth_context is None:
+                Storage.clear()
+            else:
+                Storage.clear_if_auth_context_matches(*auth_context)
         message = (
             "Session expired. Sign in again."
             if status_code == 401
@@ -225,11 +244,23 @@ def authorized_request(
 
     request_session = None
     try:
-        if not Storage.data["user_token"]:
+        auth_context = Storage.auth_context()
+        environment, generation, token, _token_time = auth_context
+        try:
+            validate_api_url(environment, url)
+        except ValueError:
+            raise NotAuthenticated(
+                "Sulu environment changed. Try the request again."
+            ) from None
+        if not token:
             raise NotAuthenticated("Not logged in")
 
         headers = (kwargs.pop("headers", {}) or {}).copy()
-        headers["Authorization"] = _refresh_token_if_due()
+        token = _refresh_token_if_due(auth_context)
+        if not Storage.auth_context_matches(environment, generation, token):
+            raise NotAuthenticated("Sulu environment changed. Try again.")
+        request_auth_context = (environment, generation, token)
+        headers["Authorization"] = token
 
         if stored_job_session:
             res = _stored_job_session_manager.request(
@@ -252,7 +283,11 @@ def authorized_request(
                 **kwargs,
             )
 
-        _raise_classified_status(res, clear_expired_session=True)
+        _raise_classified_status(
+            res,
+            clear_expired_session=True,
+            auth_context=request_auth_context,
+        )
         return res
 
     except NotAuthenticated:

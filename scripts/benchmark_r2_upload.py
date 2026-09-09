@@ -34,7 +34,6 @@ from typing import Iterable, Sequence
 
 ADDON_DIR = Path(__file__).resolve().parent.parent
 SESSION_PATH = ADDON_DIR / "session.json"
-POCKETBASE_URL = "https://api.superlumin.al"
 R2_ENDPOINT = "https://f09fa628d989ddd93cbe3bf7f7935591.r2.cloudflarestorage.com"
 DEFAULT_RCLONE = ADDON_DIR / "transfers" / "rclone" / "osx-arm64" / "rclone"
 BENCHMARK_PREFIX_ROOT = "_sulu_upload_benchmark"
@@ -141,13 +140,20 @@ def parse_size(value: str) -> int:
     return size
 
 
-def _load_session(session_path: Path) -> tuple[str, str]:
+def _load_session(session_path: Path) -> tuple[str, str, str, str]:
     try:
         data = json.loads(session_path.read_text("utf-8"))
     except Exception as exc:
         raise RuntimeError("could not read the authenticated add-on session") from exc
 
     token = str(data.get("user_token") or "").strip()
+    environment = str(data.get("environment") or "production").strip().lower()
+    try:
+        from environment import profile_for_environment
+
+        profile = profile_for_environment(environment)
+    except (ImportError, ValueError) as exc:
+        raise RuntimeError("the add-on session has an unknown Sulu environment") from exc
     project_id = str(data.get("project_id") or "").strip()
     if not project_id:
         projects = data.get("projects") or []
@@ -155,10 +161,10 @@ def _load_session(session_path: Path) -> tuple[str, str]:
             project_id = str(projects[0].get("id") or "").strip()
     if not token or not project_id:
         raise RuntimeError("log in and select a project in the Blender add-on first")
-    return token, project_id
+    return token, project_id, profile.key, profile.api_url
 
 
-def _fetch_storage(token: str, project_id: str) -> tuple[dict, str]:
+def _fetch_storage(api_url: str, token: str, project_id: str) -> tuple[dict, str]:
     query = urllib.parse.urlencode(
         {
             "filter": f"(project_id='{project_id}' && bucket_name~'render-')",
@@ -168,7 +174,7 @@ def _fetch_storage(token: str, project_id: str) -> tuple[dict, str]:
         }
     )
     request = urllib.request.Request(
-        f"{POCKETBASE_URL}/api/collections/project_storage/records?{query}",
+        f"{api_url}/api/collections/project_storage/records?{query}",
         headers={
             "Authorization": token,
             "Accept": "application/json",
@@ -327,8 +333,10 @@ def run_benchmark(args: argparse.Namespace) -> int:
     if not rclone.is_file():
         raise RuntimeError("rclone executable was not found")
 
-    token, project_id = _load_session(Path(args.session).expanduser().resolve())
-    record, bucket = _fetch_storage(token, project_id)
+    token, project_id, environment, api_url = _load_session(
+        Path(args.session).expanduser().resolve()
+    )
+    record, bucket = _fetch_storage(api_url, token, project_id)
     env = _credential_env(record)
     base = _base_command(rclone)
     run_id = uuid.uuid4().hex
@@ -339,6 +347,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
 
     _result_line(
         event="benchmark_start",
+        environment=environment,
         rclone_version=_version(rclone),
         profiles=args.profiles,
         rounds=args.rounds,

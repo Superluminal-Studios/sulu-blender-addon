@@ -19,7 +19,7 @@ EXCLUDE = {
     # files
     ".gitignore", ".gitkeep", ".gitattributes", ".DS_Store",
     "README.md", "AGENTS.md", "CLAUDE.md", "pytest.ini",
-    "deploy.py",
+    "deploy.py", "conftest.py",
     "dev_config.json", "dev_config.example.json",
     "session.json", "session.json.tmp",
 }
