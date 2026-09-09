@@ -49,6 +49,15 @@ _HARVESTED_ENUMS = {
 # representative view layer; their property paths are layer-relative so the UI
 # can instantiate them per view layer as view_layers["Name"].<path>.
 _GROUP_DEFS = (
+    # Empty root walks the scene struct itself — the Scene properties tab's
+    # own rows (audio, gravity, simulation range) are direct scene props.
+    {"id": "scene", "label": "Scene", "root": "", "per_layer": False},
+    {
+        "id": "unit_settings",
+        "label": "Units",
+        "root": "unit_settings",
+        "per_layer": False,
+    },
     {"id": "render", "label": "Render", "root": "render", "per_layer": False},
     {
         "id": "render.image_settings",
@@ -124,6 +133,8 @@ def _resolve_group_struct(scene: Any, group: dict) -> Any:
         return _layer_struct(layer, group)
     struct = scene
     for attr in group["root"].split("."):
+        if not attr:
+            continue  # empty root = the scene itself
         struct = _safe_get(struct, attr)
         if struct is None:
             return None
@@ -143,7 +154,7 @@ def _property_path(group: dict, identifier: str) -> str:
     if group["per_layer"]:
         prefix = group["root"][len("view_layer"):].lstrip(".")
         return f"{prefix}.{identifier}" if prefix else identifier
-    return f"{group['root']}.{identifier}"
+    return f"{group['root']}.{identifier}" if group["root"] else identifier
 
 
 def _iter_schema_properties(struct: Any) -> Iterator[tuple[str, Any]]:
@@ -387,7 +398,7 @@ def collect_settings_values(scene: Any) -> dict[str, Any]:
                 value = _json_value(_safe_get(struct, identifier, _SKIP))
                 if value is _SKIP:
                     continue
-                values[f"{group['root']}.{identifier}"] = value
+                values[_property_path(group, identifier)] = value
         for layer in _iter_collection(_safe_get(scene, "view_layers")):
             layer_name = _name(layer)
             if not layer_name:
