@@ -4,6 +4,8 @@ import copy
 import hashlib
 import importlib
 import json
+import os
+import stat
 import sys
 import time
 import types
@@ -94,6 +96,108 @@ def isolated_storage(tmp_path):
         Storage.enable_job_thread = previous["enable_job_thread"]
         Storage.jobs_updating = previous["jobs_updating"]
         Storage.projects_updating = previous["projects_updating"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission contract")
+def test_session_write_is_owner_only_even_with_a_permissive_umask():
+    Storage.data["environment"] = "test"
+    Storage.data["user_token"] = "dummy-test-token"
+    previous_umask = os.umask(0)
+    try:
+        Storage.save()
+    finally:
+        os.umask(previous_umask)
+
+    session_path = Path(Storage._file)
+    assert stat.S_IMODE(session_path.stat().st_mode) == 0o600
+    assert not Path(str(session_path) + ".tmp").exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission repair")
+def test_loading_repairs_a_legacy_readable_session_before_using_it():
+    session_path = Path(Storage._file)
+    session_path.write_text(
+        json.dumps(
+            {
+                **Storage.data,
+                "environment": "test",
+                "user_token": "dummy-test-token",
+            }
+        ),
+        encoding="utf-8",
+    )
+    session_path.chmod(0o644)
+
+    Storage.load()
+
+    assert Storage.data["environment"] == "test"
+    assert Storage.data["user_token"] == "dummy-test-token"
+    assert stat.S_IMODE(session_path.stat().st_mode) == 0o600
+
+
+def test_loading_discards_a_stale_token_bearing_temporary_file():
+    stale_path = Path(Storage._file + ".tmp")
+    stale_path.write_text(
+        json.dumps(
+            {
+                **Storage.data,
+                "environment": "test",
+                "user_token": "must-not-load",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    Storage.load()
+
+    assert not stale_path.exists()
+    assert Storage.data["user_token"] == ""
+
+
+def test_cross_platform_session_write_does_not_require_posix_apis(monkeypatch):
+    Storage.data["environment"] = "test"
+    Storage.data["user_token"] = "dummy-test-token"
+    monkeypatch.setattr(storage_module, "_POSIX_OWNER_PERMISSIONS", False)
+
+    def unexpected_fchmod(*_args, **_kwargs):
+        raise AssertionError("POSIX permission API used on the cross-platform path")
+
+    if hasattr(storage_module.os, "fchmod"):
+        monkeypatch.setattr(storage_module.os, "fchmod", unexpected_fchmod)
+
+    Storage.save()
+    Storage.data["environment"] = "production"
+    Storage.data["user_token"] = ""
+    Storage.load()
+
+    assert Storage.data["environment"] == "test"
+    assert Storage.data["user_token"] == "dummy-test-token"
+
+
+def test_loading_a_linked_session_fails_closed_without_reading_its_token(tmp_path):
+    target = tmp_path / "outside-session.json"
+    target.write_text(
+        json.dumps(
+            {
+                **Storage.data,
+                "environment": "test",
+                "user_token": "must-not-load",
+            }
+        ),
+        encoding="utf-8",
+    )
+    session_path = Path(Storage._file)
+    try:
+        session_path.symlink_to(target)
+    except (NotImplementedError, OSError):
+        pytest.skip("symbolic links are unavailable")
+
+    Storage.load()
+
+    assert not session_path.is_symlink()
+    assert Storage.data["environment"] == "production"
+    assert Storage.data["user_token"] == ""
+    assert "must-not-load" in target.read_text("utf-8")
 
 
 def test_profiles_are_fixed_and_production_is_the_default():

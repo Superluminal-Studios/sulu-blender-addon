@@ -1,13 +1,19 @@
 import json
 import os
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+import stat
 import threading
 import time
 
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 
 _VALID_ENVIRONMENTS = frozenset({"production", "test"})
+_SESSION_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
+_POSIX_OWNER_PERMISSIONS = (
+    os.name == "posix" and hasattr(os, "fchmod") and hasattr(os, "geteuid")
+)
 
 class Storage:
     retries = Retry(
@@ -232,13 +238,98 @@ class Storage:
             )
 
     @classmethod
+    def _secure_session_fd(cls, fd: int) -> None:
+        """Require a regular owner-only session file on POSIX.
+
+        Windows has no portable POSIX mode-bit API here, so its access boundary
+        remains the per-user add-on directory DACL. The cross-platform path
+        still refuses non-regular read targets and creates temporary files
+        exclusively without calling unavailable POSIX APIs.
+        """
+        details = os.fstat(fd)
+        if not stat.S_ISREG(details.st_mode):
+            raise PermissionError("Sulu session path is not a regular file")
+
+        if not _POSIX_OWNER_PERMISSIONS:
+            return
+        if details.st_uid != os.geteuid():
+            raise PermissionError("Sulu session file has an unexpected owner")
+        if stat.S_IMODE(details.st_mode) != _SESSION_FILE_MODE:
+            os.fchmod(fd, _SESSION_FILE_MODE)
+            details = os.fstat(fd)
+        if (
+            details.st_uid != os.geteuid()
+            or stat.S_IMODE(details.st_mode) != _SESSION_FILE_MODE
+        ):
+            raise PermissionError("Sulu session file is not owner-only")
+
+    @classmethod
+    def _open_session_for_read(cls, path: str) -> int:
+        """Open an existing session without following a substituted link."""
+        before = os.lstat(path)
+        if not stat.S_ISREG(before.st_mode):
+            raise PermissionError("Sulu session path is not a regular file")
+
+        flags = os.O_RDONLY
+        if hasattr(os, "O_BINARY"):
+            flags |= os.O_BINARY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+
+        fd = os.open(path, flags)
+        try:
+            after = os.fstat(fd)
+            if (
+                (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
+                and before.st_ino
+                and after.st_ino
+            ):
+                raise PermissionError("Sulu session file changed while opening")
+            cls._secure_session_fd(fd)
+            return fd
+        except Exception:
+            os.close(fd)
+            raise
+
+    @classmethod
     def _atomic_write(cls, path: str, payload: dict) -> None:
+        """Durably replace a session through an owner-only temporary file."""
+        parent = os.path.dirname(path)
+        os.makedirs(parent, exist_ok=True)
         tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        if hasattr(os, "O_BINARY"):
+            flags |= os.O_BINARY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+
+        fd = -1
+        owns_tmp = False
+        try:
+            fd = os.open(tmp, flags, _SESSION_FILE_MODE)
+            owns_tmp = True
+            cls._secure_session_fd(fd)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                fd = -1
+                json.dump(payload, stream, indent=2)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(tmp, path)
+            owns_tmp = False
+        except Exception:
+            if fd >= 0:
+                os.close(fd)
+            if owns_tmp:
+                try:
+                    os.unlink(tmp)
+                except FileNotFoundError:
+                    pass
+            raise
 
     @classmethod
     def save(cls):
@@ -250,13 +341,18 @@ class Storage:
     @classmethod
     def load(cls):
         with cls._lock:
+            try:
+                os.unlink(cls._file + ".tmp")
+            except FileNotFoundError:
+                pass
             if not os.path.exists(cls._file):
                 # create a fresh file with defaults
                 cls._atomic_write(cls._file, cls.data)
                 return
             try:
-                with open(cls._file, "r", encoding="utf-8") as f:
-                    loaded = json.load(f)
+                fd = cls._open_session_for_read(cls._file)
+                with os.fdopen(fd, "r", encoding="utf-8") as stream:
+                    loaded = json.load(stream)
                 loaded_environment = str(
                     loaded.get("environment", "production")
                 ).strip().lower()

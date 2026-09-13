@@ -19,12 +19,13 @@ import platform
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import time
 import unicodedata
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -41,6 +42,10 @@ CREATE_NEW_PROCESS_GROUP = 0x00000200  # allow Ctrl+C to target child
 CLOUDFLARE_ACCOUNT_ID = "f09fa628d989ddd93cbe3bf7f7935591"
 CLOUDFLARE_R2_DOMAIN = f"{CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
 DEBUG_MODE = False
+_HANDOFF_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
+_POSIX_OWNER_PERMISSIONS = (
+    os.name == "posix" and hasattr(os, "fchmod") and hasattr(os, "geteuid")
+)
 
 # Common flags we want on *every* rclone call that uses R2
 COMMON_RCLONE_FLAGS: list[str] = [
@@ -248,6 +253,43 @@ def launch_in_terminal(cmd: List[str]) -> None:
     subprocess.call(cmd)
 
 
+def _secure_worker_handoff_fd(fd: int) -> None:
+    """Require a regular owner-only worker handoff where POSIX modes exist."""
+    details = os.fstat(fd)
+    if not stat.S_ISREG(details.st_mode):
+        raise PermissionError("Sulu worker handoff is not a regular file")
+
+    # Windows has no portable POSIX ownership/mode contract here. Exclusive
+    # creation still prevents opening an existing link or file, and the temp
+    # directory's user DACL remains the access boundary.
+    if not _POSIX_OWNER_PERMISSIONS:
+        return
+    if details.st_uid != os.geteuid():
+        raise PermissionError("Sulu worker handoff has an unexpected owner")
+    if stat.S_IMODE(details.st_mode) != _HANDOFF_FILE_MODE:
+        os.fchmod(fd, _HANDOFF_FILE_MODE)
+        details = os.fstat(fd)
+    if (
+        details.st_uid != os.geteuid()
+        or stat.S_IMODE(details.st_mode) != _HANDOFF_FILE_MODE
+    ):
+        raise PermissionError("Sulu worker handoff is not owner-only")
+
+
+def _worker_handoff_path(tmp_name: str) -> Path:
+    """Resolve a caller-provided handoff basename inside the system temp dir."""
+    if not isinstance(tmp_name, str):
+        raise TypeError("Sulu worker handoff name must be a string")
+    if (
+        not tmp_name
+        or tmp_name in {".", ".."}
+        or PurePosixPath(tmp_name).name != tmp_name
+        or PureWindowsPath(tmp_name).name != tmp_name
+    ):
+        raise ValueError("Sulu worker handoff name must be a plain basename")
+    return Path(tempfile.gettempdir()) / tmp_name
+
+
 def launch_worker_secure(
     worker_py: str | Path,
     handoff: Dict[str, object],
@@ -257,23 +299,36 @@ def launch_worker_secure(
     python_args=(),
 ) -> Path:
     """Write a mode-0600 worker handoff and launch it with Blender's Python."""
-    handoff_path = Path(tempfile.gettempdir()) / tmp_name
-    flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
+    handoff_path = _worker_handoff_path(tmp_name)
+    # Remove a stale handoff without ever opening it. The exclusive open below
+    # then fails closed if another process inserts any path before creation.
+    handoff_path.unlink(missing_ok=True)
+
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
     if hasattr(os, "O_BINARY"):
         flags |= os.O_BINARY
+    if hasattr(os, "O_NOINHERIT"):
+        flags |= os.O_NOINHERIT
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
 
-    fd = os.open(handoff_path, flags, 0o600)
+    fd = -1
+    owns_handoff = False
     try:
-        if hasattr(os, "fchmod"):
-            os.fchmod(fd, 0o600)
+        fd = os.open(handoff_path, flags, _HANDOFF_FILE_MODE)
+        owns_handoff = True
+        _secure_worker_handoff_fd(fd)
         with os.fdopen(fd, "w", encoding="utf-8") as fp:
             fd = -1
             json.dump(handoff, fp)
+            fp.flush()
+            os.fsync(fp.fileno())
     except Exception:
         if fd >= 0:
             os.close(fd)
             fd = -1
-        handoff_path.unlink(missing_ok=True)
+        if owns_handoff:
+            handoff_path.unlink(missing_ok=True)
         raise
     finally:
         if fd >= 0:
