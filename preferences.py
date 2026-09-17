@@ -4,7 +4,7 @@ import bpy
 from .storage            import Storage
 from .utils.date_utils   import format_submitted
 from .icons              import get_status_icon_id, get_fallback_icon
-from .utils.request_utils import fetch_jobs, fetch_projects
+from .utils.request_utils import fetch_jobs, fetch_projects, get_render_queue_key
 from .utils.request_utils import invalidate_job_refresh_context
 from .environment import (
     ENVIRONMENT_ITEMS,
@@ -93,7 +93,7 @@ def apply_project_context(
     with Storage._lock:
         _require_auth_context(auth_context)
         cached_org_id = str(Storage.data.get("org_id") or "").strip()
-        cached_user_key = ""
+        cached_user_key = str(Storage.data.get("user_key") or "").strip()
         cached_project = next(
             (
                 p
@@ -102,10 +102,10 @@ def apply_project_context(
             ),
             None,
         )
-        Storage.data["user_key"] = ""
         use_cached = (
             Storage.data.get("project_id") == project_id
             and bool(cached_org_id)
+            and bool(cached_user_key)
             and validate_project_identity(cached_project)[0]
         )
     if use_cached:
@@ -146,7 +146,7 @@ def apply_project_context(
             missing_fields=missing,
         )
 
-    org_id, user_key = resolve_org_context(project)
+    org_id, user_key = resolve_org_context(project, get_render_queue_key)
     with Storage._lock:
         _require_auth_context(auth_context)
         Storage.data["project_id"] = project_id

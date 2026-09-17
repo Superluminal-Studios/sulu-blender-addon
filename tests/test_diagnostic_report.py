@@ -113,7 +113,6 @@ def main():
         "project": project,
         "use_bserver": False,
         "use_async_upload": True,
-        "render_coordinator": True,
         # Test mode flags
         "test_mode": config.get("dry_run", True),
         "no_submit": config.get("no_submit", True),

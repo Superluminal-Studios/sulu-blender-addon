@@ -313,48 +313,64 @@ class IntegratedDownloadRunnerTest(unittest.TestCase):
         )
 
 
-def test_coordinated_handoff_never_requests_legacy_storage_or_farm(tmp_path):
+def test_download_handoff_always_uses_rclone_direct_storage(tmp_path):
     worker = _load_worker_module()
     previous = worker.__dict__.copy()
     logger = MagicMock()
     logger.logo_end.return_value = "c"
     mods = {name: MagicMock() for name in (
         "run_rclone", "ensure_rclone", "open_folder", "fetch_project_storage",
-        "_build_base", "requests_retry_session", "TerminalKeyReader", "clear_console",
+        "_build_base", "requests_retry_session", "TerminalKeyReader",
+        "clear_console",
     )}
-    mods.update({"NOT_FOUND_MARKERS": (), "AUTH_MARKERS": (), "CLOUDFLARE_R2_DOMAIN": "unused.invalid",
-                 "DownloadLogger": MagicMock(return_value=logger),
-                 "run_preflight_checks": MagicMock(return_value=(True, [])), "pkg_name": "fixture_addon",
-                 "validate_handoff_environment": validate_handoff_environment,
-                 "job_page_url": job_page_url})
-    artifact = MagicMock()
-    artifact.run.return_value = "finished"
-    artifact_module = types.SimpleNamespace(ArtifactDownloader=MagicMock(return_value=artifact))
-    coordinator_module = types.SimpleNamespace(RenderCoordinatorClient=MagicMock())
-    handoff = {"addon_dir": str(tmp_path), "job_id": "job-coordinated", "job_name": "Render output",
-               "download_path": str(tmp_path), "download_type": "auto", "render_coordinator": True,
-               "pocketbase_url": "https://api.superlumin.al", "user_token": "synthetic-fixture",
-               "project": {"id": "project-a", "organization_id": "org-a", "sqid": "ProjectA"}}
+    mods.update({
+        "NOT_FOUND_MARKERS": (),
+        "AUTH_MARKERS": (),
+        "CLOUDFLARE_R2_DOMAIN":
+            "a" * 32 + ".r2.cloudflarestorage.com",
+        "DownloadLogger": MagicMock(return_value=logger),
+        "run_preflight_checks": MagicMock(return_value=(True, [])),
+        "pkg_name": "fixture_addon",
+        "validate_handoff_environment": validate_handoff_environment,
+        "job_page_url": job_page_url,
+    })
+    handoff = {
+        "addon_dir": str(tmp_path),
+        "job_id": "job-rclone",
+        "job_name": "Render output",
+        "download_path": str(tmp_path),
+        "download_type": "auto",
+        "pocketbase_url": "https://api.superlumin.al",
+        "user_token": "synthetic-fixture",
+        "sarfis_token": "render-queue-key",
+        "project": {
+            "id": "project-a",
+            "organization_id": "org-a",
+            "sqid": "ProjectA",
+        },
+    }
     try:
-        with (patch.object(worker, "_bootstrap_addon_modules", return_value=mods),
-              patch.object(worker, "_DownloadActionController") as actions,
-              patch.object(worker, "_run_selected_downloader") as legacy,
-              patch.object(worker, "_refresh_storage_credentials") as credentials,
-              patch.dict(sys.modules, {"fixture_addon.transfers.submit.coordinator_client": coordinator_module,
-                                       "fixture_addon.transfers.download.artifact_client": artifact_module})):
+        with (
+            patch.object(worker, "_bootstrap_addon_modules",
+                         return_value=mods),
+            patch.object(worker, "_DownloadActionController") as actions,
+            patch.object(worker, "_run_selected_downloader",
+                         return_value="finished") as direct_rclone,
+            patch.object(worker, "_refresh_storage_credentials") as credentials,
+        ):
             actions.return_value.start.return_value = False
-            worker.run_download(handoff, clear_console=False, integrated=True)
-            legacy.assert_not_called()
-            credentials.assert_not_called()
-            mods["ensure_rclone"].assert_not_called()
-            mods["fetch_project_storage"].assert_not_called()
-            artifact.run.assert_called_once_with(automatic=True)
-            artifact.close.assert_called_once()
-            assert artifact_module.ArtifactDownloader.call_args.args[1:3] == ("org-a", "job-coordinated")
+            worker.run_download(
+                handoff, clear_console=False, integrated=True)
+            direct_rclone.assert_called_once_with(
+                str(tmp_path / "Render output"),
+                "auto",
+                "http://178.156.167.251/farm/org-a",
+                "render-queue-key",
+            )
+            credentials.assert_called_once()
+            mods["ensure_rclone"].assert_called_once_with(logger=logger)
     finally:
         worker.__dict__.update(previous)
-
-
 def test_download_rejects_mixed_environment_before_preflight(tmp_path):
     worker = _load_worker_module()
     clear_console = MagicMock()

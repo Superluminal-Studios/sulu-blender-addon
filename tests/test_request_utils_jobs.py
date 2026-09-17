@@ -548,7 +548,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
             stored_job_session=True,
         )
 
-    def test_legacy_adapter_fetches_stored_and_live_sources_concurrently(self):
+    def test_request_jobs_fetches_stored_and_live_sources_concurrently(self):
         rendezvous = threading.Barrier(2)
         stored_call = {}
 
@@ -574,7 +574,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
             "_request_live_jobs",
             side_effect=_live,
         ):
-            jobs = request_utils._request_legacy_jobs_unlocked(
+            jobs = request_utils.request_jobs(
                 "org-concurrent",
                 "user-key-concurrent",
                 "project-concurrent-public",
@@ -590,7 +590,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
             ),
         )
 
-    def test_legacy_adapter_shows_stored_results_before_slow_live_overlay(self):
+    def test_request_jobs_shows_stored_results_before_slow_live_overlay(self):
         live_started = threading.Event()
         release_live = threading.Event()
         stored = {
@@ -636,7 +636,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
             "_request_live_jobs",
             side_effect=_slow_live,
         ):
-            jobs = request_utils._request_legacy_jobs_unlocked(
+            jobs = request_utils.request_jobs(
                 "org-deferred",
                 "user-key-deferred",
                 "project-deferred-public",
@@ -1230,7 +1230,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
              patch.object(request_utils, "_selected_project_identity", return_value=("project-id", "project-sqid")), \
              patch.object(request_utils, "_request_stored_jobs", return_value={}), \
              patch.object(request_utils, "_request_live_jobs", return_value=live):
-            jobs = request_utils._request_legacy_jobs_unlocked("org-id", "user-key", "project-id")
+            jobs = request_utils.request_jobs("org-id", "user-key", "project-id")
 
         self.assertEqual(jobs, {})
         self.assertEqual(request_utils.Storage.data["jobs"], {})
@@ -1251,7 +1251,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
              patch.object(request_utils, "_selected_project_identity", return_value=("project-id", "project-sqid")), \
              patch.object(request_utils, "_request_stored_jobs", return_value=stored), \
              patch.object(request_utils, "_request_live_jobs", side_effect=RuntimeError("farm down")):
-            jobs = request_utils._request_legacy_jobs_unlocked("org-id", "user-key", "project-id")
+            jobs = request_utils.request_jobs("org-id", "user-key", "project-id")
 
         self.assertEqual(jobs, stored)
         self.assertEqual(request_utils.Storage.data["jobs"], stored)
@@ -1276,7 +1276,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
                  side_effect=request_utils.NotFound("Resource not found"),
              ), \
              patch.object(request_utils, "_request_live_jobs", return_value=live):
-            jobs = request_utils._request_legacy_jobs_unlocked("org-id", "user-key", "project-id")
+            jobs = request_utils.request_jobs("org-id", "user-key", "project-id")
 
         self.assertEqual(jobs, live)
         self.assertEqual(request_utils.Storage.data["jobs"], live)
@@ -1286,7 +1286,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
             request_utils.NotAuthenticated("Resource not found")
         )), patch.object(request_utils, "_request_live_jobs") as live_request:
             with self.assertRaises(request_utils.NotAuthenticated):
-                request_utils._request_legacy_jobs_unlocked(
+                request_utils.request_jobs(
                     "org-stored-auth",
                     "user-key-stored-auth",
                     "project-stored-auth",
@@ -1314,7 +1314,7 @@ class TestRequestUtilsJobs(unittest.TestCase):
             "_request_live_jobs",
             side_effect=request_utils.NotAuthenticated("Session expired"),
         ):
-            jobs = request_utils._request_legacy_jobs_unlocked(
+            jobs = request_utils.request_jobs(
                 "org-live-auth",
                 "user-key-live-auth",
                 "project-live-auth",
@@ -1333,49 +1333,11 @@ class TestRequestUtilsJobs(unittest.TestCase):
             side_effect=request_utils.NotAuthenticated("Session expired"),
         ):
             with self.assertRaises(request_utils.NotAuthenticated):
-                request_utils._request_legacy_jobs_unlocked(
+                request_utils.request_jobs(
                     "org-live-auth-unavailable",
                     "user-key-live-auth-unavailable",
                     "project-live-auth-unavailable",
                 )
-
-
-class TestCoordinatedJobReads(unittest.TestCase):
-    def test_all_pages_use_pure_facade_without_farm_keys_or_wakeup(self):
-        pages = [_FakeResponse({"body": {"job-a": {"id": "job-a", "project_id": "project"}}, "next_cursor": "next"}),
-                 _FakeResponse({"body": {"job-b": {"id": "job-b", "project_id": "project"}}, "next_cursor": None})]
-        with patch.object(request_utils, "authorized_request", side_effect=pages) as request, \
-             patch.object(request_utils, "_selected_project_identity", return_value=("project", "sqid")), \
-             patch.object(request_utils, "_request_live_jobs") as legacy, \
-             patch.object(request_utils, "_wake_queue_manager") as wake:
-            jobs = request_utils.request_jobs("organization", "", "project")
-        self.assertEqual(set(jobs), {"job-a", "job-b"})
-        self.assertEqual(request.call_count, 2)
-        self.assertTrue(all(call.args[1].endswith("/api/render/v1/browser/jobs/organization") for call in request.call_args_list))
-        self.assertEqual(request.call_args_list[1].kwargs["params"], {"project_id": "project", "limit": 200, "cursor": "next"})
-        legacy.assert_not_called()
-        wake.assert_not_called()
-
-    def test_errors_never_downgrade_to_legacy_farm_or_storage(self):
-        with patch.object(request_utils, "authorized_request", side_effect=request_utils.NotFound("Unavailable")), \
-             patch.object(request_utils, "_selected_project_identity", return_value=("project", "sqid")), \
-             patch.object(request_utils, "_request_live_jobs") as legacy:
-            with self.assertRaises(request_utils.NotFound):
-                request_utils.request_jobs("organization", "old-cached-secret", "project")
-        legacy.assert_not_called()
-
-    def test_repeated_cursor_and_account_change_cannot_publish_a_partial_listing(self):
-        pages = [_FakeResponse({"body": {}, "next_cursor": "repeat"}), _FakeResponse({"body": {}, "next_cursor": "repeat"})]
-        with patch.object(request_utils, "authorized_request", side_effect=pages), \
-             patch.object(request_utils, "_selected_project_identity", return_value=("project", "sqid")):
-            with self.assertRaises(request_utils.ProjectContextError):
-                request_utils.request_jobs("organization", "", "project")
-        with patch.object(request_utils, "authorized_request", return_value=_FakeResponse({"body": {"job-a": {"project_id": "project"}}})), \
-             patch.object(request_utils, "_selected_project_identity", return_value=("project", "sqid")), \
-             patch.object(request_utils, "_current_refresh_identity", side_effect=[(1, 1), (1, 2)]), \
-             patch.dict(request_utils.Storage.data, {"jobs": {"other-user-job": {}}}):
-            request_utils._request_jobs_unlocked("organization", "", "project")
-            self.assertEqual(request_utils.Storage.data["jobs"], {"other-user-job": {}})
 
 
 if __name__ == "__main__":

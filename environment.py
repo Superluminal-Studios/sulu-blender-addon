@@ -37,8 +37,7 @@ _PROFILES: Mapping[str, EnvironmentProfile] = MappingProxyType(
             label="Production",
             api_url="https://api.superlumin.al",
             web_url="https://superlumin.al",
-            # Retained for explicitly legacy handoffs.  Receipt-based clients
-            # use the API coordinator and never call this origin directly.
+            # Direct farm endpoint used by the established rclone worker flow.
             farm_url="http://178.156.167.251",
         ),
         TEST_ENVIRONMENT: EnvironmentProfile(

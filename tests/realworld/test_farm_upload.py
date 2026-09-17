@@ -479,7 +479,6 @@ def perform_upload(
             "project": project,
             "use_bserver": False,
             "use_async_upload": True,
-            "render_coordinator": True,
         }
 
         # Write handoff

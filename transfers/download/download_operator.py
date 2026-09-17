@@ -7,6 +7,7 @@ from pathlib import Path
 from ...utils.worker_utils import launch_worker_secure
 from ...environment import environment_handoff_values
 from ...utils.prefs import get_prefs, get_addon_dir
+from ...utils.request_utils import get_render_queue_key
 from ...storage import Storage
 
 
@@ -55,7 +56,11 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
                 auth_context[0],
                 selected_project.get("organization_id")
             )
-        except ValueError:
+            user_key = get_render_queue_key(
+                selected_project.get("organization_id"))
+            if not user_key:
+                raise ValueError("Missing render credential")
+        except Exception:
             self.report(
                 {"ERROR"},
                 "Selected project metadata is incomplete. Refresh projects and try again.",
@@ -71,7 +76,7 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
             "job_name": self.job_name,
             "job": job_snapshot,
             "user_token": auth_context[2],
-            "render_coordinator": True,
+            "sarfis_token": user_key,
             "download_type": "auto",
             "debug_mode": bool(getattr(prefs, "debug_mode", False)),
         }

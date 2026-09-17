@@ -27,9 +27,8 @@ Atlas leaf pack: <https://github.com/Superluminal-Studios/sulu-super-repo/tree/m
 
 | Direction | System | Contract |
 |---|---|---|
-| Upstream | `sulu-backend` | account auth, project discovery, pure browser job snapshots, semantic render commands, and bearer-authorized transfer streams |
-| Upstream | Render coordinator behind `sulu-backend` | upload receipts, quotes, durable/idempotent submission, job operations, and generation-bound output catalogs |
-| Indirect | Queue manager and Cloudflare R2 | backend-owned scheduling and object persistence; the current add-on path receives neither queue-admin nor project-storage credentials |
+| Upstream | `sulu-backend` | account auth, project discovery, browser job snapshots, farm registration, and temporary project-storage credentials |
+| Upstream | Queue manager and Cloudflare R2 | farm scheduling plus direct S3-compatible object transfer through `rclone` |
 | Downstream | Blender users | sign-in, project selection, submit, and download flows |
 | Downstream | Render farm workers | uploaded scene packages, manifests, and add-on bundles |
 
@@ -44,13 +43,13 @@ flowchart LR
 
   UI --> SubmitOp[transfers/submit/submit_operator.py]
   SubmitOp --> SubmitWorker[transfers/submit/submit_worker.py]
-  SubmitWorker --> Backend[/api/render/v1/tools + transfers]
+  SubmitWorker --> Backend[Backend metadata + farm registration]
+  SubmitWorker --> R2[(Cloudflare R2 via rclone)]
   Backend --> Queue[Queue manager]
-  Backend --> R2[(Cloudflare R2)]
 
   UI --> DownloadOp[transfers/download/download_operator.py]
   DownloadOp --> DownloadWorker[transfers/download/download_worker.py]
-  DownloadWorker --> Backend
+  DownloadWorker --> R2
 ```
 
 Repository map:
@@ -66,9 +65,7 @@ Repository map:
 ├── pocketbase_auth.py                    # Authorized backend requests + token refresh
 ├── transfers/
 │   ├── submit/submit_operator.py         # Submit UI handoff
-│   ├── submit/submit_worker.py           # Packaging plus receipt-based upload/submission
-│   ├── submit/coordinator_client.py      # Semantic commands, receipts, and transfer IO
-│   ├── download/artifact_client.py       # Generation-bound resumable output transfer
+│   ├── submit/submit_worker.py           # Packaging, rclone upload, farm registration
 │   └── download/download_worker.py       # Output download orchestration
 ├── utils/project_context.py              # Project identity and org/user-key guards
 └── docs/architecture/structure-index.md # Generated structure index
@@ -96,13 +93,12 @@ Repository map:
 | Account auth | `/api/collections/users/auth-with-password`, `/api/cli/start`, `/api/cli/token`, `/api/collections/users/auth-refresh` | backend session / bearer flow | sign-in and token refresh |
 | Project context | `/api/collections/projects/records` | backend auth token | resolve the selected project and organization |
 | Job discovery | `/api/render/v1/browser/jobs/{organization_id}` | backend auth token | pure, bounded job snapshot for the selected project |
-| Render coordination | `/api/render/v1/tools/{tool}` | backend auth token | upload preparation/finalization, quote, durable submission, output listing, and operation recovery |
-| Object transfer | `/api/render/v1/transfers/{opaque_ref}` | backend auth token | exact-session input uploads and generation-bound resumable output downloads |
+| Farm registration | `/api/farm/{organization_id}/jobs` | backend auth token | register render jobs after direct upload |
+| Storage metadata | `/api/collections/project_storage/records` | backend auth token | obtain temporary project-scoped credentials |
+| Object transfer | Cloudflare R2 via `rclone` | temporary storage credentials | upload packages and download render outputs directly |
 
-Old worker handoffs can still use the former farm and temporary-storage paths
-to finish work started by an earlier add-on version. New UI submissions and
-downloads always set `render_coordinator=true`; they do not receive broad R2
-credentials or call raw queue/farm mutation endpoints.
+The Blender add-on is a first-party rclone client. It does not route object
+bytes through PocketBase, the MCP gateway, or an MCP transfer endpoint.
 
 Primary interface sources:
 - `pocketbase_auth.py`
@@ -165,10 +161,10 @@ Acceptance checks:
 4. Project selection refuses missing `organization_id` or `sqid`.
 5. Submit/download workers reject mixed-profile or edited endpoint handoffs
    before making a network request.
-6. Submit worker obtains an upload receipt and submits through the durable
-   render coordinator without receiving storage credentials.
-7. Download worker resolves authorized, generation-bound outputs and can
-   resume their backend-mediated transfers.
+6. Submit worker obtains project-scoped temporary credentials, uploads through
+   rclone directly to Cloudflare R2, then posts job metadata to the backend.
+7. Download worker obtains project-scoped temporary credentials and downloads
+   output objects directly from Cloudflare R2 through rclone.
 8. Core add-on regression tests stay green.
 
 Canonical verification:

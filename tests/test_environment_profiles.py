@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import importlib
 import json
 import os
@@ -42,6 +41,7 @@ class Response:
     def __init__(self, status_code=200, payload=None):
         self.status_code = status_code
         self.payload = payload or {}
+        self.text = "" if payload is None else json.dumps(self.payload)
 
     def json(self):
         return self.payload
@@ -597,30 +597,3 @@ def test_authorized_test_request_uses_only_the_test_token_and_origin(monkeypatch
     assert len(calls) == 1
     assert calls[0][1].startswith("https://lab-api.superlumin.al/")
     assert calls[0][2]["headers"]["Authorization"] == "test-token"
-
-
-def test_recovery_identity_preserves_legacy_production_journals_and_isolates_new_profiles():
-    coordinator = importlib.import_module(
-        f"{PACKAGE_NAME}.transfers.submit.coordinator_client"
-    )
-    base = {
-        "user_id": "user-1",
-        "project": {"organization_id": "org-1", "id": "project-1"},
-        "job_id": "local-intent",
-    }
-    legacy_value = ["user-1", "org-1", "project-1", "local-intent"]
-    legacy_hash = hashlib.sha256(
-        json.dumps(legacy_value, separators=(",", ":")).encode()
-    ).hexdigest()
-
-    assert coordinator.recovery_identity(
-        {**copy.deepcopy(base), "environment": "production", "_environment_was_implicit": True}
-    ) == legacy_hash
-    production = coordinator.recovery_identity(
-        {**copy.deepcopy(base), "environment": "production"}
-    )
-    test = coordinator.recovery_identity(
-        {**copy.deepcopy(base), "environment": "test"}
-    )
-    assert production != legacy_hash
-    assert test != production
