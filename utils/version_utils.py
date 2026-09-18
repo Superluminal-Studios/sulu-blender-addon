@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 import bpy
+import threading
 from typing import Dict, List, Tuple
 
 # ----------------------------------------------------------------
@@ -8,7 +9,7 @@ from typing import Dict, List, Tuple
 # ----------------------------------------------------------------
 
 # (enum_key, label, description)
-blender_version_items: List[Tuple[str, str, str]] = [
+_FALLBACK_BLENDER_VERSION_ITEMS: List[Tuple[str, str, str]] = [
     ("BLENDER40", "Blender 4.0", "Use Blender 4.0 on the farm"),
     ("BLENDER41", "Blender 4.1", "Use Blender 4.1 on the farm"),
     ("BLENDER42", "Blender 4.2", "Use Blender 4.2 on the farm"),
@@ -16,39 +17,77 @@ blender_version_items: List[Tuple[str, str, str]] = [
     ("BLENDER44", "Blender 4.4", "Use Blender 4.4 on the farm"),
     ("BLENDER45", "Blender 4.5", "Use Blender 4.5 on the farm"),
     ("BLENDER50", "Blender 5.0", "Use Blender 5.0 on the farm"),
-    ("BLENDER51", "Blender 5.1", "Use the official Blender 5.1 build on the farm"),
-    (
-        "BLENDER51SULU",
-        "Blender 5.1 — SULU",
-        "Use the Sulu Blender 5.1 build with persistent EEVEE on the farm",
-    ),
-    ("BLENDER52", "Blender 5.2", "Use the official Blender 5.2 build on the farm"),
-    (
-        "BLENDER52SULU",
-        "Blender 5.2 — SULU",
-        "Use the Sulu Blender 5.2 build with persistent EEVEE on the farm",
-    ),
-    ("BLENDER53", "Blender 5.3", "Use the official Blender 5.3 build on the farm"),
-    (
-        "BLENDER53SULU",
-        "Blender 5.3 — SULU",
-        "Use the Sulu Blender 5.3 build with live Cycles previews on the farm",
-    ),
+    ("BLENDER51", "Blender 5.1", "Use Blender 5.1 on the farm"),
+    ("BLENDER52", "Blender 5.2", "Use Blender 5.2 on the farm"),
+    ("BLENDER53", "Blender 5.3", "Use Blender 5.3 on the farm"),
 ]
 
-SULU_BUILD_ENUM_BY_NUMBER = {
-    51: "BLENDER51SULU",
-    52: "BLENDER52SULU",
-    53: "BLENDER53SULU",
+_version_lock = threading.RLock()
+blender_version_items: List[Tuple[str, str, str]] = list(
+    _FALLBACK_BLENDER_VERSION_ITEMS
+)
+_worker_value_by_enum: Dict[str, str] = {
+    code: code.lower() for code, *_ in blender_version_items
 }
 
-# Build a lookup:  40 -> "BLENDER40", 41 -> "BLENDER41", ...
-_enum_by_number: Dict[int, str] = {
-    int(code.replace("BLENDER", "")): code
-    for code, *_ in blender_version_items
-    if code.replace("BLENDER", "").isdigit()
-}
-_enum_numbers_sorted = sorted(_enum_by_number)
+
+def _numeric_enum_lookup() -> Tuple[Dict[int, str], List[int]]:
+    with _version_lock:
+        lookup = {
+            int(code.replace("BLENDER", "")): code
+            for code, *_ in blender_version_items
+            if code.replace("BLENDER", "").isdigit()
+        }
+    return lookup, sorted(lookup)
+
+
+def blender_version_items_callback(_self=None, _context=None):
+    """Return a stable snapshot for Blender's dynamic EnumProperty callback."""
+    with _version_lock:
+        return list(blender_version_items)
+
+
+def update_deployed_blender_versions(records) -> bool:
+    """Replace the selector cache with valid deployed records from PocketBase."""
+    normalized = []
+    worker_values = {}
+    seen = set()
+
+    for record in records or []:
+        if not isinstance(record, dict):
+            continue
+        if record.get("enabled") is False or record.get("deployed") is False:
+            continue
+        identifier = str(record.get("identifier") or "").strip().upper()
+        worker_value = str(record.get("worker_value") or "").strip()
+        label = str(record.get("label") or "").strip()
+        version = str(record.get("version") or "").strip()
+        if (
+            not identifier.startswith("BLENDER")
+            or not identifier.replace("BLENDER", "").isdigit()
+            or not worker_value
+            or not label
+            or identifier in seen
+        ):
+            continue
+        seen.add(identifier)
+        description = f"Use Blender {version or label.removeprefix('Blender ')} on the farm"
+        try:
+            order = int(record.get("sort_order") or 0)
+        except (TypeError, ValueError):
+            order = 0
+        normalized.append((order, identifier, label, description))
+        worker_values[identifier] = worker_value
+
+    if not normalized:
+        return False
+
+    normalized.sort(key=lambda item: (item[0], item[1]))
+    with _version_lock:
+        blender_version_items[:] = [item[1:] for item in normalized]
+        _worker_value_by_enum.clear()
+        _worker_value_by_enum.update(worker_values)
+    return True
 
 
 def enum_from_bpy_version() -> str:
@@ -62,22 +101,20 @@ def enum_from_bpy_version() -> str:
     """
     major, minor, _ = bpy.app.version
     numeric = major * 10 + minor
-
-    if "SULU" in getattr(bpy.app, "version_string", "").upper():
-        sulu_build_enum = SULU_BUILD_ENUM_BY_NUMBER.get(numeric)
-        if sulu_build_enum is not None:
-            return sulu_build_enum
+    enum_by_number, enum_numbers_sorted = _numeric_enum_lookup()
+    if not enum_numbers_sorted:
+        return _FALLBACK_BLENDER_VERSION_ITEMS[0][0]
 
     # Clamp to list boundaries
-    if numeric <= _enum_numbers_sorted[0]:
-        return _enum_by_number[_enum_numbers_sorted[0]]
-    if numeric >= _enum_numbers_sorted[-1]:
-        return _enum_by_number[_enum_numbers_sorted[-1]]
+    if numeric <= enum_numbers_sorted[0]:
+        return enum_by_number[enum_numbers_sorted[0]]
+    if numeric >= enum_numbers_sorted[-1]:
+        return enum_by_number[enum_numbers_sorted[-1]]
 
     # Inside the known range: closest lower-or-equal entry.
-    for n in reversed(_enum_numbers_sorted):
+    for n in reversed(enum_numbers_sorted):
         if n <= numeric:
-            return _enum_by_number[n]
+            return enum_by_number[n]
 
     # Fallback (should not be reached).
     return blender_version_items[0][0]
@@ -99,10 +136,11 @@ def resolve_selected_blender_enum(auto_determine: bool, selected_enum: str) -> s
 
 def to_worker_blender_value(enum_key: str) -> str:
     """
-    Convert our enum into the value the worker/API expects. Standard builds
-    use values such as ``blender52``; Sulu builds use ``blender52sulu``.
+    Convert our enum into the value the worker/API expects. PocketBase can
+    change this mapping without requiring an add-on release.
     """
-    return enum_key.lower()
+    with _version_lock:
+        return _worker_value_by_enum.get(enum_key, enum_key.lower())
 
 
 def resolved_worker_blender_value(auto_determine: bool, selected_enum: str) -> str:

@@ -12,72 +12,62 @@ def load_version_utils(monkeypatch, version, version_string):
     return importlib.import_module("utils.version_utils")
 
 
-def test_blender_51_sulu_build_auto_selects_distinct_farm_runtime(monkeypatch):
-    version_utils = load_version_utils(
-        monkeypatch, (5, 1, 2), "5.1.2 SULU"
-    )
-
-    assert version_utils.enum_from_bpy_version() == "BLENDER51SULU"
-    assert (
-        version_utils.resolved_worker_blender_value(True, "BLENDER51")
-        == "blender51sulu"
-    )
-
-
-def test_blender_52_sulu_build_auto_selects_distinct_farm_runtime(monkeypatch):
-    version_utils = load_version_utils(
-        monkeypatch, (5, 2, 0), "5.2.0 SULU"
-    )
-
-    assert version_utils.enum_from_bpy_version() == "BLENDER52SULU"
-    assert (
-        version_utils.resolved_worker_blender_value(True, "BLENDER52")
-        == "blender52sulu"
-    )
-
-
-def test_blender_53_sulu_build_auto_selects_live_preview_farm_runtime(monkeypatch):
-    version_utils = load_version_utils(
-        monkeypatch, (5, 3, 0), "5.3.0 SULU"
-    )
-
-    assert version_utils.enum_from_bpy_version() == "BLENDER53SULU"
-    assert (
-        version_utils.resolved_worker_blender_value(True, "BLENDER53")
-        == "blender53sulu"
-    )
-
-
-def test_stock_build_keeps_stock_blender_51_runtime(monkeypatch):
-    version_utils = load_version_utils(
-        monkeypatch, (5, 1, 2), "5.1.2"
-    )
-
-    assert version_utils.enum_from_bpy_version() == "BLENDER51"
-    assert version_utils.to_worker_blender_value("BLENDER51SULU") == "blender51sulu"
-
-
-def test_stock_build_keeps_stock_blender_52_runtime(monkeypatch):
-    version_utils = load_version_utils(
-        monkeypatch, (5, 2, 0), "5.2.0 LTS"
-    )
+def test_sulu_build_name_is_not_exposed_or_selected(monkeypatch):
+    version_utils = load_version_utils(monkeypatch, (5, 2, 0), "5.2.0 SULU")
 
     assert version_utils.enum_from_bpy_version() == "BLENDER52"
-    assert version_utils.to_worker_blender_value("BLENDER52SULU") == "blender52sulu"
-
-
-def test_stock_build_keeps_stock_blender_53_runtime(monkeypatch):
-    version_utils = load_version_utils(
-        monkeypatch, (5, 3, 0), "5.3.0 Alpha"
+    assert all(
+        "SULU" not in item[0] + item[1]
+        for item in version_utils.blender_version_items
     )
 
+
+def test_newer_build_clamps_to_highest_deployed_standard_version(monkeypatch):
+    version_utils = load_version_utils(monkeypatch, (5, 4, 0), "5.4.0 Alpha")
+
     assert version_utils.enum_from_bpy_version() == "BLENDER53"
-    assert version_utils.to_worker_blender_value("BLENDER53SULU") == "blender53sulu"
 
 
-def test_newer_stock_build_still_clamps_to_standard_blender_53(monkeypatch):
-    version_utils = load_version_utils(
-        monkeypatch, (5, 4, 0), "5.4.0 Alpha"
+def test_database_records_replace_items_and_worker_mapping(monkeypatch):
+    version_utils = load_version_utils(monkeypatch, (5, 2, 0), "5.2.0")
+
+    changed = version_utils.update_deployed_blender_versions(
+        [
+            {
+                "identifier": "BLENDER52",
+                "version": "5.2.0",
+                "label": "Blender 5.2",
+                "worker_value": "blender52-live-v2",
+                "enabled": True,
+                "deployed": True,
+                "sort_order": 520,
+            },
+            {
+                "identifier": "BLENDER53SULU",
+                "version": "5.3.0",
+                "label": "Blender 5.3 SULU",
+                "worker_value": "blender53sulu",
+                "enabled": True,
+                "deployed": False,
+                "sort_order": 530,
+            },
+        ]
     )
 
-    assert version_utils.enum_from_bpy_version() == "BLENDER53"
+    assert changed is True
+    assert version_utils.blender_version_items_callback() == [
+        ("BLENDER52", "Blender 5.2", "Use Blender 5.2.0 on the farm")
+    ]
+    assert version_utils.to_worker_blender_value("BLENDER52") == "blender52-live-v2"
+    assert version_utils.enum_from_bpy_version() == "BLENDER52"
+
+
+def test_invalid_or_empty_database_response_keeps_fallback(monkeypatch):
+    version_utils = load_version_utils(monkeypatch, (5, 1, 2), "5.1.2")
+    before = list(version_utils.blender_version_items)
+
+    assert version_utils.update_deployed_blender_versions([]) is False
+    assert version_utils.update_deployed_blender_versions(
+        [{"identifier": "SULU"}]
+    ) is False
+    assert version_utils.blender_version_items == before

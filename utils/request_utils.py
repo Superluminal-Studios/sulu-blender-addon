@@ -19,6 +19,7 @@ from ..storage import Storage
 from .project_context import ProjectContextError
 from .job_list import int_value as _int_value, job_project_ids, selected_project_ids
 from .prefs import get_prefs
+from .version_utils import update_deployed_blender_versions
 
 job_thread_running = False
 
@@ -239,6 +240,27 @@ def fetch_projects():
         page += 1
 
     return projects
+
+
+def fetch_blender_versions() -> list[dict]:
+    """Refresh the deployed farm Blender versions advertised by PocketBase."""
+    api_url = active_profile().api_url
+    resp = authorized_request(
+        "GET",
+        f"{api_url}/api/collections/blender_versions/records",
+        params={
+            "filter": "enabled=true && deployed=true",
+            "sort": "sort_order,identifier",
+            "perPage": 200,
+        },
+    )
+    payload = resp.json() or {}
+    items = payload.get("items") or []
+    if not isinstance(items, list):
+        raise ProjectContextError("Blender version listing returned an invalid page.")
+    if not update_deployed_blender_versions(items):
+        raise ProjectContextError("No deployed Blender versions were returned.")
+    return items
 
 
 def _fetch_render_queue_items(org_id: str) -> list[dict]:

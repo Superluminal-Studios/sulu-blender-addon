@@ -20,6 +20,7 @@ from .pocketbase_auth import logged_session_request
 from .storage import Storage
 from .utils.request_utils import (
     _ensure_pulse_timer,
+    fetch_blender_versions,
     fetch_projects,
     invalidate_job_refresh_context,
 )
@@ -66,6 +67,14 @@ def _redraw_properties_ui() -> None:
         for area in scr.areas:
             if area.type == "PROPERTIES":
                 area.tag_redraw()
+
+
+def _refresh_blender_versions_safely() -> None:
+    """Keep the last known selector when the deployment catalog is unavailable."""
+    try:
+        fetch_blender_versions()
+    except Exception as exc:
+        print(f"Could not refresh deployed Blender versions: {exc}")
 
 
 def _start_background_job_refresh(project_id: str) -> None:
@@ -218,6 +227,7 @@ def first_login(
             user_email or _fetch_user_email_for_token(token, api_url)
         ).strip().lower()
         projects = fetch_projects() or []
+        _refresh_blender_versions_safely()
         if not Storage.complete_authenticated_session(
             auth_context,
             user_email=resolved_email,
@@ -460,6 +470,7 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
         def _worker():
             try:
                 projects = fetch_projects()
+                _refresh_blender_versions_safely()
                 if not Storage.auth_context_matches(
                     auth_context[0], auth_context[1], auth_context[2]
                 ):

@@ -5,8 +5,7 @@ import bpy
 from .utils.prefs import get_prefs
 from .utils.version_utils import (
     get_blender_version_string,
-    blender_version_items,
-    enum_from_bpy_version,
+    blender_version_items_callback,
 )
 from .utils.request_utils import fetch_jobs
 from .storage import Storage
@@ -169,8 +168,7 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     # ------------------------------------------------------------
     blender_version: bpy.props.EnumProperty(
         name="Blender Version",
-        items=blender_version_items,
-        default=enum_from_bpy_version(),  # dynamic default that matches the running Blender
+        items=blender_version_items_callback,
         description=(
             "Specify which Blender build the render farm should run. "
             "Make sure your scene is compatible with the chosen version."

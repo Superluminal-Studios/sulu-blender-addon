@@ -461,6 +461,62 @@ class TestRequestUtilsJobs(unittest.TestCase):
             with self.assertRaisesRegex(request_utils.ProjectContextError, "repeated a page"):
                 request_utils.fetch_projects()
 
+    def test_fetch_blender_versions_updates_standard_deployment_catalog(self):
+        items = [
+            {
+                "identifier": "BLENDER52",
+                "version": "5.2.0",
+                "label": "Blender 5.2",
+                "worker_value": "blender52",
+                "enabled": True,
+                "deployed": True,
+                "sort_order": 520,
+            }
+        ]
+        with (
+            patch.object(
+                request_utils,
+                "authorized_request",
+                return_value=_FakeResponse({"items": items}),
+            ) as request,
+            patch.object(
+                request_utils,
+                "update_deployed_blender_versions",
+                return_value=True,
+            ) as update,
+        ):
+            self.assertEqual(request_utils.fetch_blender_versions(), items)
+
+        request.assert_called_once_with(
+            "GET",
+            f"{_API_URL}/api/collections/blender_versions/records",
+            params={
+                "filter": "enabled=true && deployed=true",
+                "sort": "sort_order,identifier",
+                "perPage": 200,
+            },
+        )
+        update.assert_called_once_with(items)
+
+    def test_fetch_blender_versions_rejects_empty_deployment_catalog(self):
+        with (
+            patch.object(
+                request_utils,
+                "authorized_request",
+                return_value=_FakeResponse({"items": []}),
+            ),
+            patch.object(
+                request_utils,
+                "update_deployed_blender_versions",
+                return_value=False,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                request_utils.ProjectContextError,
+                "No deployed Blender versions",
+            ):
+                request_utils.fetch_blender_versions()
+
     def test_get_render_queue_key_returns_existing_key_without_repair(self):
         with patch.object(
             request_utils,
