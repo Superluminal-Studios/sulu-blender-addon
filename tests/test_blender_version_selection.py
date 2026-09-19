@@ -51,6 +51,16 @@ def test_database_records_replace_items_and_worker_mapping(monkeypatch):
                 "deployed": False,
                 "sort_order": 530,
             },
+            {
+                "identifier": "BLENDER53",
+                "version": "5.3.0",
+                "label": "Blender 5.3 SULU",
+                "worker_value": "blender53sulu",
+                "channel": "sulu",
+                "enabled": True,
+                "deployed": True,
+                "sort_order": 530,
+            },
         ]
     )
 

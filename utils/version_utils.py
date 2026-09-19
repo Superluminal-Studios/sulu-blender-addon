@@ -68,6 +68,10 @@ def update_deployed_blender_versions(records) -> bool:
             or not worker_value
             or not label
             or identifier in seen
+            or any(
+                "sulu" in value.lower()
+                for value in (identifier, worker_value, label, str(record.get("channel") or ""))
+            )
         ):
             continue
         seen.add(identifier)
