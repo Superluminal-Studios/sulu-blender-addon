@@ -19,7 +19,7 @@ _FALLBACK_BLENDER_VERSION_ITEMS: List[Tuple[str, str, str]] = [
     ("BLENDER50", "Blender 5.0", "Use Blender 5.0 on the farm"),
     ("BLENDER51", "Blender 5.1", "Use Blender 5.1 on the farm"),
     ("BLENDER52", "Blender 5.2", "Use Blender 5.2 on the farm"),
-    ("BLENDER53", "Blender 5.3", "Use Blender 5.3 on the farm"),
+    ("BLENDER53", "Blender 5.3 Alpha", "Use Blender 5.3 Alpha on the farm"),
 ]
 
 _version_lock = threading.RLock()
