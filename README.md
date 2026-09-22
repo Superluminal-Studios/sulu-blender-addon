@@ -10,8 +10,8 @@
 | Field | Value |
 |---|---|
 | Primary role | Blender-side client for auth, project selection, render submission, and output download |
-| Owns | Blender UI panels/operators, local session cache, project-context resolution, submit/download worker handoff |
-| Does not own | Backend auth/org truth, farm scheduling, render execution, object-storage credentials/persistence, or marketplace asset/extension delivery |
+| Owns | Blender UI panels/operators, local session cache, project-context resolution, local BAT packing, direct rclone submission uploads, and submit/download worker handoff |
+| Does not own | Backend auth/org truth, farm scheduling, render execution, object persistence, long-lived storage credentials, or marketplace asset/extension delivery |
 | Primary runtime location | Artist workstations running Blender |
 
 Marketplace assets use Blender's native online asset libraries, and marketplace
@@ -27,9 +27,9 @@ Atlas leaf pack: <https://github.com/Superluminal-Studios/sulu-super-repo/tree/m
 
 | Direction | System | Contract |
 |---|---|---|
-| Upstream | `sulu-backend` | account auth, project discovery, pure browser job snapshots, semantic render commands, and bearer-authorized transfer streams |
-| Upstream | Render coordinator behind `sulu-backend` | upload receipts, quotes, durable/idempotent submission, job operations, and generation-bound output catalogs |
-| Indirect | Queue manager and Cloudflare R2 | backend-owned scheduling and object persistence; the current add-on path receives neither queue-admin nor project-storage credentials |
+| Upstream | `sulu-backend` | account auth, project discovery, project-scoped temporary storage access, job registration, pure browser job snapshots, and generation-bound output downloads |
+| Upstream | Render coordinator behind `sulu-backend` | read/control operations and generation-bound output catalogs; add-on submission bytes do not traverse it |
+| Indirect | Queue manager and Cloudflare R2 | scheduling remains behind the existing job-registration API; submission payloads go directly to R2 with rclone and never expose queue-admin access |
 | Downstream | Blender users | sign-in, project selection, submit, and download flows |
 | Downstream | Render farm workers | uploaded scene packages, manifests, and add-on bundles |
 
@@ -44,13 +44,16 @@ flowchart LR
 
   UI --> SubmitOp[transfers/submit/submit_operator.py]
   SubmitOp --> SubmitWorker[transfers/submit/submit_worker.py]
-  SubmitWorker --> Backend[/api/render/v1/tools + transfers]
+  SubmitWorker -->|temporary project credentials| Backend[sulu-backend]
+  SubmitWorker -->|direct rclone upload| R2[(Cloudflare R2)]
+  SubmitWorker -->|job metadata only| Register[/api/farm/{organization_id}/jobs]
+  Register --> Backend
   Backend --> Queue[Queue manager]
-  Backend --> R2[(Cloudflare R2)]
 
   UI --> DownloadOp[transfers/download/download_operator.py]
   DownloadOp --> DownloadWorker[transfers/download/download_worker.py]
-  DownloadWorker --> Backend
+  DownloadWorker -->|authorized output transfer| Backend
+  Backend -->|generation-bound read| R2
 ```
 
 Repository map:
@@ -66,8 +69,8 @@ Repository map:
 ├── pocketbase_auth.py                    # Authorized backend requests + token refresh
 ├── transfers/
 │   ├── submit/submit_operator.py         # Submit UI handoff
-│   ├── submit/submit_worker.py           # Packaging plus receipt-based upload/submission
-│   ├── submit/coordinator_client.py      # Semantic commands, receipts, and transfer IO
+│   ├── submit/submit_worker.py           # Local BAT packing, direct rclone upload, job registration
+│   ├── submit/coordinator_client.py      # Semantic command and transfer helper retained for output flows
 │   ├── download/artifact_client.py       # Generation-bound resumable output transfer
 │   └── download/download_worker.py       # Output download orchestration
 ├── utils/project_context.py              # Project identity and org/user-key guards
@@ -96,13 +99,17 @@ Repository map:
 | Account auth | `/api/collections/users/auth-with-password`, `/api/cli/start`, `/api/cli/token`, `/api/collections/users/auth-refresh` | backend session / bearer flow | sign-in and token refresh |
 | Project context | `/api/collections/projects/records` | backend auth token | resolve the selected project and organization |
 | Job discovery | `/api/render/v1/browser/jobs/{organization_id}` | backend auth token | pure, bounded job snapshot for the selected project |
-| Render coordination | `/api/render/v1/tools/{tool}` | backend auth token | upload preparation/finalization, quote, durable submission, output listing, and operation recovery |
-| Object transfer | `/api/render/v1/transfers/{opaque_ref}` | backend auth token | exact-session input uploads and generation-bound resumable output downloads |
+| Temporary project storage | `/api/collections/project_storage/records` | backend auth token | obtain the selected project's short-lived R2 credentials for direct rclone upload |
+| Farm readiness | `/api/farm_status/{organization_id}` | backend auth token | verify the selected organization can accept a render |
+| Job registration | `/api/farm/{organization_id}/jobs` | backend auth token | register job metadata after direct R2 upload |
+| Render coordination | `/api/render/v1/tools/{tool}` | backend auth token | authorized render reads/controls, output listing, and operation recovery |
+| Output transfer | `/api/render/v1/transfers/{opaque_ref}` | backend auth token | generation-bound resumable output downloads |
 
-Old worker handoffs can still use the former farm and temporary-storage paths
-to finish work started by an earlier add-on version. New UI submissions and
-downloads always set `render_coordinator=true`; they do not receive broad R2
-credentials or call raw queue/farm mutation endpoints.
+New UI submissions use the proven production boundary: BAT packs locally,
+rclone transfers bytes directly to the selected project's R2 bucket, and the
+worker sends only job metadata to the existing registration endpoint.
+Downloads remain authorized and generation-bound. The add-on never receives
+queue-administration access.
 
 Primary interface sources:
 - `pocketbase_auth.py`
@@ -165,8 +172,9 @@ Acceptance checks:
 4. Project selection refuses missing `organization_id` or `sqid`.
 5. Submit/download workers reject mixed-profile or edited endpoint handoffs
    before making a network request.
-6. Submit worker obtains an upload receipt and submits through the durable
-   render coordinator without receiving storage credentials.
+6. Submit worker obtains project-scoped temporary storage access, packs locally,
+   uploads directly to R2 with rclone, and sends only job metadata to the
+   existing registration endpoint.
 7. Download worker resolves authorized, generation-bound outputs and can
    resume their backend-mediated transfers.
 8. Core add-on regression tests stay green.

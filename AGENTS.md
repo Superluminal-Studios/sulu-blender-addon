@@ -34,6 +34,11 @@ Domain guidance: `obsidian-vault-fable/Agents/Domain Modes.md` (`BLENDER` mode)
 - Submit/download work runs in isolated worker processes launched with Blender
   Python. Workers must stay backward-compatible with old handoff JSON.
 - New handoff fields are optional and default safely.
+- Render submission payload bytes go directly from the artist workstation to
+  the selected project's Cloudflare R2 storage with rclone. Sulu APIs and MCP
+  may authenticate the user, issue project-scoped temporary storage access,
+  validate metadata, and register the job, but they must never proxy render
+  input bytes unless the user explicitly authorizes that exact architecture change.
 - ZIP remains portable and self-contained. PROJECT remains project-root based;
   if off-drive dependency behavior changes, update UI warnings and docs.
 
