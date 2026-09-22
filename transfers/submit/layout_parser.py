@@ -38,7 +38,7 @@ import ast
 import os
 from typing import Any, Optional
 
-_LAYOUT_VERSION = 1
+_LAYOUT_VERSION = 2
 _TARGET_CONTEXTS = ("scene", "render", "output", "view_layer")
 _MAX_INLINE_DEPTH = 3
 
@@ -95,14 +95,17 @@ class _Path:
 
 
 class _LayoutRef:
-    """Symbolic UILayout handle; emits into a shared item list."""
+    """Symbolic UILayout handle retaining its native container and properties."""
 
-    __slots__ = ("items", "visible", "enabled")
+    __slots__ = ("items", "visible", "enabled", "options", "kind")
 
-    def __init__(self, items: list, visible: Optional[dict], enabled: Optional[dict]):
+    def __init__(self, items: list, visible: Optional[dict], enabled: Optional[dict],
+                 options: Optional[dict] = None, kind: str = "root"):
         self.items = items
         self.visible = visible
         self.enabled = enabled
+        self.options = options if options is not None else {}
+        self.kind = kind
 
 
 class _Unknown:
@@ -288,24 +291,18 @@ class _Translator:
         if isinstance(func, ast.Attribute):
             base = self.sym(func.value, env)
             if isinstance(base, _LayoutRef) and func.attr in _CONTAINER_METHODS:
-                # containers share the parent's item list unless they carry a
-                # heading (rendered as a labeled group)
-                heading = None
+                options = {key: value for key, value in base.options.items()
+                           if key in ("use_property_split", "use_property_decorate")}
+                container = {"t": "layout", "kind": func.attr, "items": [], "options": options}
                 for kw in node.keywords:
-                    if kw.arg == "heading":
-                        value = _literal(kw.value)
-                        if isinstance(value, str) and value:
-                            heading = value
-                if heading:
-                    group = {"t": "group", "heading": heading, "items": []}
-                    visible = _and(base.visible, self.visible_ctx)
-                    if visible is not None:
-                        group["visible"] = visible
-                    if base.enabled:
-                        group["enabled"] = base.enabled
-                    base.items.append(group)
-                    return _LayoutRef(group["items"], None, None)
-                return _LayoutRef(base.items, base.visible, base.enabled)
+                    value = _literal(kw.value)
+                    if kw.arg == "heading" and isinstance(value, str):
+                        container["heading"] = value
+                    elif kw.arg in ("align", "factor", "columns", "row_major", "even_columns", "even_rows") and isinstance(value, (bool, int, float)):
+                        options[kw.arg] = value
+                self.emit(base, container)
+                return _LayoutRef(container["items"], _and(base.visible, self.visible_ctx),
+                                  base.enabled, options, func.attr)
         return _Unknown("call")
 
     # ---- condition translation ----------------------------------------
@@ -428,13 +425,25 @@ class _Translator:
                     base.enabled = _and(base.enabled, cond)
                 elif isinstance(base, _LayoutRef) and target.attr == "active_default":
                     continue
-                # use_property_split / alignment / scale_y …: ignore
+                elif isinstance(base, _LayoutRef) and target.attr in (
+                    "use_property_split", "use_property_decorate", "alignment",
+                    "scale_x", "scale_y", "ui_units_x", "ui_units_y",
+                ) and isinstance(value, (bool, int, float, str)):
+                    base.options[target.attr] = value
             elif isinstance(target, ast.Tuple):
                 for el in target.elts:
                     if isinstance(el, ast.Name):
                         env[el.id] = _Unknown("tuple-assign")
 
     def emit(self, layout: _LayoutRef, node: dict) -> None:
+        if node.get("t") in ("prop", "struct_props"):
+            node["presentation"] = {
+                "property_split": layout.options.get("use_property_split", False),
+                "property_decorate": layout.options.get("use_property_decorate", True),
+                "orientation": "horizontal" if layout.kind in ("root", "row", "grid_flow") else "vertical",
+            }
+        if node.get("t") == "label" and "alignment" in layout.options:
+            node["align"] = layout.options["alignment"].lower()
         visible = _and(layout.visible, self.visible_ctx, node.get("visible"))
         if visible is not None:
             node["visible"] = visible
@@ -477,7 +486,11 @@ class _Translator:
             if isinstance(text, str) and text:
                 self.emit(base, {"t": "label", "text": text})
         elif method.startswith("separator"):
-            self.emit(base, {"t": "sep"})
+            node = {"t": "sep"}
+            factor = self.kwarg(call, "factor", 0)
+            if isinstance(factor, (int, float)):
+                node["factor"] = factor
+            self.emit(base, node)
         elif method in _CONTAINER_METHODS:
             # bare container call for side effects (rare)
             self.sym_call(call, env)
@@ -596,14 +609,20 @@ class _Translator:
             env[params[1]] = env["context"]
         env["layout"] = root  # common alias even before assignment
         self.walk(fn.body, env, root)
+        self.root_options = dict(root.options)
         return items
 
     def run_header_toggle(self, fn: ast.FunctionDef) -> Optional[str]:
         items = self.run_draw(fn)
-        for node in items:
-            if node.get("t") == "prop":
-                return node["path"]
-        return None
+        def first_prop(nodes):
+            for node in nodes:
+                if node.get("t") == "prop":
+                    return node["path"]
+                found = first_prop(node.get("items", []))
+                if found:
+                    return found
+            return None
+        return first_prop(items)
 
     def run_poll(self, fn: ast.FunctionDef) -> Optional[dict]:
         """Translate a poll classmethod into a condition (best-effort)."""
@@ -756,6 +775,7 @@ def build_layout(sources: dict[str, str]) -> Optional[dict]:
                 items: list = []
                 if info.draw is not None:
                     items = translator.run_draw(info.draw)
+                root_options = getattr(translator, "root_options", {})
                 header_toggle = None
                 if info.draw_header is not None:
                     header_toggle = translator.run_header_toggle(info.draw_header)
@@ -770,6 +790,7 @@ def build_layout(sources: dict[str, str]) -> Optional[dict]:
                     "context": info.context,
                     "parent": info.parent,
                     "items": items,
+                    "options": root_options,
                 }
                 if info.engines is not None:
                     panel["engines"] = info.engines

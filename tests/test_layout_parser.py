@@ -236,6 +236,47 @@ def find_props(items):
 
 
 class LayoutParserTests(unittest.TestCase):
+    def test_native_geometry_and_property_presentation_survive_export(self):
+        source = '''
+from bpy.types import Panel
+class TEST_PT_layout(Panel):
+    bl_label = 'Layout'
+    bl_context = 'output'
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+        layout.prop(context.scene.render, 'resolution_x')
+        layout.use_property_split = False
+        split = layout.split(factor=0.4)
+        col = split.column(align=True)
+        col.alignment = 'RIGHT'
+        col.label(text='Color Space')
+        col = split.column()
+        col.scale_y = 1.5
+        col.active = context.scene.render.use_border
+        col.prop(context.scene.render, 'resolution_y')
+        grid = layout.grid_flow(columns=2, row_major=True, even_columns=True)
+        grid.prop(context.scene.render, 'fps', expand=True)
+        layout.separator(factor=0.5)
+'''
+        doc = _layout_parser.build_layout({'test.py': source})
+        self.assertEqual(doc['layout_version'], 2)
+        items = doc['panels'][0]['items']
+        self.assertTrue(items[0]['presentation']['property_split'])
+        split = items[1]
+        self.assertEqual(split['kind'], 'split')
+        self.assertEqual(split['options']['factor'], 0.4)
+        label_col, field_col = split['items']
+        self.assertEqual(label_col['items'][0]['align'], 'right')
+        self.assertEqual(field_col['options']['scale_y'], 1.5)
+        field = field_col['items'][0]
+        self.assertFalse(field['presentation']['property_split'])
+        self.assertFalse(field['presentation']['property_decorate'])
+        self.assertEqual(field['enabled'], {'op': 'get', 'path': 'render.use_border'})
+        self.assertEqual(items[2]['options']['columns'], 2)
+        self.assertEqual(items[3]['factor'], 0.5)
+
     def test_panel_metadata_and_exclusions(self):
         panels, doc = build()
         self.assertIn("FAKE_PT_main", panels)
@@ -264,7 +305,9 @@ class LayoutParserTests(unittest.TestCase):
         panels, _ = build()
         items = panels["FAKE_PT_main"]["items"]
         group = items[0]
-        self.assertEqual(group["t"], "group")
+        self.assertEqual(group["t"], "layout")
+        self.assertEqual(group["kind"], "column")
+        self.assertTrue(group["options"]["align"])
         self.assertEqual(group["heading"], "Threshold")
         toggle, threshold = find_props(group["items"])
         self.assertEqual(toggle["path"], "cycles.use_adaptive")
@@ -302,7 +345,9 @@ class LayoutParserTests(unittest.TestCase):
         kinds = [n.get("kind") for n in items if n.get("t") == "skipped"]
         self.assertIn("template_curve_mapping", kinds)
         self.assertTrue(any(n.get("t") == "label" and n["text"] == "Note" for n in items))
-        self.assertTrue(any(n.get("t") == "sep" for n in items))
+        def has_separator(nodes):
+            return any(n.get("t") == "sep" or has_separator(n.get("items", [])) for n in nodes)
+        self.assertTrue(has_separator(items))
 
     def test_early_return_inverts_rest(self):
         panels, _ = build()
@@ -327,7 +372,9 @@ class LayoutParserTests(unittest.TestCase):
         self.assertIn("render.fps_base", paths)
         # template_image_settings expands to a struct_props node
         structs = [n for n in output["items"] if n.get("t") == "struct_props"]
-        self.assertEqual(structs, [{"t": "struct_props", "path": "render.image_settings"}])
+        self.assertEqual(len(structs), 1)
+        self.assertEqual(structs[0]["path"], "render.image_settings")
+        self.assertFalse(structs[0]["presentation"]["property_split"])
         # expand=True survives translation (web renders a segmented row)
         views = next(p for p in props if p["path"] == "render.views_format")
         self.assertTrue(views.get("expand"))
