@@ -303,7 +303,7 @@ class IntegratedDownloadRunnerTest(unittest.TestCase):
         downloader.assert_called_once_with(
             destination,
             "auto",
-            "http://178.156.167.251/farm/org-1",
+            "https://api.superlumin.al/farm/org-1",
             "redacted",
         )
         create_mp4.assert_called_once_with(destination)

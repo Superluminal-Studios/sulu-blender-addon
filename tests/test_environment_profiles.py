@@ -104,6 +104,8 @@ def test_profiles_are_fixed_and_production_is_the_default():
     assert production.api_url == "https://api.superlumin.al"
     assert production.web_url == "https://superlumin.al"
     assert production.farm_url == "http://178.156.167.251"
+    assert production.render_coordinator is False
+    assert test.render_coordinator is True
     assert test.key == "test"
     assert test.api_url == "https://lab-api.superlumin.al"
     assert test.web_url == "https://lab.superlumin.al"
@@ -145,7 +147,7 @@ def test_legacy_handoff_migrates_only_to_canonical_production():
     assert handoff["pocketbase_url"] == "https://api.superlumin.al"
     assert handoff["web_url"] == "https://superlumin.al"
     assert handoff["farm_url"] == "http://178.156.167.251/farm/org-1/api/"
-    assert handoff["sarfis_url"] == "http://178.156.167.251/farm/org-1"
+    assert handoff["sarfis_url"] == "https://api.superlumin.al/farm/org-1"
 
 
 @pytest.mark.parametrize(

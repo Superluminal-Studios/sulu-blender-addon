@@ -688,7 +688,7 @@ def _request_jobs_unlocked(
     *,
     refresh_identity: tuple[int, int] | None = None,
 ) -> dict:
-    """One pure backend snapshot path; errors never wake or fall back to a farm."""
+    """Use the deployed snapshot API for the profile; never fall back on errors."""
     if refresh_identity is None:
         refresh_identity = _current_refresh_identity()
     org = str(org_id or "").strip()
@@ -698,12 +698,16 @@ def _request_jobs_unlocked(
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", org) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", project):
         raise ProjectContextError("Select an accessible organization and project before loading jobs.")
     jobs, cursors, cursor = {}, set(), None
-    api_url = active_profile().api_url
+    profile = active_profile()
+    api_url = profile.api_url
+    endpoint = "api/render/v1/browser/jobs" if profile.render_coordinator else "api/jobs"
     while True:
         params = {"project_id": project, "limit": 200}
+        if not profile.render_coordinator:
+            params["view"] = "addon"
         if cursor:
             params["cursor"] = cursor
-        response = authorized_request("GET", f"{api_url}/api/render/v1/browser/jobs/{quote(org, safe='')}", params=params, stored_job_session=True)
+        response = authorized_request("GET", f"{api_url}/{endpoint}/{quote(org, safe='')}", params=params, stored_job_session=True)
         payload = response.json()
         page = payload.get("body") if isinstance(payload, dict) else None
         if not isinstance(page, dict) or len(page) > 200:

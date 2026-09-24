@@ -28,6 +28,7 @@ class EnvironmentProfile:
     api_url: str
     web_url: str
     farm_url: str
+    render_coordinator: bool
 
 
 _PROFILES: Mapping[str, EnvironmentProfile] = MappingProxyType(
@@ -40,6 +41,9 @@ _PROFILES: Mapping[str, EnvironmentProfile] = MappingProxyType(
             # Retained for explicitly legacy handoffs.  Receipt-based clients
             # use the API coordinator and never call this origin directly.
             farm_url="http://178.156.167.251",
+            # Production has not deployed the /api/render/v1 contract yet.
+            # Flip this only alongside a verified backend rollout.
+            render_coordinator=False,
         ),
         TEST_ENVIRONMENT: EnvironmentProfile(
             key=TEST_ENVIRONMENT,
@@ -47,6 +51,7 @@ _PROFILES: Mapping[str, EnvironmentProfile] = MappingProxyType(
             api_url="https://lab-api.superlumin.al",
             web_url="https://lab.superlumin.al",
             farm_url="https://lab-api.superlumin.al",
+            render_coordinator=True,
         ),
     }
 )
@@ -116,7 +121,7 @@ def _profile_handoff_values(
         "pocketbase_url": profile.api_url,
         "web_url": profile.web_url,
         "farm_url": f"{farm_base}/farm/{encoded_org}/api/",
-        "sarfis_url": f"{farm_base}/farm/{encoded_org}",
+        "sarfis_url": f"{profile.api_url}/farm/{encoded_org}",
     }
 
 
@@ -222,7 +227,12 @@ def validate_handoff_environment(
             and key == "farm_url"
             and actual_text == expected_value.replace("/farm/", "//farm/", 1)
         )
-        if actual_text.rstrip("/") != expected_value.rstrip("/") and not legacy_farm:
+        legacy_status = (
+            profile.key == PRODUCTION_ENVIRONMENT
+            and key == "sarfis_url"
+            and actual_text.rstrip("/") == expected_value.replace(profile.api_url, profile.farm_url, 1)
+        )
+        if actual_text.rstrip("/") != expected_value.rstrip("/") and not (legacy_farm or legacy_status):
             raise ValueError("Render handoff mixes Sulu environments")
         data[key] = expected_value
 
