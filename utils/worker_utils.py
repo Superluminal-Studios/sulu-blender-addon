@@ -38,8 +38,11 @@ from urllib3.util import Retry
 CREATE_NEW_CONSOLE = 0x00000010  # force a new console window
 CREATE_NEW_PROCESS_GROUP = 0x00000200  # allow Ctrl+C to target child
 
-CLOUDFLARE_ACCOUNT_ID = "f09fa628d989ddd93cbe3bf7f7935591"
-CLOUDFLARE_R2_DOMAIN = f"{CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+# Compatibility for older worker handoffs; current APIs supply endpoint_url.
+CLOUDFLARE_R2_DOMAIN = (
+    f"{CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com" if CLOUDFLARE_ACCOUNT_ID else ""
+)
 DEBUG_MODE = False
 
 # Common flags we want on *every* rclone call that uses R2
@@ -473,6 +476,10 @@ def _build_base(
         raise ValueError(f"Missing S3 credential: {exc}") from exc
 
     session_token = s3.get("session_token") or ""
+    endpoint = str(s3.get("endpoint_url") or os.environ.get("STORAGE_S3_PUBLIC_ENDPOINT_URL") or endpoint or "").strip()
+    parsed = urlparse(endpoint)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.query or parsed.fragment:
+        raise ValueError("Project storage endpoint is missing or invalid; refresh the project")
 
     os.environ["AWS_ACCESS_KEY_ID"] = str(access_key)
     os.environ["AWS_SECRET_ACCESS_KEY"] = str(secret_key)
@@ -489,6 +496,12 @@ def _build_base(
 
     # Add our shared flags (provider, region, etc.)
     base.extend(COMMON_RCLONE_FLAGS)
+    base[base.index("--s3-region") + 1] = str(s3.get("region") or "auto")
+    if s3.get("storage_provider") == "seaweedfs":
+        base[base.index("--s3-provider") + 1] = "Other"
+        # Seaweed ETags are not necessarily MD5 digests. rclone must not treat
+        # them as content checksums when verifying a successful transfer.
+        base.extend(["--s3-use-multipart-etag=false", "--s3-force-path-style"])
     return base
 
 
