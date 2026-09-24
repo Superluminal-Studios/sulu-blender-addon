@@ -501,8 +501,10 @@ def _build_base(
         base[base.index("--s3-provider") + 1] = "Other"
         # Seaweed ETags are not necessarily MD5 digests. rclone must not treat
         # them as content checksums when verifying a successful transfer.
+        # Directory-bucket compatibility makes rclone store/read explicit MD5 metadata
+        # instead of interpreting opaque Seaweed ETags as MD5 (including single PUTs).
         # Public proxies may normalize Accept-Encoding; it is not an S3 integrity header.
-        base.extend(["--s3-use-multipart-etag=false", "--s3-force-path-style",
+        base.extend(["--s3-use-multipart-etag=false", "--s3-force-path-style", "--s3-directory-bucket",
                      "--s3-sign-accept-encoding=false"])
     return base
 
