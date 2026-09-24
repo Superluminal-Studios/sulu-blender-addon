@@ -1397,6 +1397,12 @@ class TestRequestUtilsJobs(unittest.TestCase):
 
 
 class TestCoordinatedJobReads(unittest.TestCase):
+    def setUp(self):
+        profile = pocketbase_auth.profile_for_environment("test")
+        patcher = patch.object(request_utils, "active_profile", return_value=profile)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_all_pages_use_pure_facade_without_farm_keys_or_wakeup(self):
         pages = [_FakeResponse({"body": {"job-a": {"id": "job-a", "project_id": "project"}}, "next_cursor": "next"}),
                  _FakeResponse({"body": {"job-b": {"id": "job-b", "project_id": "project"}}, "next_cursor": None})]
@@ -1436,3 +1442,18 @@ class TestCoordinatedJobReads(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestProductionJobReads(unittest.TestCase):
+    def test_production_uses_deployed_compact_snapshot_without_farm_wakeup(self):
+        with patch.object(request_utils, "active_profile", return_value=pocketbase_auth.profile_for_environment("production")), \
+             patch.object(request_utils, "_selected_project_identity", return_value=("project", "sqid")), \
+             patch.object(request_utils, "authorized_request", return_value=_FakeResponse({"body": {"job": {"project_id": "project"}}})) as request, \
+             patch.object(request_utils, "_request_live_jobs") as live, \
+             patch.object(request_utils, "_wake_queue_manager") as wake:
+            jobs = request_utils._request_jobs_unlocked("organization", "", "project")
+        self.assertEqual(set(jobs), {"job"})
+        self.assertEqual(request.call_args.args[1], "https://api.superlumin.al/api/jobs/organization")
+        self.assertEqual(request.call_args.kwargs["params"], {"project_id": "project", "limit": 200, "view": "addon"})
+        live.assert_not_called()
+        wake.assert_not_called()

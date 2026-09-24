@@ -98,7 +98,7 @@ Repository map:
 |---|---|---|---|
 | Account auth | `/api/collections/users/auth-with-password`, `/api/cli/start`, `/api/cli/token`, `/api/collections/users/auth-refresh` | backend session / bearer flow | sign-in and token refresh |
 | Project context | `/api/collections/projects/records` | backend auth token | resolve the selected project and organization |
-| Job discovery | `/api/render/v1/browser/jobs/{organization_id}` | backend auth token | pure, bounded job snapshot for the selected project |
+| Job discovery | Production: `/api/jobs/{organization_id}?view=addon`; test: `/api/render/v1/browser/jobs/{organization_id}` | backend auth token | bounded job snapshot for the selected project, selected explicitly by deployed environment capability |
 | Temporary project storage | `/api/collections/project_storage/records` | backend auth token | obtain the selected project's short-lived R2 credentials for direct rclone upload |
 | Farm readiness | `/api/farm_status/{organization_id}` | backend auth token | verify the selected organization can accept a render |
 | Job registration | `/api/farm/{organization_id}/jobs` | backend auth token | register job metadata after direct R2 upload |
@@ -108,8 +108,10 @@ Repository map:
 New UI submissions use the proven production boundary: BAT packs locally,
 rclone transfers bytes directly to the selected project's R2 bucket, and the
 worker sends only job metadata to the existing registration endpoint.
-Downloads remain authorized and generation-bound. The add-on never receives
-queue-administration access.
+Production downloads use the existing project-scoped R2/rclone worker and HTTPS
+job-status gateway. Test-profile downloads use generation-bound coordinator
+transfers. The profile capability is explicit: a missing or denied resource
+never silently downgrades the test client to legacy storage access.
 
 Primary interface sources:
 - `pocketbase_auth.py`

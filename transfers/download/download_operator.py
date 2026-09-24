@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from ...utils.worker_utils import launch_worker_secure
-from ...environment import environment_handoff_values
+from ...environment import environment_handoff_values, profile_for_environment
 from ...utils.prefs import get_prefs, get_addon_dir
 from ...storage import Storage
 
@@ -71,10 +71,13 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
             "job_name": self.job_name,
             "job": job_snapshot,
             "user_token": auth_context[2],
-            "render_coordinator": True,
+            "render_coordinator": profile_for_environment(auth_context[0]).render_coordinator,
             "download_type": "auto",
             "debug_mode": bool(getattr(prefs, "debug_mode", False)),
         }
+
+        if not handoff["render_coordinator"]:
+            handoff["sarfis_token"] = Storage.data.get("user_key", "")
 
         worker = Path(__file__).with_name("download_worker.py")
 
