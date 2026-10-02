@@ -17,7 +17,9 @@
 # ***** END GPL LICENCE BLOCK *****
 #
 # (c) 2019, Blender Foundation - Sybren A. Stüvel
+import gzip
 import importlib
+import io
 import os
 import shutil
 import zipfile
@@ -29,6 +31,48 @@ from blender_asset_tracer.pack import zipped
 
 
 class ZippedPackTest(AbstractPackTest):
+    def test_blend_formats_survive_the_zip_worker(self):
+        payload = b"BLENDER-v305" + b"scene data" * 100
+        inputs = {
+            "plain": payload,
+            "gzip": gzip.compress(payload, mtime=0),
+            "unknown": b"UNKNOWN_FORMAT\x00opaque data",
+            "empty": b"",
+            "partial_gzip": b"\x1f",
+            "partial_zstd": b"\x28\xb5",
+        }
+        if zipped.zstd is not None:
+            inputs["zstd"] = zipped.zstd.ZstdCompressor().compress(payload)
+
+        for name, original in inputs.items():
+            with self.subTest(format=name):
+                source = self.tpath / f"{name}.blend"
+                source.write_bytes(original)
+                zippath = self.tpath / f"{name}.zip"
+                worker = zipped.ZipTransferrer(zippath)
+                worker.start()
+                worker.queue_copy(source, zippath / source.name)
+                worker.done_and_join()
+
+                with zipfile.ZipFile(zippath) as archive:
+                    self.assertIsNone(archive.testzip())
+                    self.assertEqual(
+                        archive.getinfo(source.name).compress_type, zipfile.ZIP_STORED
+                    )
+                    packed = archive.read(source.name)
+
+                if name == "plain" and zipped.zstd is not None:
+                    with zipped.zstd.ZstdDecompressor().stream_reader(
+                        io.BytesIO(packed)
+                    ) as reader:
+                        self.assertEqual(reader.read(), payload)
+                else:
+                    self.assertEqual(packed, original)
+                if name == "gzip":
+                    self.assertEqual(gzip.decompress(packed), payload)
+                elif name == "zstd":
+                    self.assertEqual(zipped.zstd.ZstdDecompressor().decompress(packed), payload)
+
     def test_basic_file(self):
         infile = self.blendfiles / "basic_file_ñønæščii.blend"
         zippath = self.tpath / "target.zip"
