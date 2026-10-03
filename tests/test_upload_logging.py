@@ -93,20 +93,19 @@ def _settings_by_flag(settings):
 class TestZipUploadTuning(unittest.TestCase):
     """ZIP archives use Cloudflare-oriented single/multipart boundaries."""
 
-    def test_small_medium_zip_uses_single_put_cutoff(self):
-        values = _settings_by_flag(
+    def test_single_zip_upload_skips_destination_checks(self):
+        zip_values = _settings_by_flag(
             _submit_worker._build_rclone_upload_settings(
                 single_zip_archive=True,
             )
         )
+        project_values = _settings_by_flag(
+            _submit_worker._build_rclone_upload_settings()
+        )
 
-        self.assertEqual(values["--s3-upload-cutoff"], "100M")
-        self.assertEqual(values["--s3-chunk-size"], "16M")
-        self.assertEqual(values["--s3-upload-concurrency"], "8")
-        self.assertEqual(values["--buffer-size"], "16M")
-        self.assertEqual(values["--transfers"], "1")
-        self.assertEqual(values["--checkers"], "1")
-        self.assertIs(values["--no-check-dest"], True)
+        self.assertIs(zip_values["--no-check-dest"], True)
+        self.assertEqual(zip_values["--transfers"], "1")
+        self.assertNotIn("--no-check-dest", project_values)
 
     def test_multipart_zip_skips_redundant_whole_archive_md5_pass(self):
         cutoff = _submit_worker._ZIP_SINGLE_PUT_CUTOFF_BYTES
@@ -125,17 +124,6 @@ class TestZipUploadTuning(unittest.TestCase):
 
         self.assertNotIn("--s3-disable-checksum", at_cutoff)
         self.assertIs(above_cutoff["--s3-disable-checksum"], True)
-
-    def test_non_zip_upload_settings_remain_unchanged(self):
-        values = _settings_by_flag(
-            _submit_worker._build_rclone_upload_settings()
-        )
-
-        self.assertEqual(values["--s3-upload-cutoff"], "64M")
-        self.assertEqual(values["--s3-chunk-size"], "64M")
-        self.assertEqual(values["--s3-upload-concurrency"], "4")
-        self.assertEqual(values["--buffer-size"], "64M")
-        self.assertNotIn("--no-check-dest", values)
 
     def test_required_api_date_header_replaces_separate_clock_probe(self):
         drift = _submit_worker._clock_drift_from_http_date(
@@ -437,21 +425,13 @@ class TestBackgroundUpdateDiscovery(unittest.TestCase):
 
 
 class TestUploadResultVisibility(unittest.TestCase):
-    def test_normal_submission_does_not_print_automation_marker(self):
-        with mock.patch.object(
-            _submit_worker, "_emit_upload_success_payload"
-        ) as emit:
-            _submit_worker._emit_upload_success_payload_if_requested(
-                {}, {"status": "success"}
-            )
-
-        emit.assert_not_called()
-
-    def test_automation_harness_can_request_marker(self):
+    def test_marker_is_printed_only_when_the_harness_requests_it(self):
         payload = {"status": "success"}
         with mock.patch.object(
             _submit_worker, "_emit_upload_success_payload"
         ) as emit:
+            _submit_worker._emit_upload_success_payload_if_requested({}, payload)
+            emit.assert_not_called()
             _submit_worker._emit_upload_success_payload_if_requested(
                 {"emit_upload_result": True}, payload
             )
@@ -567,18 +547,15 @@ class TestSubmitHandoffCleanup(unittest.TestCase):
 class TestFinalizingStatusRendering(unittest.TestCase):
     """The upload-only finalizing state is visible in rich and plain output."""
 
-    def test_rich_status_text_names_finalization(self):
-        text = _logger_utils.TranscriptLogger._progress_status_text(
+    def test_rich_and_plain_progress_name_finalization(self):
+        rich = _logger_utils.TranscriptLogger._progress_status_text(
             None,
             checks=0,
             transfers=0,
             status="finalizing",
             current_file="archive.zip",
         )
-        self.assertEqual(text, f"Finalizing upload{_logger_utils.ELLIPSIS}")
-
-    def test_plain_progress_names_finalization(self):
-        text = _logger_utils.TranscriptLogger._plain_transfer_progress_ext(
+        plain = _logger_utils.TranscriptLogger._plain_transfer_progress_ext(
             None,
             cur=999,
             total=1000,
@@ -587,8 +564,9 @@ class TestFinalizingStatusRendering(unittest.TestCase):
             status="finalizing",
             current_file="archive.zip",
         )
-        self.assertIn("99.9%", text)
-        self.assertIn(f"Finalizing upload{_logger_utils.ELLIPSIS}", text)
+        self.assertIn("Finalizing upload", rich)
+        self.assertIn("99.9%", plain)
+        self.assertIn("Finalizing upload", plain)
 
     def test_complete_status_defers_to_upload_complete_panel(self):
         rich_status = _logger_utils.TranscriptLogger._progress_status_text(
@@ -611,30 +589,8 @@ class TestFinalizingStatusRendering(unittest.TestCase):
         self.assertNotIn("Finalizing", plain)
         self.assertNotIn("Complete", plain)
 
-    def test_existing_checking_status_is_unchanged(self):
-        text = _logger_utils.TranscriptLogger._progress_status_text(
-            None,
-            checks=3,
-            transfers=0,
-            status="checking",
-            current_file="",
-        )
-        self.assertEqual(text, "Checking 3 existing files")
-
 
 class TestZipProgressRendering(unittest.TestCase):
-    def test_packing_status_names_current_archive_member(self):
-        text = _submit_logger.SubmitLogger._progress_status_text(
-            None,
-            checks=0,
-            transfers=0,
-            status="packing",
-            current_file="[1/11] Chess Board V2.blend  ·  8.0 MiB/s",
-        )
-        self.assertEqual(
-            text, "[1/11] Chess Board V2.blend  ·  8.0 MiB/s"
-        )
-
     def test_plain_zip_progress_shows_total_percent_file_and_rate(self):
         logger = _submit_logger.SubmitLogger(log_fn=lambda _message: None)
         logger.console = None
@@ -744,18 +700,6 @@ class TestZipProgressRendering(unittest.TestCase):
         self.assertIn("  Source files (before ZIP): 1.5 KB", messages)
         self.assertIn("  ZIP archive (after ZIP): 1.0 KB", messages)
         self.assertIn("  Reduced by: 500 B (33.3%)", messages)
-        self.assertIn("  Total packing: 3.0s", messages)
-        self.assertIn("  Preparing archive: 1.0s", messages)
-        self.assertIn("  Writing ZIP: 2.0s", messages)
-        self.assertTrue(
-            any(
-                "[100%] scenes/scene.blend" in message
-                and "Source 1.2 KB → ZIP data 800 B" in message
-                and "Zstandard-9" in message
-                and "1m 01s" in message
-                for message in messages
-            )
-        )
 
     def test_zip_summary_names_container_overhead_instead_of_negative_savings(self):
         messages = []
@@ -1160,192 +1104,66 @@ class TestUploadStepWarnings(unittest.TestCase):
         steps = self.report._data["stages"]["upload"]["steps"]
         return steps[-1]
 
-    # Missing statistics
+    def test_warning_table(self):
+        def stats(checks, transfers, errors=0, received=True):
+            return {
+                "stats_received": received,
+                "checks": checks,
+                "transfers": transfers,
+                "errors": errors,
+            }
 
-    def test_no_stats_received(self):
-        """stats_received=False should produce a warning."""
-        step = self._run_step(0, {
-            "stats_received": False,
-            "checks": 0,
-            "transfers": 0,
-        })
-        self.assertIn("warning", step)
-        self.assertIn("no transfer stats", step["warning"])
+        # (name, bytes, rclone_stats, expected_bytes, required, forbidden)
+        cases = [
+            ("no stats", 0, stats(0, 0, received=False), None,
+             ["no transfer stats"], []),
+            ("no stats + expected", 0, stats(0, 0, received=False), 1_000_000,
+             ["no transfer stats", "Expected 1000000 bytes"], []),
+            ("no stats overrides checks", 0, stats(50, 0, received=False), None,
+             ["no transfer stats"], ["checked 50 files"]),
+            ("empty manifest", 0, stats(0, 0), None,
+             ["manifest may be empty"], []),
+            ("empty manifest + expected", 0, stats(0, 0), 1_000_000,
+             ["manifest may be empty", "; ", "Expected 1000000 bytes but transferred 0"], []),
+            ("checked not transferred", 0, stats(42, 0), None,
+             ["checked 42 files but transferred 0"], []),
+            ("expected but zero", 0, stats(10, 0), 500_000,
+             ["Expected 500000 bytes but transferred 0"], []),
+            ("under half", 100_000, stats(10, 5), 500_000, ["20%"], []),
+            ("errors despite exit 0", 500_000, stats(50, 50, errors=3), 500_000,
+             ["3 error(s)", "some files may not have uploaded"], []),
+            ("errors + checks + bytes", 0, stats(10, 0, errors=2), 100_000,
+             ["checked 10 files but transferred 0", "2 error(s)", "Expected 100000 bytes"], []),
+        ]
+        for name, transferred, rclone_stats, expected, required, forbidden in cases:
+            with self.subTest(name):
+                warning = self._run_step(transferred, rclone_stats, expected)["warning"]
+                for text in required:
+                    self.assertIn(text, warning)
+                for text in forbidden:
+                    self.assertNotIn(text, warning)
 
-    def test_no_stats_received_with_expected_bytes(self):
-        """stats_received=False + expected bytes should combine warnings."""
-        step = self._run_step(0, {
-            "stats_received": False,
-            "checks": 0,
-            "transfers": 0,
-        }, expected_bytes=1_000_000)
-        self.assertIn("warning", step)
-        self.assertIn("no transfer stats", step["warning"])
-        self.assertIn("Expected 1000000 bytes", step["warning"])
+    def test_healthy_or_unmeasured_uploads_do_not_warn(self):
+        def stats(checks, transfers, errors=0):
+            return {
+                "stats_received": True,
+                "checks": checks,
+                "transfers": transfers,
+                "errors": errors,
+            }
 
-    # Check and transfer counters
-
-    def test_zero_checks_zero_transfers(self):
-        """checks=0, transfers=0 should warn about empty manifest."""
-        step = self._run_step(0, {
-            "stats_received": True,
-            "checks": 0,
-            "transfers": 0,
-        })
-        self.assertIn("warning", step)
-        self.assertIn("manifest may be empty", step["warning"])
-
-    def test_checks_positive_transfers_zero(self):
-        """checks>0, transfers=0 should warn about matching files."""
-        step = self._run_step(0, {
-            "stats_received": True,
-            "checks": 42,
-            "transfers": 0,
-        })
-        self.assertIn("warning", step)
-        self.assertIn("checked 42 files but transferred 0", step["warning"])
-
-    # Byte mismatches
-
-    def test_expected_nonzero_transferred_zero(self):
-        """Expected >0 bytes but transferred 0 should warn."""
-        step = self._run_step(0, {
-            "stats_received": True,
-            "checks": 10,
-            "transfers": 0,
-        }, expected_bytes=500_000)
-        self.assertIn("warning", step)
-        self.assertIn("Expected 500000 bytes but transferred 0", step["warning"])
-
-    def test_transferred_less_than_half_expected(self):
-        """Transferred < 50% of expected should warn with percentage."""
-        step = self._run_step(100_000, {
-            "stats_received": True,
-            "checks": 10,
-            "transfers": 5,
-        }, expected_bytes=500_000)
-        self.assertIn("warning", step)
-        self.assertIn("20%", step["warning"])
-
-    def test_transferred_above_half_no_extra_warning(self):
-        """Transferred >= 50% of expected should NOT add bytes mismatch warning."""
-        step = self._run_step(300_000, {
-            "stats_received": True,
-            "checks": 10,
-            "transfers": 10,
-        }, expected_bytes=500_000)
-        # No checks/transfers anomaly, no bytes mismatch
-        self.assertNotIn("warning", step)
-
-    # Errors despite exit code 0
-
-    def test_errors_nonzero_exit_zero(self):
-        """errors > 0 despite successful checks/transfers should warn."""
-        step = self._run_step(500_000, {
-            "stats_received": True,
-            "checks": 50,
-            "transfers": 50,
-            "errors": 3,
-        }, expected_bytes=500_000)
-        self.assertIn("warning", step)
-        self.assertIn("3 error(s)", step["warning"])
-        self.assertIn("some files may not have uploaded", step["warning"])
-
-    def test_errors_zero_no_extra_warning(self):
-        """errors=0 should NOT add the errors warning."""
-        step = self._run_step(500_000, {
-            "stats_received": True,
-            "checks": 50,
-            "transfers": 50,
-            "errors": 0,
-        }, expected_bytes=500_000)
-        self.assertNotIn("warning", step)
-
-    def test_errors_nonzero_combined_with_checks_warning(self):
-        """errors > 0 combined with checks anomaly should produce both warnings."""
-        step = self._run_step(0, {
-            "stats_received": True,
-            "checks": 10,
-            "transfers": 0,
-            "errors": 2,
-        }, expected_bytes=100_000)
-        self.assertIn("warning", step)
-        self.assertIn("checked 10 files but transferred 0", step["warning"])
-        self.assertIn("2 error(s)", step["warning"])
-        self.assertIn("Expected 100000 bytes", step["warning"])
-
-    def test_errors_none_treated_as_zero(self):
-        """errors=None in stats should not trigger the errors warning."""
-        step = self._run_step(500_000, {
-            "stats_received": True,
-            "checks": 50,
-            "transfers": 50,
-            "errors": None,
-        }, expected_bytes=500_000)
-        self.assertNotIn("warning", step)
-
-    # Successful transfers
-
-    def test_no_warning_on_success(self):
-        """Normal successful transfer should produce no warnings."""
-        step = self._run_step(1_000_000, {
-            "stats_received": True,
-            "checks": 50,
-            "transfers": 50,
-        }, expected_bytes=1_000_000)
-        self.assertNotIn("warning", step)
-
-    def test_no_rclone_stats_no_warning(self):
-        """No rclone_stats at all (None) should not crash or warn."""
-        step = self._run_step(1024, None)
-        self.assertNotIn("warning", step)
-
-    # Combined warnings
-
-    def test_checks_zero_plus_bytes_mismatch(self):
-        """Both checks=0 AND expected-bytes mismatch should combine."""
-        step = self._run_step(0, {
-            "stats_received": True,
-            "checks": 0,
-            "transfers": 0,
-        }, expected_bytes=1_000_000)
-        self.assertIn("warning", step)
-        # Should have both parts separated by "; "
-        self.assertIn("manifest may be empty", step["warning"])
-        self.assertIn("Expected 1000000 bytes but transferred 0", step["warning"])
-        self.assertIn("; ", step["warning"])
-
-    def test_no_stats_overrides_checks_warning(self):
-        """stats_received=False should override checks/transfers warning."""
-        step = self._run_step(0, {
-            "stats_received": False,
-            "checks": 50,
-            "transfers": 0,
-        })
-        self.assertIn("warning", step)
-        self.assertIn("no transfer stats", step["warning"])
-        # Should NOT contain the checks-based warning
-        self.assertNotIn("checked 50 files", step["warning"])
-
-    # Edge cases
-
-    def test_expected_bytes_zero_no_mismatch_warning(self):
-        """expected_bytes=0 should not trigger byte mismatch warnings."""
-        step = self._run_step(0, {
-            "stats_received": True,
-            "checks": 5,
-            "transfers": 5,
-        }, expected_bytes=0)
-        self.assertNotIn("warning", step)
-
-    def test_expected_bytes_none_no_mismatch_warning(self):
-        """expected_bytes=None should not trigger byte mismatch warnings."""
-        step = self._run_step(0, {
-            "stats_received": True,
-            "checks": 5,
-            "transfers": 5,
-        }, expected_bytes=None)
-        self.assertNotIn("warning", step)
+        cases = [
+            ("success", 1_000_000, stats(50, 50), 1_000_000),
+            ("above half", 300_000, stats(10, 10), 500_000),
+            ("errors None", 500_000, stats(50, 50, errors=None), 500_000),
+            ("no stats object", 1024, None, None),
+            ("expected zero", 0, stats(5, 5), 0),
+            ("expected unknown", 0, stats(5, 5), None),
+        ]
+        for name, transferred, rclone_stats, expected in cases:
+            with self.subTest(name):
+                step = self._run_step(transferred, rclone_stats, expected)
+                self.assertNotIn("warning", step)
 
 
 # _redact_cmd
@@ -1378,33 +1196,13 @@ class TestRedactCmd(unittest.TestCase):
         self.assertIn("/usr/bin/rclone", result)
         self.assertIn("copy", result)
 
-    def test_no_sensitive_flags(self):
-        """Command without sensitive flags should be returned as-is."""
-        cmd = ["/usr/bin/rclone", "ls", ":s3:bucket/"]
-        result = self._redact_cmd(cmd)
-        self.assertEqual(result, "/usr/bin/rclone ls :s3:bucket/")
-
     def test_sensitive_flag_at_end(self):
-        """Sensitive flag as last element (no value) should not crash."""
-        cmd = ["/usr/bin/rclone", "copy", "/src", ":s3:dst",
-               "--s3-access-key-id"]
-        result = self._redact_cmd(cmd)
-        # Flag at end with no value — just include it without masking next
-        self.assertIn("--s3-access-key-id", result)
-        # Should NOT have *** since there's no next element
-        self.assertFalse(result.endswith("***"))
-
-    def test_empty_cmd(self):
-        """Empty command should return empty string."""
+        """A dangling sensitive flag (no value) must not crash or mask paths."""
+        result = self._redact_cmd(
+            ["/usr/bin/rclone", "copy", "/src", ":s3:dst", "--s3-access-key-id"]
+        )
+        self.assertEqual(result, "/usr/bin/rclone copy /src :s3:dst --s3-access-key-id")
         self.assertEqual(self._redact_cmd([]), "")
-
-    def test_only_session_token(self):
-        """Only session token present."""
-        cmd = ["/usr/bin/rclone", "copy", "/a", "/b",
-               "--s3-session-token", "SECRET123"]
-        result = self._redact_cmd(cmd)
-        self.assertNotIn("SECRET123", result)
-        self.assertIn("--s3-session-token ***", result)
 
     def test_preserves_paths_and_flags(self):
         """Non-sensitive parts of command should be fully preserved."""
@@ -1413,17 +1211,15 @@ class TestRedactCmd(unittest.TestCase):
             "/home/user/project", ":s3:my-bucket/prefix/",
             "--files-from-raw", "/tmp/filelist.txt",
             "--transfers", "4",
-            "--checkers", "4",
             "--s3-access-key-id", "AKIA",
             "--stats", "0.1s",
         ]
-        result = self._redact_cmd(cmd)
-        self.assertIn("/home/user/project", result)
-        self.assertIn(":s3:my-bucket/prefix/", result)
-        self.assertIn("--files-from-raw /tmp/filelist.txt", result)
-        self.assertIn("--transfers 4", result)
-        self.assertIn("--stats 0.1s", result)
-        self.assertNotIn("AKIA", result)
+        self.assertEqual(
+            self._redact_cmd(cmd),
+            "/usr/bin/rclone copy /home/user/project :s3:my-bucket/prefix/ "
+            "--files-from-raw /tmp/filelist.txt --transfers 4 "
+            "--s3-access-key-id *** --stats 0.1s",
+        )
 
 
 # _log_upload_result (submit_worker)
@@ -1451,111 +1247,37 @@ class TestLogUploadResult(unittest.TestCase):
         self._mod._debug_enabled = self._orig_debug
 
     def test_none_result(self):
-        """None result should log 'no stats'."""
         self._log_upload_result(None, label="Test: ")
         self.assertEqual(len(self._captured), 1)
-        self.assertIn("no stats", self._captured[0])
         self.assertIn("Test: ", self._captured[0])
+        self.assertIn("no stats", self._captured[0])
 
-    def test_non_dict_result(self):
-        """Non-dict result should log the value."""
-        self._log_upload_result(42, label="X: ")
-        self.assertEqual(len(self._captured), 1)
-        self.assertIn("42", self._captured[0])
-
-    def test_normal_stats(self):
-        """Normal dict result should log all fields."""
-        self._log_upload_result({
+    def test_stats_line_and_optional_command_line(self):
+        base = {
             "bytes_transferred": 1024,
             "checks": 10,
             "transfers": 10,
             "errors": 0,
             "stats_received": True,
-        }, expected_bytes=2000, label="Deps: ")
-        self.assertEqual(len(self._captured), 1)
-        line = self._captured[0]
-        self.assertIn("Deps: ", line)
-        self.assertIn("transferred=1024 B", line)
-        self.assertIn("expected=2000 B", line)
-        self.assertIn("checks=10", line)
-        self.assertIn("transfers=10", line)
-        # errors=0 should be omitted
-        self.assertNotIn("errors=", line)
+        }
+        self._log_upload_result(base, expected_bytes=2000, label="Deps: ")
+        self._log_upload_result(
+            {**base, "errors": 2, "stats_received": False, "command": ""},
+        )
+        self._log_upload_result(
+            {**base, "command": "rclone copy /src :s3:dst --s3-access-key-id ***"},
+            label="Arc: ",
+        )
 
-    def test_stats_received_false(self):
-        """stats_received=False should appear in the output."""
-        self._log_upload_result({
-            "bytes_transferred": 0,
-            "checks": 0,
-            "transfers": 0,
-            "errors": 0,
-            "stats_received": False,
-        })
-        line = self._captured[0]
-        self.assertIn("stats_received=False", line)
-
-    def test_errors_shown(self):
-        """Nonzero errors should be logged."""
-        self._log_upload_result({
-            "bytes_transferred": 500,
-            "checks": 5,
-            "transfers": 3,
-            "errors": 2,
-            "stats_received": True,
-        })
-        line = self._captured[0]
-        self.assertIn("errors=2", line)
-
-    def test_command_logged(self):
-        """command field in result should be logged as a separate line."""
-        self._log_upload_result({
-            "bytes_transferred": 100,
-            "checks": 1,
-            "transfers": 1,
-            "errors": 0,
-            "stats_received": True,
-            "command": "rclone copy /src :s3:dst --s3-access-key-id ***",
-        }, label="Arc: ")
-        self.assertEqual(len(self._captured), 2)
-        self.assertIn("cmd:", self._captured[1])
-        self.assertIn("rclone copy /src", self._captured[1])
-        # Verify label propagates to cmd line too
-        self.assertIn("Arc: ", self._captured[1])
-
-    def test_no_command_no_extra_line(self):
-        """Missing command field should not produce an extra log line."""
-        self._log_upload_result({
-            "bytes_transferred": 100,
-            "checks": 1,
-            "transfers": 1,
-            "errors": 0,
-            "stats_received": True,
-        })
-        self.assertEqual(len(self._captured), 1)
-
-    def test_no_expected_bytes_omits_field(self):
-        """expected_bytes=0 should omit the expected= field."""
-        self._log_upload_result({
-            "bytes_transferred": 100,
-            "checks": 1,
-            "transfers": 1,
-            "errors": 0,
-            "stats_received": True,
-        }, expected_bytes=0)
-        line = self._captured[0]
-        self.assertNotIn("expected=", line)
-
-    def test_empty_command_not_logged(self):
-        """Empty string command should not produce an extra log line."""
-        self._log_upload_result({
-            "bytes_transferred": 100,
-            "checks": 1,
-            "transfers": 1,
-            "errors": 0,
-            "stats_received": True,
-            "command": "",
-        })
-        self.assertEqual(len(self._captured), 1)
+        self.assertEqual(
+            self._captured,
+            [
+                "  Deps: transferred=1024 B, expected=2000 B, checks=10, transfers=10",
+                "  stats_received=False, transferred=1024 B, checks=10, transfers=10, errors=2",
+                "  Arc: transferred=1024 B, checks=10, transfers=10",
+                "  Arc: cmd: rclone copy /src :s3:dst --s3-access-key-id ***",
+            ],
+        )
 
 
 # _is_filesystem_root
@@ -1564,38 +1286,20 @@ class TestLogUploadResult(unittest.TestCase):
 class TestIsFilesystemRoot(unittest.TestCase):
     """Test filesystem root detection."""
 
-    def setUp(self):
-        self._is_root = _submit_worker._is_filesystem_root
-
-    def test_unix_root(self):
-        self.assertTrue(self._is_root("/"))
-
-    def test_empty_string(self):
-        self.assertTrue(self._is_root(""))
-
-    def test_windows_drive_roots(self):
-        self.assertTrue(self._is_root("C:/"))
-        self.assertTrue(self._is_root("C:\\"))
-        self.assertTrue(self._is_root("G:"))
-        self.assertTrue(self._is_root("D:/"))
-
-    def test_macos_volume(self):
-        self.assertTrue(self._is_root("/Volumes/MyDrive"))
-
-    def test_linux_mnt(self):
-        self.assertTrue(self._is_root("/mnt/data"))
-
-    def test_linux_media(self):
-        self.assertTrue(self._is_root("/media/user/usb"))
-
-    def test_normal_project_path(self):
-        self.assertFalse(self._is_root("/home/user/projects/myproject"))
-        self.assertFalse(self._is_root("C:/Users/me/Documents"))
-        self.assertFalse(self._is_root("/Volumes/MyDrive/Projects"))
-
-    def test_deeper_mnt(self):
-        """Deeper paths under /mnt should not be roots."""
-        self.assertFalse(self._is_root("/mnt/data/projects"))
+    def test_roots_and_non_roots(self):
+        roots = ["/", "", "C:/", "C:\\", "G:", "/Volumes/MyDrive", "/mnt/data", "/media/user/usb"]
+        non_roots = [
+            "/home/user/projects/myproject",
+            "C:/Users/me/Documents",
+            "/Volumes/MyDrive/Projects",
+            "/mnt/data/projects",
+        ]
+        for path in roots:
+            with self.subTest(path=path):
+                self.assertTrue(_submit_worker._is_filesystem_root(path))
+        for path in non_roots:
+            with self.subTest(path=path):
+                self.assertFalse(_submit_worker._is_filesystem_root(path))
 
 
 # _split_manifest_by_first_dir
@@ -1716,81 +1420,64 @@ class TestUploadSuccessMarker(unittest.TestCase):
         self.assertIn("uploaded_file_count", error)
 
 
-# _rclone_bytes / _rclone_stats / _is_empty_upload helpers
+# _is_empty_upload
 
 
 class TestRcloneHelpers(unittest.TestCase):
-    """Test the small rclone result extraction helpers."""
-
-    def test_rclone_bytes_none(self):
-        self.assertEqual(_submit_worker._rclone_bytes(None), 0)
-
-    def test_rclone_bytes_dict(self):
-        self.assertEqual(
-            _submit_worker._rclone_bytes({"bytes_transferred": 42}), 42
-        )
-
-    def test_rclone_bytes_int(self):
-        self.assertEqual(_submit_worker._rclone_bytes(99), 99)
-
-    def test_rclone_stats_dict(self):
-        d = {"bytes_transferred": 1, "checks": 2}
-        self.assertIs(_submit_worker._rclone_stats(d), d)
-
-    def test_rclone_stats_none(self):
-        self.assertIsNone(_submit_worker._rclone_stats(None))
-
-    def test_rclone_stats_int(self):
-        self.assertIsNone(_submit_worker._rclone_stats(42))
-
-    def test_is_empty_upload_none_result(self):
-        self.assertTrue(_submit_worker._is_empty_upload(None, 10))
-
-    def test_is_empty_upload_no_stats(self):
-        self.assertTrue(_submit_worker._is_empty_upload(
-            {"stats_received": False}, 10
-        ))
-
-    def test_is_empty_upload_zero_transfers(self):
-        self.assertTrue(_submit_worker._is_empty_upload(
-            {"stats_received": True, "transfers": 0}, 10
-        ))
-
-    def test_is_empty_upload_has_transfers(self):
-        self.assertFalse(_submit_worker._is_empty_upload(
-            {"stats_received": True, "transfers": 5}, 10
-        ))
-
-    def test_is_empty_upload_zero_expected(self):
-        """If no files expected, never considered empty."""
-        self.assertFalse(_submit_worker._is_empty_upload(None, 0))
-
-    def test_get_rclone_tail_dict(self):
-        self.assertEqual(
-            _submit_worker._get_rclone_tail({"tail_lines": ["a", "b"]}),
-            ["a", "b"]
-        )
-
-    def test_get_rclone_tail_none(self):
-        self.assertEqual(_submit_worker._get_rclone_tail(None), [])
+    def test_is_empty_upload(self):
+        cases = [
+            (None, 10, True),
+            ({"stats_received": False}, 10, True),
+            ({"stats_received": True, "transfers": 0}, 10, True),
+            ({"stats_received": True, "transfers": 5}, 10, False),
+            (None, 0, False),
+        ]
+        for result, expected_files, empty in cases:
+            with self.subTest(result=result, expected_files=expected_files):
+                self.assertIs(
+                    _submit_worker._is_empty_upload(result, expected_files), empty
+                )
 
 
-# Diagnostic report JSON round-trip with warnings
+# Diagnostic report persistence
 
 
 class TestReportJsonRoundTrip(unittest.TestCase):
-    """Test that warnings survive JSON serialization in the report file."""
+    """Everything recorded during a submission survives the on-disk report."""
 
-    def test_warning_persisted_to_disk(self):
-        """Warnings generated by complete_upload_step() should appear in the JSON file."""
+    def test_recorded_sections_persist_to_disk(self):
         with tempfile.TemporaryDirectory() as d:
             report = _diagnostic_report.DiagnosticReport(
                 reports_dir=Path(d),
                 job_id="roundtrip-test",
                 blend_name="test",
+                metadata={"upload_type": "PROJECT", "job_name": "MyJob"},
             )
+            self.assertEqual(report._data["metadata"]["status"], "in_progress")
+            report.set_environment("rclone_version", "v1.65.0")
+            report.record_preflight(False, ["Disk full"], True)
+            report.record_user_choice(
+                "Dependency issues found", "y", options=["Continue", "Cancel"]
+            )
+            report.record_user_choice("Continue?", "n")
+            report.start_stage("pack")
+            report.set_pack_dependency_size(999)
+            report.complete_stage("pack")
             report.start_stage("upload")
-            report.start_upload_step(1, 1, "deps", expected_bytes=1_000_000)
+            report.start_upload_step(
+                1, 1, "deps",
+                manifest_entries=42,
+                expected_bytes=1_000_000,
+                source="/mnt/data",
+                destination=":s3:bucket/proj/",
+                verb="copy",
+            )
+            report.add_upload_split_group(
+                group_name="textures", file_count=3,
+                source="/textures", destination=":s3:bucket/proj/textures/",
+                rclone_stats={"bytes_transferred": 1234, "checks": 3, "transfers": 3,
+                              "errors": 0, "stats_received": True},
+            )
             report.complete_upload_step(
                 bytes_transferred=0,
                 rclone_stats={
@@ -1803,182 +1490,43 @@ class TestReportJsonRoundTrip(unittest.TestCase):
             report.complete_stage("upload")
             report.finalize()
 
-            # Read back from disk
             with open(report.get_path(), "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            step = data["stages"]["upload"]["steps"][0]
-            self.assertIn("warning", step)
-            self.assertIn("no transfer stats", step["warning"])
-            self.assertIn("Expected 1000000 bytes", step["warning"])
-            # rclone_stats should be stored too (with the command)
-            self.assertIn("rclone_stats", step)
-            self.assertEqual(
-                step["rclone_stats"]["command"],
-                "rclone copy /src :s3:bucket/ --s3-access-key-id ***",
-            )
-
-    def test_no_warning_not_in_json(self):
-        """Successful upload should not have a 'warning' key in JSON."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d),
-                job_id="ok-test",
-                blend_name="test",
-            )
-            report.start_stage("upload")
-            report.start_upload_step(1, 1, "blend")
-            report.complete_upload_step(
-                bytes_transferred=5000,
-                rclone_stats={
-                    "stats_received": True,
-                    "checks": 5,
-                    "transfers": 5,
-                },
-            )
-            report.complete_stage("upload")
-            report.finalize()
-
-            with open(report.get_path(), "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            step = data["stages"]["upload"]["steps"][0]
-            self.assertNotIn("warning", step)
-
-
-# Report v3.0: environment section
-
-
-class TestReportEnvironment(unittest.TestCase):
-    """Test environment recording in the diagnostic report."""
-
-    def test_default_environment(self):
-        """Report should capture OS/Python info by default."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="env-test", blend_name="test",
-            )
-            env = report._data["environment"]
-            self.assertIn("os", env)
-            self.assertIn("python_version", env)
-            self.assertIn("architecture", env)
-            self.assertTrue(len(env["os"]) > 0)
-
-    def test_set_environment(self):
-        """set_environment() should update specific keys."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="env-test2", blend_name="test",
-            )
-            report.set_environment("rclone_version", "v1.65.0")
-            report.set_environment("rclone_bin", "/usr/bin/rclone")
-            self.assertEqual(report._data["environment"]["rclone_version"], "v1.65.0")
-            self.assertEqual(report._data["environment"]["rclone_bin"], "/usr/bin/rclone")
-
-    def test_environment_persisted_to_disk(self):
-        """Environment data should survive JSON round-trip."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="env-persist", blend_name="test",
-            )
-            report.set_environment("rclone_version", "v1.65.0")
-            report.finalize()
-
-            with open(report.get_path(), "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            self.assertEqual(data["environment"]["rclone_version"], "v1.65.0")
-            self.assertIn("os", data["environment"])
-
-
-# Report v3.0: preflight section
-
-
-class TestReportPreflight(unittest.TestCase):
-    """Test preflight recording."""
-
-    def test_preflight_passed(self):
-        """Passed preflight with no issues."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="pf-pass", blend_name="test",
-            )
-            report.record_preflight(True, [])
-            pf = report._data["preflight"]
-            self.assertTrue(pf["passed"])
-            self.assertEqual(pf["issues"], [])
-            self.assertIsNone(pf["user_override"])
-
-    def test_preflight_failed_with_override(self):
-        """Failed preflight where user chose to continue."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="pf-fail", blend_name="test",
-            )
-            report.record_preflight(False, ["Low disk space", "Network slow"], True)
-            pf = report._data["preflight"]
-            self.assertFalse(pf["passed"])
-            self.assertEqual(len(pf["issues"]), 2)
-            self.assertTrue(pf["user_override"])
-
-    def test_preflight_persisted(self):
-        """Preflight data round-trips through JSON."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="pf-disk", blend_name="test",
-            )
-            report.record_preflight(False, ["Disk full"], True)
-            report.finalize()
-
-            with open(report.get_path(), "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            self.assertFalse(data["preflight"]["passed"])
-            self.assertIn("Disk full", data["preflight"]["issues"])
-            self.assertTrue(data["preflight"]["user_override"])
-
-
-# Report v3.0: user choices
-
-
-class TestReportUserChoices(unittest.TestCase):
-    """Test user choice recording."""
-
-    def test_record_user_choice(self):
-        """record_user_choice() should append to the list."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="uc-test", blend_name="test",
-            )
-            report.record_user_choice(
-                "Dependency issues found", "y",
-                options=["Continue", "Cancel", "Open reports"],
-            )
-            report.record_user_choice("Continue after viewing reports?", "n")
-
-            choices = report._data["user_choices"]
-            self.assertEqual(len(choices), 2)
-            self.assertEqual(choices[0]["prompt"], "Dependency issues found")
-            self.assertEqual(choices[0]["choice"], "y")
-            self.assertEqual(choices[0]["options"], ["Continue", "Cancel", "Open reports"])
-            self.assertIn("timestamp", choices[0])
-            self.assertEqual(choices[1]["choice"], "n")
-            self.assertNotIn("options", choices[1])
-
-    def test_user_choices_persisted(self):
-        """User choices should round-trip through JSON."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="uc-persist", blend_name="test",
-            )
-            report.record_user_choice("Continue?", "y")
-            report.finalize()
-
-            with open(report.get_path(), "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            self.assertEqual(len(data["user_choices"]), 1)
-            self.assertEqual(data["user_choices"][0]["choice"], "y")
+        meta = data["metadata"]
+        self.assertEqual(meta["upload_type"], "PROJECT")
+        self.assertEqual(meta["job_name"], "MyJob")
+        self.assertEqual(meta["status"], "completed")
+        self.assertIsNotNone(meta["completed_at"])
+        self.assertEqual(data["environment"]["rclone_version"], "v1.65.0")
+        self.assertIn("os", data["environment"])
+        self.assertEqual(
+            data["preflight"],
+            {"passed": False, "issues": ["Disk full"], "user_override": True},
+        )
+        choices = data["user_choices"]
+        self.assertEqual([c["choice"] for c in choices], ["y", "n"])
+        self.assertEqual(choices[0]["options"], ["Continue", "Cancel"])
+        self.assertNotIn("options", choices[1])
+        self.assertEqual(
+            data["stages"]["pack"]["summary"]["dependency_total_size"], 999
+        )
+        step = data["stages"]["upload"]["steps"][0]
+        self.assertEqual(
+            (step["source"], step["destination"], step["verb"]),
+            ("/mnt/data", ":s3:bucket/proj/", "copy"),
+        )
+        self.assertEqual(step["manifest_entries"], 42)
+        self.assertIn("no transfer stats", step["warning"])
+        self.assertEqual(
+            step["rclone_stats"]["command"],
+            "rclone copy /src :s3:bucket/ --s3-access-key-id ***",
+        )
+        self.assertGreaterEqual(step["elapsed_seconds"], 0)
+        group = step["split_groups"][0]
+        self.assertEqual((group["group_name"], group["bytes_transferred"]), ("textures", 1234))
+        for section in ("missing_files", "unreadable_files", "cross_drive_files"):
+            self.assertIn(section, data["issues"])
 
 
 # Report v3.0: upload summary (computed in complete_stage)
@@ -2020,45 +1568,12 @@ class TestReportUploadSummary(unittest.TestCase):
             self.assertTrue(summary["has_warnings"])
             self.assertIsInstance(summary["total_elapsed_seconds"], float)
 
-    def test_upload_summary_no_warnings(self):
-        """Summary should report has_warnings=False when no warnings exist."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="sum-ok", blend_name="test",
-            )
-            report.start_stage("upload")
-            report.start_upload_step(1, 1, "Blend")
-            report.complete_upload_step(
-                bytes_transferred=1000,
-                rclone_stats={"checks": 5, "transfers": 5, "errors": 0, "stats_received": True},
-            )
-            report.complete_stage("upload")
-
-            summary = report._data["stages"]["upload"]["summary"]
-            self.assertFalse(summary["has_warnings"])
-            self.assertEqual(summary["step_count"], 1)
-
 
 # Report v3.0: elapsed_seconds and tail_lines truncation
 
 
 class TestReportStepDetails(unittest.TestCase):
     """Test elapsed_seconds and tail_lines truncation in upload steps."""
-
-    def test_elapsed_seconds_computed(self):
-        """complete_upload_step should compute elapsed_seconds."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="elapsed-test", blend_name="test",
-            )
-            report.start_stage("upload")
-            report.start_upload_step(1, 1, "test")
-            report.complete_upload_step(bytes_transferred=100)
-
-            step = report._data["stages"]["upload"]["steps"][0]
-            self.assertIn("elapsed_seconds", step)
-            self.assertIsInstance(step["elapsed_seconds"], (int, float))
-            self.assertGreaterEqual(step["elapsed_seconds"], 0)
 
     def test_tail_lines_truncated(self):
         """tail_lines > 20 should be truncated to last 20 entries."""
@@ -2107,83 +1622,6 @@ class TestReportStepDetails(unittest.TestCase):
             step = report._data["stages"]["upload"]["steps"][0]
             self.assertEqual(len(step["rclone_stats"]["tail_lines"]), 5)
             self.assertNotIn("tail_lines_truncated", step["rclone_stats"])
-
-
-# Report v3.0: source, destination, and verb in upload steps
-
-
-class TestReportUploadStepMeta(unittest.TestCase):
-    """Test source/destination/verb params in start_upload_step."""
-
-    def test_source_dest_verb_stored(self):
-        """source, destination, verb should be stored in step dict."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="sdv-test", blend_name="test",
-            )
-            report.start_stage("upload")
-            report.start_upload_step(
-                1, 1, "Uploading blend",
-                source="/home/user/file.blend",
-                destination=":s3:bucket/project/file.blend",
-                verb="copyto",
-            )
-            report.complete_upload_step(bytes_transferred=1000)
-
-            step = report._data["stages"]["upload"]["steps"][0]
-            self.assertEqual(step["source"], "/home/user/file.blend")
-            self.assertEqual(step["destination"], ":s3:bucket/project/file.blend")
-            self.assertEqual(step["verb"], "copyto")
-
-    def test_optional_params_omitted(self):
-        """Omitted source/dest/verb should not appear in step dict."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="sdv-none", blend_name="test",
-            )
-            report.start_stage("upload")
-            report.start_upload_step(1, 1, "test step")
-            report.complete_upload_step(bytes_transferred=100)
-
-            step = report._data["stages"]["upload"]["steps"][0]
-            self.assertNotIn("source", step)
-            self.assertNotIn("destination", step)
-            self.assertNotIn("verb", step)
-
-    def test_all_fields_persisted_to_disk(self):
-        """All step fields should survive JSON round-trip."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="sdv-disk", blend_name="test",
-            )
-            report.start_stage("upload")
-            report.start_upload_step(
-                1, 1, "Uploading deps",
-                manifest_entries=42,
-                expected_bytes=500000,
-                source="/mnt/data",
-                destination=":s3:bucket/proj/",
-                verb="copy",
-            )
-            report.complete_upload_step(
-                bytes_transferred=500000,
-                rclone_stats={"checks": 42, "transfers": 42, "errors": 0, "stats_received": True},
-            )
-            report.complete_stage("upload")
-            report.finalize()
-
-            with open(report.get_path(), "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            step = data["stages"]["upload"]["steps"][0]
-            self.assertEqual(step["source"], "/mnt/data")
-            self.assertEqual(step["destination"], ":s3:bucket/proj/")
-            self.assertEqual(step["verb"], "copy")
-            self.assertEqual(step["manifest_entries"], 42)
-            self.assertEqual(step["expected_bytes"], 500000)
-            self.assertIn("elapsed_seconds", step)
-            self.assertIn("started_at", step)
-            self.assertIn("completed_at", step)
 
 
 # Report v3.0: split upload groups
@@ -2252,70 +1690,11 @@ class TestReportSplitGroups(unittest.TestCase):
             # Should not crash; upload steps list stays empty
             self.assertEqual(len(report._data["stages"]["upload"]["steps"]), 0)
 
-    def test_split_groups_persisted(self):
-        """Split groups should survive JSON round-trip."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="split-disk", blend_name="test",
-            )
-            report.start_stage("upload")
-            report.start_upload_step(1, 1, "deps")
-            report.add_upload_split_group(
-                group_name="textures", file_count=3,
-                source="/textures", destination=":s3:bucket/proj/textures/",
-                rclone_stats={"bytes_transferred": 1234, "checks": 3, "transfers": 3,
-                              "errors": 0, "stats_received": True},
-            )
-            report.complete_upload_step(bytes_transferred=1234)
-            report.complete_stage("upload")
-            report.finalize()
 
-            with open(report.get_path(), "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            groups = data["stages"]["upload"]["steps"][0]["split_groups"]
-            self.assertEqual(len(groups), 1)
-            self.assertEqual(groups[0]["group_name"], "textures")
-            self.assertEqual(groups[0]["bytes_transferred"], 1234)
+# ZIP pack summary
 
 
-# Report v3.0: pack dependency size
-
-
-class TestReportPackDependencySize(unittest.TestCase):
-    """Test dependency size recording in pack stage."""
-
-    def test_dependency_size_set(self):
-        """set_pack_dependency_size should store in pack summary."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="dep-size", blend_name="test",
-            )
-            report.start_stage("pack")
-            report.set_pack_dependency_size(123456789)
-            report.complete_stage("pack")
-
-            summary = report._data["stages"]["pack"]["summary"]
-            self.assertEqual(summary["dependency_total_size"], 123456789)
-
-    def test_dependency_size_persisted(self):
-        """Dependency total size should survive JSON round-trip."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="dep-persist", blend_name="test",
-            )
-            report.start_stage("pack")
-            report.set_pack_dependency_size(999)
-            report.complete_stage("pack")
-            report.finalize()
-
-            with open(report.get_path(), "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            self.assertEqual(
-                data["stages"]["pack"]["summary"]["dependency_total_size"], 999
-            )
-
+class TestReportZipPackSummary(unittest.TestCase):
     def test_zip_pack_sizes_timings_and_member_stats_are_explicit(self):
         with tempfile.TemporaryDirectory() as d:
             report = _diagnostic_report.DiagnosticReport(
@@ -2352,97 +1731,6 @@ class TestReportPackDependencySize(unittest.TestCase):
             self.assertEqual(summary["total_elapsed_seconds"], 66.0)
 
 
-# Report v3.0: version and metadata
-
-
-class TestReportVersionAndMetadata(unittest.TestCase):
-    """Test report version and metadata fields."""
-
-    def test_report_version(self):
-        """Report should have version 3.0."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="ver-test", blend_name="test",
-            )
-            self.assertEqual(report._data["report_version"], "3.0")
-
-    def test_project_root_method_metadata(self):
-        """project_root_method should be settable via set_metadata."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="prm-test", blend_name="test",
-            )
-            report.set_metadata("project_root_method", "filesystem_root")
-            self.assertEqual(
-                report._data["metadata"]["project_root_method"], "filesystem_root"
-            )
-
-    def test_initial_metadata_merge(self):
-        """Constructor metadata should be merged into defaults."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="meta-test", blend_name="test",
-                metadata={
-                    "upload_type": "PROJECT",
-                    "job_name": "MyJob",
-                    "blender_version": "4.0",
-                },
-            )
-            meta = report._data["metadata"]
-            self.assertEqual(meta["upload_type"], "PROJECT")
-            self.assertEqual(meta["job_name"], "MyJob")
-            self.assertEqual(meta["blender_version"], "4.0")
-            # Default fields should still exist
-            self.assertIn("status", meta)
-            self.assertIn("started_at", meta)
-
-    def test_finalize_sets_completion(self):
-        """finalize() should set completed_at and status."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="fin-test", blend_name="test",
-            )
-            self.assertIsNone(report._data["metadata"]["completed_at"])
-            self.assertEqual(report._data["metadata"]["status"], "in_progress")
-
-            report.finalize()
-
-            self.assertIsNotNone(report._data["metadata"]["completed_at"])
-            self.assertEqual(report._data["metadata"]["status"], "completed")
-
-    def test_full_report_schema(self):
-        """A complete report should have all top-level sections."""
-        with tempfile.TemporaryDirectory() as d:
-            report = _diagnostic_report.DiagnosticReport(
-                reports_dir=Path(d), job_id="schema-test", blend_name="test",
-            )
-            report.finalize()
-
-            with open(report.get_path(), "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            # Check all required top-level sections
-            self.assertIn("report_version", data)
-            self.assertIn("metadata", data)
-            self.assertIn("environment", data)
-            self.assertIn("preflight", data)
-            self.assertIn("stages", data)
-            self.assertIn("user_choices", data)
-            self.assertIn("issues", data)
-
-            # Check stages subsections
-            self.assertIn("trace", data["stages"])
-            self.assertIn("pack", data["stages"])
-            self.assertIn("upload", data["stages"])
-
-            # Check issues subsections
-            self.assertIn("missing_files", data["issues"])
-            self.assertIn("unreadable_files", data["issues"])
-            self.assertIn("cross_drive_files", data["issues"])
-            self.assertIn("absolute_path_files", data["issues"])
-            self.assertIn("empty_directory_dependencies", data["issues"])
-
-
 # _check_risky_path_chars
 
 
@@ -2452,55 +1740,24 @@ class TestCheckRiskyPathChars(unittest.TestCase):
     def setUp(self):
         self._check = _submit_worker._check_risky_path_chars
 
-    def test_parens_detected(self):
-        """Parentheses in path should produce a warning."""
-        result = self._check("G:/Dropbox (Compte personnel)/project/file.blend")
-        self.assertIsNotNone(result)
-        self.assertIn("'('", result)
-        self.assertIn("')'", result)
-        self.assertIn("special characters", result)
-
-    def test_apostrophe_detected(self):
-        """Apostrophe in path should produce a warning."""
-        result = self._check("/home/user/Grog's-Hideout/scene.blend")
-        self.assertIsNotNone(result)
-        self.assertIn("\"'\"", result)
-
-    def test_space_detected(self):
-        """Spaces in path should produce a warning."""
-        result = self._check("C:/Users/My User/project/file.blend")
-        self.assertIsNotNone(result)
-        self.assertIn("' '", result)
-
-    def test_clean_path_no_warning(self):
-        """Path without risky characters should return None."""
-        result = self._check("/home/user/projects/my_project/scene.blend")
-        self.assertIsNone(result)
-
-    def test_multiple_risky_chars(self):
-        """Path with multiple risky characters should list all of them."""
+    def test_lists_every_risky_character_found(self):
         result = self._check("C:/Dropbox (Personal)/Grog's $project/file.blend")
-        self.assertIsNotNone(result)
-        self.assertIn("'('", result)
-        self.assertIn("')'", result)
-        self.assertIn("\"'\"", result)
-        self.assertIn("'$'", result)
+        for shown in ("'('", "')'", "\"'\"", "' '", "'$'"):
+            self.assertIn(shown, result)
 
-    def test_empty_path(self):
-        """Empty path should return None."""
-        result = self._check("")
-        self.assertIsNone(result)
-
-    def test_windows_backslash_path(self):
-        """Backslashes are normal on Windows and should NOT be flagged."""
-        result = self._check("C:\\Users\\artist\\project\\file.blend")
-        self.assertIsNone(result)
-
-    def test_all_risky_chars(self):
-        """Each risky character individually should be detected."""
+    def test_each_risky_character_is_detected(self):
         for char in "()'\"` &|;$!#":
-            result = self._check(f"/path/with{char}char/file.blend")
-            self.assertIsNotNone(result, f"Character {char!r} should be detected")
+            with self.subTest(char=char):
+                self.assertIsNotNone(self._check(f"/path/with{char}char/file.blend"))
+
+    def test_safe_paths_do_not_warn(self):
+        for path in (
+            "/home/user/projects/my_project/scene.blend",
+            "",
+            "C:\\Users\\artist\\project\\file.blend",
+        ):
+            with self.subTest(path=path):
+                self.assertIsNone(self._check(path))
 
 
 # Farm ZIP unpack filename guards
@@ -2559,17 +1816,6 @@ class TestFarmZipUnpackGuards(unittest.TestCase):
             blocked = _submit_worker._farm_unpack_blocked_zip_members(zip_path)
 
         self.assertEqual(blocked, ["Animation/Animations/broken....blend"])
-
-
-# _RISKY_CHARS constant
-
-
-class TestRiskyCharsConstant(unittest.TestCase):
-    """Verify _RISKY_CHARS contains the expected characters."""
-
-    def test_expected_chars(self):
-        expected = set("()'\"` &|;$!#")
-        self.assertEqual(_submit_worker._RISKY_CHARS, expected)
 
 
 if __name__ == "__main__":

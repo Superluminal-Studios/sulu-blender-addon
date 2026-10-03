@@ -47,12 +47,22 @@ class TestDeployBuildProvenance(unittest.TestCase):
 
         self.assertIn('BUILD_CHANNEL = "development"', build_info)
 
-    def test_artifact_excludes_workstation_metadata(self):
+    def test_artifact_ships_runtime_only(self):
         archive = self._build("--version", "1.3.15")
+        names = archive.namelist()
+        parts = {part for name in names for part in Path(name).parts[1:]}
 
-        self.assertFalse(
-            any(Path(name).name == ".DS_Store" for name in archive.namelist())
-        )
+        # Secrets, workstation metadata, test bootstrap and independently
+        # packaged extensions never ship; runtime profiles do.
+        for excluded in (
+            "session.json",
+            ".DS_Store",
+            "conftest.py",
+            "tests",
+            "extensions",
+        ):
+            self.assertNotIn(excluded, parts)
+        self.assertIn("SuperluminalRender/environment.py", names)
 
 
 if __name__ == "__main__":

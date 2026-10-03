@@ -1270,77 +1270,49 @@ class TestRequestUtilsJobs(unittest.TestCase):
 
         self.assertIn("live-only", merged)
 
-    def test_request_jobs_uses_empty_stored_list_as_authoritative(self):
-        prefs = _FakePrefs()
-        live = {
-            "live-only": {
-                "id": "live-only",
-                "project_id": "project-id",
-                "project_sqid": "project-sqid",
-                "name": "Live Only",
-                "status": "running",
-            },
-        }
+    def test_request_jobs_source_precedence(self):
+        """Stored history is authoritative; live jobs only fill a missing endpoint."""
 
-        with patch.object(request_utils, "get_prefs", return_value=prefs), \
-             patch.object(request_utils, "_selected_project_identity", return_value=("project-id", "project-sqid")), \
-             patch.object(request_utils, "_request_stored_jobs", return_value={}), \
-             patch.object(request_utils, "_request_live_jobs", return_value=live):
-            jobs = request_utils._request_legacy_jobs_unlocked("org-id", "user-key", "project-id")
+        def job(job_id, status):
+            return {
+                job_id: {
+                    "id": job_id,
+                    "project_id": "project-id",
+                    "project_sqid": "project-sqid",
+                    "name": job_id,
+                    "status": status,
+                },
+            }
 
-        self.assertEqual(jobs, {})
-        self.assertEqual(request_utils.Storage.data["jobs"], {})
+        stored = job("stored", "finished")
+        live = job("live-only", "running")
+        cases = [
+            ("empty stored list wins", {"return_value": {}}, {"return_value": live}, {}),
+            ("live failure keeps stored", {"return_value": stored},
+             {"side_effect": RuntimeError("farm down")}, stored),
+            ("missing stored endpoint uses live",
+             {"side_effect": request_utils.NotFound("Resource not found")},
+             {"return_value": live}, live),
+        ]
+        for name, stored_result, live_result, expected in cases:
+            with self.subTest(name), \
+                 patch.object(request_utils, "get_prefs", return_value=_FakePrefs()), \
+                 patch.object(request_utils, "_selected_project_identity", return_value=("project-id", "project-sqid")), \
+                 patch.object(request_utils, "_request_stored_jobs", **stored_result), \
+                 patch.object(request_utils, "_request_live_jobs", **live_result):
+                # A distinct org per case keeps the background live-fetch
+                # future of one case from answering the next.
+                jobs = request_utils._request_legacy_jobs_unlocked(
+                    f"org-{name}", "user-key", "project-id"
+                )
 
-    def test_request_jobs_keeps_stored_jobs_when_live_fetch_fails(self):
-        prefs = _FakePrefs()
-        stored = {
-            "stored": {
-                "id": "stored",
-                "project_id": "project-id",
-                "project_sqid": "project-sqid",
-                "name": "Stored",
-                "status": "finished",
-            },
-        }
-
-        with patch.object(request_utils, "get_prefs", return_value=prefs), \
-             patch.object(request_utils, "_selected_project_identity", return_value=("project-id", "project-sqid")), \
-             patch.object(request_utils, "_request_stored_jobs", return_value=stored), \
-             patch.object(request_utils, "_request_live_jobs", side_effect=RuntimeError("farm down")):
-            jobs = request_utils._request_legacy_jobs_unlocked("org-id", "user-key", "project-id")
-
-        self.assertEqual(jobs, stored)
-        self.assertEqual(request_utils.Storage.data["jobs"], stored)
-
-    def test_request_jobs_falls_back_to_live_when_stored_endpoint_is_unavailable(self):
-        prefs = _FakePrefs()
-        live = {
-            "live-only": {
-                "id": "live-only",
-                "project_id": "project-id",
-                "project_sqid": "project-sqid",
-                "name": "Live Only",
-                "status": "running",
-            },
-        }
-
-        with patch.object(request_utils, "get_prefs", return_value=prefs), \
-             patch.object(request_utils, "_selected_project_identity", return_value=("project-id", "project-sqid")), \
-             patch.object(
-                 request_utils,
-                 "_request_stored_jobs",
-                 side_effect=request_utils.NotFound("Resource not found"),
-             ), \
-             patch.object(request_utils, "_request_live_jobs", return_value=live):
-            jobs = request_utils._request_legacy_jobs_unlocked("org-id", "user-key", "project-id")
-
-        self.assertEqual(jobs, live)
-        self.assertEqual(request_utils.Storage.data["jobs"], live)
+                self.assertEqual(jobs, expected)
+                self.assertEqual(request_utils.Storage.data["jobs"], expected)
 
     def test_request_jobs_surfaces_stored_authentication_errors(self):
         with patch.object(request_utils, "_request_stored_jobs", side_effect=(
             request_utils.NotAuthenticated("Resource not found")
-        )), patch.object(request_utils, "_request_live_jobs") as live_request:
+        )), patch.object(request_utils, "_request_live_jobs"):
             with self.assertRaises(request_utils.NotAuthenticated):
                 request_utils._request_legacy_jobs_unlocked(
                     "org-stored-auth",

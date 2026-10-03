@@ -521,27 +521,61 @@ class FetchJobDetailsTest(unittest.TestCase):
             }
         }
 
-    # Structured placeholder for missing jobs
+    def test_live_job_response_shapes(self):
+        """Sarfis job-detail bodies map to (status, finished, total) silently.
 
-    def test_missing_job_placeholder_returns_unknown_with_zeros(self):
-        """The backend returns
-        `{"status":"success","body":{"status":"unknown","tasks":{zeros},
-        "total_tasks":0,"missing":true}}` for jobs not yet in
-        Database.jobs. The worker must return that shape unchanged AND
-        log nothing. This is the steady state during the sync window
-        and on every poll after a job has aged out."""
-        body = {
-            "status": "unknown",
-            "tasks": {"queued": 0, "running": 0, "finished": 0, "error": 0, "paused": 0},
-            "total_tasks": 0,
-            "missing": True,
-        }
-        self.worker.session = _make_session(
-            _FakeResponse(body_obj={"status": "success", "body": body})
-        )
-        result = self.worker._fetch_job_details()
-        self.assertEqual(result, ("unknown", 0, 0))
-        self.assertEqual(self.fake_logger.warnings, [])
+        The missing-job placeholder is the steady state during the sync
+        window, so repeated polls must not log anything.
+        """
+        zeros = {"queued": 0, "running": 0, "finished": 0, "error": 0, "paused": 0}
+        cases = [
+            ("missing placeholder",
+             {"status": "unknown", "tasks": zeros, "total_tasks": 0, "missing": True},
+             ("unknown", 0, 0)),
+            ("running",
+             {"status": "running", "tasks": {**zeros, "queued": 3, "running": 1, "finished": 12},
+              "total_tasks": 16},
+             ("running", 12, 16)),
+            ("finished",
+             {"status": "finished", "tasks": {**zeros, "finished": 100}, "total_tasks": 100},
+             ("finished", 100, 100)),
+            ("null tasks",
+             {"status": "running", "tasks": None, "total_tasks": 10},
+             ("running", 0, 10)),
+        ]
+        for name, body, expected in cases:
+            with self.subTest(name):
+                self.worker.session = _make_session(
+                    _FakeResponse(body_obj={"status": "success", "body": body})
+                )
+                for _ in range(3):
+                    self.assertEqual(self.worker._fetch_job_details(), expected)
+                self.assertEqual(self.fake_logger.warnings, [])
+
+    def test_unusable_responses_fall_back_to_handoff_snapshot(self):
+        failing_session = MagicMock()
+        failing_session.get.side_effect = ConnectionError("connection refused")
+        cases = [
+            ("unparseable body", _make_session(_FakeResponse(body_obj=None))),
+            ("wrapped null body", _make_session(
+                _FakeResponse(body_obj={"status": "success", "body": None}))),
+            ("empty dict body", _make_session(
+                _FakeResponse(body_obj={"status": "access_denied", "body": {}}))),
+            ("invalid json", _make_session(
+                _FakeResponse(body_text="not actually json"))),
+            ("html error page", _make_session(
+                _FakeResponse(body_text="<html>error</html>", content_type="text/html"))),
+            ("network error", failing_session),
+        ]
+        for name, session in cases:
+            with self.subTest(name):
+                self.worker._JOB_DETAILS_WARNED.clear()
+                self.fake_logger.warnings.clear()
+                self.worker.session = session
+                self.assertEqual(self.worker._fetch_job_details(), ("queued", 0, 5))
+                self.assertLessEqual(len(self.fake_logger.warnings), 1)
+                for warning in self.fake_logger.warnings:
+                    self.assertNotIn("NoneType", warning)
 
     def test_missing_live_job_falls_back_to_persisted_finished_job(self):
         self.worker.data.update(
@@ -590,123 +624,14 @@ class FetchJobDetailsTest(unittest.TestCase):
             {"Authorization": "user-token"},
         )
 
-    def test_missing_job_placeholder_repeated_polls_no_log_spam(self):
-        """Auto-download polls every 5 s. The placeholder is the normal
-        case during the sync-pending window, so 60 polls in a row must
-        not produce 60 warning lines."""
-        body = {
-            "status": "unknown",
-            "tasks": {"queued": 0, "running": 0, "finished": 0, "error": 0, "paused": 0},
-            "total_tasks": 0,
-            "missing": True,
-        }
-        self.worker.session = _make_session(
-            _FakeResponse(body_obj={"status": "success", "body": body})
-        )
-        for _ in range(60):
-            self.worker._fetch_job_details()
-        self.assertEqual(self.fake_logger.warnings, [])
-
-    # Bare null response tolerated for compatibility
-
-    def test_bare_null_body_falls_back_silently(self):
-        """A `null` missing-job body becomes Python `None`; the worker
-        falls back to the handoff snapshot and logs at most one warning."""
-        self.worker.session = _make_session(_FakeResponse(body_obj=None))
-        result = self.worker._fetch_job_details()
-        self.assertEqual(result, ("queued", 0, 5))
-        # Bare null responses may log one warning but must not repeat it.
-        for w in self.fake_logger.warnings:
-            self.assertNotIn("NoneType", w)
-        self.assertLessEqual(len(self.fake_logger.warnings), 1)
-
-    def test_wrapped_null_body_falls_back_silently(self):
-        """A wrapped null body falls back to the handoff snapshot."""
-        self.worker.session = _make_session(
-            _FakeResponse(body_obj={"status": "success", "body": None})
-        )
-        result = self.worker._fetch_job_details()
-        self.assertEqual(result, ("queued", 0, 5))
-        for w in self.fake_logger.warnings:
-            self.assertNotIn("NoneType", w)
-
-    def test_empty_dict_body_falls_back(self):
-        """`{"status":"access_denied","body":{}}` — empty dict is falsy."""
-        self.worker.session = _make_session(
-            _FakeResponse(body_obj={"status": "access_denied", "body": {}})
-        )
-        result = self.worker._fetch_job_details()
-        self.assertEqual(result, ("queued", 0, 5))
-
-    # Running-job response shape
-
-    def test_running_job_returns_live_counts(self):
-        body = {
-            "status": "running",
-            "tasks": {"queued": 3, "running": 1, "finished": 12, "error": 0, "paused": 0},
-            "total_tasks": 16,
-        }
-        self.worker.session = _make_session(
-            _FakeResponse(body_obj={"status": "success", "body": body})
-        )
-        result = self.worker._fetch_job_details()
-        self.assertEqual(result, ("running", 12, 16))
-        self.assertEqual(self.fake_logger.warnings, [])
-
-    def test_finished_job_returns_terminal_status(self):
-        body = {
-            "status": "finished",
-            "tasks": {"queued": 0, "running": 0, "finished": 100, "error": 0, "paused": 0},
-            "total_tasks": 100,
-        }
-        self.worker.session = _make_session(
-            _FakeResponse(body_obj={"status": "success", "body": body})
-        )
-        result = self.worker._fetch_job_details()
-        self.assertEqual(result, ("finished", 100, 100))
-
-    # Network-level failures
-
-    def test_non_200_falls_back(self):
-        self.worker.session = _make_session(
-            _FakeResponse(status_code=502, body_text="Bad Gateway", content_type="text/plain")
-        )
-        result = self.worker._fetch_job_details()
-        self.assertEqual(result, ("queued", 0, 5))
-        self.assertEqual(len(self.fake_logger.warnings), 1)
-        self.assertIn("502", self.fake_logger.warnings[0])
-
-    def test_repeated_502_doesnt_spam(self):
+    def test_repeated_502_falls_back_and_warns_once(self):
         self.worker.session = _make_session(
             _FakeResponse(status_code=502, body_text="Bad Gateway", content_type="text/plain")
         )
         for _ in range(30):
-            self.worker._fetch_job_details()
-        # Dedupe collapses identical warnings.
+            self.assertEqual(self.worker._fetch_job_details(), ("queued", 0, 5))
         self.assertEqual(len(self.fake_logger.warnings), 1)
-
-    def test_network_exception_falls_back(self):
-        sess = MagicMock()
-        sess.get = MagicMock(side_effect=ConnectionError("connection refused"))
-        self.worker.session = sess
-        result = self.worker._fetch_job_details()
-        self.assertEqual(result, ("queued", 0, 5))
-
-    def test_invalid_json_body_falls_back(self):
-        self.worker.session = _make_session(
-            _FakeResponse(body_text="not actually json", content_type="application/json")
-        )
-        result = self.worker._fetch_job_details()
-        self.assertEqual(result, ("queued", 0, 5))
-
-    def test_non_json_content_type_falls_back(self):
-        self.worker.session = _make_session(
-            _FakeResponse(body_text="<html>error</html>", content_type="text/html")
-        )
-        result = self.worker._fetch_job_details()
-        self.assertEqual(result, ("queued", 0, 5))
-
-    # Configuration edge cases
+        self.assertIn("502", self.fake_logger.warnings[0])
 
     def test_no_sarfis_url_falls_back_without_network(self):
         self.worker.sarfis_url = None
@@ -714,21 +639,6 @@ class FetchJobDetailsTest(unittest.TestCase):
         self.worker.session.get = MagicMock(side_effect=AssertionError("should not be called"))
         result = self.worker._fetch_job_details()
         self.assertEqual(result, ("queued", 0, 5))
-
-    def test_tasks_field_is_null_in_body(self):
-        """Edge case: body has `tasks: null` instead of missing the key
-        entirely. The worker handled this via `or {}` but let's lock
-        it in."""
-        body = {
-            "status": "running",
-            "tasks": None,
-            "total_tasks": 10,
-        }
-        self.worker.session = _make_session(
-            _FakeResponse(body_obj={"status": "success", "body": body})
-        )
-        result = self.worker._fetch_job_details()
-        self.assertEqual(result, ("running", 0, 10))
 
     def test_recovery_clears_dedupe_set(self):
         """A transient 502 followed by a real response shouldn't

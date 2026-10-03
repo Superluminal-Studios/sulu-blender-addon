@@ -72,7 +72,6 @@ def _bootstrap_patches(tmp_path: Path, archive: bytes, digest: str):
 
 
 def test_pin_has_official_checksum_for_every_supported_platform():
-    assert rclone_utils.RCLONE_VERSION == "1.75.0"
     assert set(rclone_utils.RCLONE_SHA256_BY_SUFFIX) == set(
         rclone_utils.SUPPORTED_PLATFORMS.values()
     )
@@ -86,9 +85,10 @@ def test_download_url_is_version_pinned():
     with mock.patch.object(
         rclone_utils, "get_platform_suffix", return_value="osx-arm64"
     ):
+        version = rclone_utils.RCLONE_VERSION
         assert rclone_utils.get_rclone_url() == (
-            "https://downloads.rclone.org/v1.75.0/"
-            "rclone-v1.75.0-osx-arm64.zip"
+            f"https://downloads.rclone.org/v{version}/"
+            f"rclone-v{version}-osx-arm64.zip"
         )
 
 

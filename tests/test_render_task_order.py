@@ -26,57 +26,25 @@ _submit_worker = _load_module_directly(
 
 
 class TestRenderTaskOrder(unittest.TestCase):
-    def test_linear_render_order(self):
-        self.assertEqual(
-            _submit_worker._build_render_tasks(1, 5, "LINEAR"),
-            [1, 2, 3, 4, 5],
-        )
-
-    def test_linear_render_order_honors_frame_step(self):
-        self.assertEqual(
-            _submit_worker._build_render_tasks(1, 10, "LINEAR", 2),
-            [1, 3, 5, 7, 9],
-        )
-
-    def test_temporal_refine_render_order(self):
-        self.assertEqual(
-            _submit_worker._build_render_tasks(1, 10, "TEMPORAL_REFINE"),
-            [1, 9, 5, 3, 7, 2, 4, 6, 8, 10],
-        )
-
-    def test_temporal_refine_render_order_honors_frame_step(self):
-        self.assertEqual(
-            _submit_worker._build_render_tasks(1, 10, "TEMPORAL_REFINE", 2),
-            [1, 9, 5, 3, 7],
-        )
-
-    def test_progressive_stepping_alias_render_order(self):
-        self.assertEqual(
-            _submit_worker._build_render_tasks(1, 10, "PROGRESSIVE_STEPPING"),
-            [1, 9, 5, 3, 7, 2, 4, 6, 8, 10],
-        )
-
-    def test_invalid_frame_step_falls_back_to_one(self):
-        self.assertEqual(
-            _submit_worker._build_render_tasks(1, 5, "LINEAR", 0),
-            [1, 2, 3, 4, 5],
-        )
-
-    def test_temporal_refine_supports_non_one_start_frame(self):
-        self.assertEqual(
-            _submit_worker._build_render_tasks(10, 18, "TEMPORAL_REFINE"),
-            [10, 18, 14, 12, 16, 11, 13, 15, 17],
-        )
+    def test_render_task_order(self):
+        refine_1_10 = [1, 9, 5, 3, 7, 2, 4, 6, 8, 10]
+        cases = [
+            ((1, 5, "LINEAR"), [1, 2, 3, 4, 5]),
+            ((1, 10, "LINEAR", 2), [1, 3, 5, 7, 9]),
+            ((1, 5, "LINEAR", 0), [1, 2, 3, 4, 5]),
+            ((1, 10, "TEMPORAL_REFINE"), refine_1_10),
+            ((1, 10, "PROGRESSIVE_STEPPING"), refine_1_10),
+            ((1, 10, "TEMPORAL_REFINE", 2), [1, 9, 5, 3, 7]),
+            ((10, 18, "TEMPORAL_REFINE"), [10, 18, 14, 12, 16, 11, 13, 15, 17]),
+        ]
+        for args, expected in cases:
+            with self.subTest(args=args):
+                self.assertEqual(_submit_worker._build_render_tasks(*args), expected)
 
     def test_temporal_refine_uses_largest_clean_stride(self):
-        self.assertEqual(
-            _submit_worker._build_render_tasks(1, 34, "TEMPORAL_REFINE")[:8],
-            [1, 33, 17, 9, 25, 5, 13, 21],
-        )
-        self.assertEqual(
-            sorted(_submit_worker._build_render_tasks(1, 34, "TEMPORAL_REFINE")),
-            list(range(1, 35)),
-        )
+        tasks = _submit_worker._build_render_tasks(1, 34, "TEMPORAL_REFINE")
+        self.assertEqual(tasks[:8], [1, 33, 17, 9, 25, 5, 13, 21])
+        self.assertEqual(sorted(tasks), list(range(1, 35)))
 
 
 if __name__ == "__main__":

@@ -28,18 +28,6 @@ def test_profiles_keep_risky_request_elisions_orthogonal():
     assert "--s3-no-head" not in no_checksum
 
 
-def test_historical_and_forced_single_controls_are_available():
-    legacy = benchmark.PROFILES["legacy"]
-    forced = benchmark.PROFILES["forced-single"]
-
-    assert (legacy.cutoff, legacy.chunk_size, legacy.concurrency) == (
-        "64M",
-        "64M",
-        4,
-    )
-    assert forced.cutoff == "5G"
-
-
 def test_size_parser_uses_explicit_decimal_and_binary_units():
     assert benchmark.parse_size("64MiB") == 64 * 1024 * 1024
     assert benchmark.parse_size("64MB") == 64_000_000

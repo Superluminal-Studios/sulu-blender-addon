@@ -29,29 +29,23 @@ _submit_worker = _load_module_directly(
 
 
 class TestProjectIdentityGuards(unittest.TestCase):
-    def test_missing_fields_when_project_is_none(self):
-        missing = _submit_worker._missing_project_identity_fields(None)
-        self.assertEqual(missing, ["id", "organization_id", "sqid"])
+    def test_missing_identity_fields(self):
+        cases = [
+            (None, ["id", "organization_id", "sqid"]),
+            ({"id": "proj_1", "organization_id": "", "sqid": "   "}, ["organization_id", "sqid"]),
+            ({"id": "proj_1", "organization_id": "org_1", "sqid": "sqid_1"}, []),
+        ]
+        for project, missing in cases:
+            with self.subTest(project=project):
+                self.assertEqual(
+                    _submit_worker._missing_project_identity_fields(project), missing
+                )
 
-    def test_missing_fields_detects_blank_values(self):
-        missing = _submit_worker._missing_project_identity_fields(
-            {"id": "proj_1", "organization_id": "", "sqid": "   "}
-        )
-        self.assertEqual(missing, ["organization_id", "sqid"])
-
-    def test_missing_fields_returns_empty_when_identity_complete(self):
-        missing = _submit_worker._missing_project_identity_fields(
-            {"id": "proj_1", "organization_id": "org_1", "sqid": "sqid_1"}
-        )
-        self.assertEqual(missing, [])
-
-    def test_parse_project_storage_payload_rejects_empty_items(self):
-        with self.assertRaises(RuntimeError):
-            _submit_worker._parse_project_storage_payload({"items": []})
-
-    def test_parse_project_storage_payload_rejects_missing_bucket(self):
-        with self.assertRaises(RuntimeError):
-            _submit_worker._parse_project_storage_payload({"items": [{}]})
+    def test_parse_project_storage_payload_rejects_unusable_items(self):
+        for payload in ({"items": []}, {"items": [{}]}):
+            with self.subTest(payload=payload):
+                with self.assertRaises(RuntimeError):
+                    _submit_worker._parse_project_storage_payload(payload)
 
     def test_parse_project_storage_payload_success(self):
         rec, bucket = _submit_worker._parse_project_storage_payload(
