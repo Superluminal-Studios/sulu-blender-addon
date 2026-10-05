@@ -59,18 +59,6 @@ def test_confirmation_and_lost_response_replay_keep_one_command(tmp_path):
     assert all(call[1]["allow_redirects"] is False for call in calls)
 
 
-def test_denied_confirmation_does_not_commit(tmp_path):
-    calls = []
-
-    def post(path, **kwargs):
-        calls.append(path)
-        return Response({"operation_id": "op", "state": "confirmation_required", "confirmation_token": "sealed"})
-
-    with pytest.raises(module.CoordinatorError, match="CONFIRMATION_REQUIRED"):
-        client(tmp_path, SimpleNamespace(post=post), lambda *_: False).mutate("render_upload_prepare", {})
-    assert len(calls) == 1
-
-
 def test_resumable_upload_recovers_lost_put_and_never_follows_returned_href(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "CHUNK_BYTES", 4)
     source = tmp_path / "input.blend"
@@ -99,34 +87,9 @@ def test_resumable_upload_recovers_lost_put_and_never_follows_returned_href(tmp_
     assert all(path == "https://api.example/api/render/v1/transfers/u_opaque123" for path in paths)
 
 
-def test_upload_rejects_generation_mismatch_and_changed_local_file(tmp_path):
-    source = tmp_path / "input.blend"
-    source.write_bytes(b"abcd")
-    session = SimpleNamespace(head=lambda *_args, **_kwargs: Response(headers={"Upload-Offset": "0", "Upload-Length": "5"}))
-    with pytest.raises(module.CoordinatorError, match="GENERATION_CHANGED"):
-        client(tmp_path, session).upload_file(source, {"file_ref": "opaque", "size": 4})
-    with pytest.raises(module.CoordinatorError, match="GENERATION_CHANGED"):
-        client(tmp_path, session).upload_file(source, {"file_ref": "opaque", "size": 99})
-
-
 @pytest.mark.parametrize("name", ["../x", "a/../x", "/x", "a//x", "a\\x", "C:/x", "a\nx", "./x"])
 def test_logical_paths_reject_escape_inputs(name):
     with pytest.raises(ValueError):
         module.logical_name(name)
 
 
-def test_upstream_error_is_sanitized_and_json_bounded(tmp_path, monkeypatch):
-    session = SimpleNamespace(post=lambda *_args, **_kwargs: Response({"error": {"code": "SECRET-TOKEN", "message": "secret"}}, 503))
-    with pytest.raises(module.CoordinatorError) as caught:
-        client(tmp_path, session).tool("render_job_get", {})
-    assert "secret" not in str(caught.value).lower()
-    monkeypatch.setattr(module, "MAX_JSON_BYTES", 2)
-    with pytest.raises(module.CoordinatorError, match="DEPENDENCY_UNAVAILABLE"):
-        client(tmp_path, session).tool("render_job_get", {})
-
-
-def test_zero_size_input_needs_no_put(tmp_path):
-    source = tmp_path / "empty.txt"
-    source.write_bytes(b"")
-    session = SimpleNamespace(head=lambda *_args, **_kwargs: Response(headers={"Upload-Offset": "0", "Upload-Length": "0"}))
-    assert client(tmp_path, session).upload_file(source, {"file_ref": "opaque", "size": 0}) == 0

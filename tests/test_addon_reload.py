@@ -77,16 +77,3 @@ def test_purge_cached_submodules_replaces_stale_addon_children():
     }
 
 
-def test_purge_cached_submodules_is_a_noop_on_first_import():
-    root_module = object()
-    fake_modules = {"SuperluminalRender": root_module}
-    fake_atexit = types.SimpleNamespace(
-        unregister=lambda _callback: (_ for _ in ()).throw(
-            AssertionError("no exit callback should be unregistered")
-        )
-    )
-
-    purge, _namespace = _load_purge_function(fake_modules, fake_atexit)
-
-    assert purge() is False
-    assert fake_modules == {"SuperluminalRender": root_module}

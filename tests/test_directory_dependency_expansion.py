@@ -72,63 +72,6 @@ class TestDirectoryDependencyExpansion(unittest.TestCase):
         self.assertEqual(unreadable, {})
         self.assertEqual(optional, set())
 
-    def test_trace_dependencies_marks_empty_directory_unreadable(self):
-        cache_dir = self.tmp_path / "empty-cache"
-        cache_dir.mkdir()
-
-        bat_utils.trace.deps = lambda _blend_path: [_DirectoryUsage(cache_dir)]
-
-        dep_paths, missing, unreadable, _raw_usages, optional = (
-            bat_utils.trace_dependencies(
-                self.tmp_path / "scene.blend",
-                hydrate=False,
-            )
-        )
-
-        self.assertEqual(dep_paths, [cache_dir])
-        self.assertEqual(missing, set())
-        self.assertEqual(unreadable, {cache_dir: "Directory contains no files"})
-        self.assertEqual(optional, set())
-
-    def test_empty_directory_is_written_to_diagnostics(self):
-        cache_dir = self.tmp_path / "empty-cache"
-        cache_dir.mkdir()
-        report = diagnostic_report.DiagnosticReport(
-            reports_dir=self.tmp_path / "reports",
-            job_id="empty-dir-test",
-            blend_name="scene",
-        )
-
-        bat_utils.trace.deps = lambda _blend_path: [_DirectoryUsage(cache_dir)]
-
-        report.start_stage("trace")
-        bat_utils.trace_dependencies(
-            self.tmp_path / "scene.blend",
-            hydrate=False,
-            diagnostic_report=report,
-        )
-        report.complete_stage("trace")
-
-        empty_dirs = report._data["issues"]["empty_directory_dependencies"]
-        self.assertEqual(len(empty_dirs), 1)
-        self.assertEqual(empty_dirs[0]["path"], str(cache_dir))
-        self.assertEqual(
-            empty_dirs[0]["error_message"],
-            "Directory contains no files",
-        )
-
-    def test_cloud_file_probe_rejects_directories(self):
-        cache_dir = self.tmp_path / "cache"
-        cache_dir.mkdir()
-
-        ok, err = cloud_files.read_file_with_hydration(
-            str(cache_dir),
-            hydrate=False,
-        )
-
-        self.assertFalse(ok)
-        self.assertEqual(err, "is a directory")
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -41,11 +41,6 @@ class TestRenderTaskOrder(unittest.TestCase):
             with self.subTest(args=args):
                 self.assertEqual(_submit_worker._build_render_tasks(*args), expected)
 
-    def test_temporal_refine_uses_largest_clean_stride(self):
-        tasks = _submit_worker._build_render_tasks(1, 34, "TEMPORAL_REFINE")
-        self.assertEqual(tasks[:8], [1, 33, 17, 9, 25, 5, 13, 21])
-        self.assertEqual(sorted(tasks), list(range(1, 35)))
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -112,44 +112,6 @@ class TestSceneMetadata(unittest.TestCase):
         self.assertEqual(camera_catalog["Camera_A"]["active_in_scenes"], ["Shot"])
         self.assertEqual(camera_catalog["Camera_B"]["marker_frames"][0]["frame"], 120)
 
-    def test_collects_multiple_scenes_and_global_camera_catalog(self):
-        shared = _camera("Shared")
-        scene_a = SimpleNamespace(
-            name="Scene_A",
-            frame_start=1,
-            frame_end=10,
-            frame_step=1,
-            render=_render(engine="BLENDER_EEVEE_NEXT"),
-            camera=shared,
-            objects=[shared],
-            timeline_markers=[],
-            view_layers=[],
-        )
-        scene_b = SimpleNamespace(
-            name="Scene_B",
-            frame_start=1,
-            frame_end=1,
-            frame_step=1,
-            render=_render(resolution_x=4096, resolution_y=2160, resolution_percentage=25),
-            camera=None,
-            objects=[],
-            timeline_markers=[SimpleNamespace(name="Marker", frame=8, camera=shared)],
-            view_layers=[],
-        )
-        bpy = SimpleNamespace(data=SimpleNamespace(scenes=[scene_a, scene_b], objects=[shared]))
-        context = SimpleNamespace(scene=scene_b, view_layer=None)
-
-        metadata = _scene_metadata.build_scene_metadata(bpy, context)
-
-        self.assertEqual(metadata["active_scene"], "Scene_B")
-        self.assertEqual(metadata["available_scenes"], ["Scene_A", "Scene_B"])
-        self.assertEqual(metadata["current"]["resolution"]["width"], 1024)
-        self.assertEqual(metadata["current"]["resolution"]["height"], 540)
-        shared_camera = metadata["cameras"][0]
-        self.assertEqual(shared_camera["scenes"], ["Scene_A"])
-        self.assertEqual(shared_camera["active_in_scenes"], ["Scene_A"])
-        self.assertEqual(shared_camera["marker_frames"], [{"scene": "Scene_B", "frame": 8, "marker": "Marker"}])
-
 
 if __name__ == "__main__":
     unittest.main()

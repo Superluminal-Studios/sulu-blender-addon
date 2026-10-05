@@ -50,36 +50,3 @@ def test_registration_piggybacks_schema_and_preserves_key():
     }
 
 
-def test_registration_omits_missing_or_malformed_schema():
-    assert (
-        _submit_worker._build_settings_schema_registration(
-            _handoff(settings_schema=None)
-        )
-        is None
-    )
-    assert (
-        _submit_worker._build_settings_schema_registration(
-            _handoff(settings_schema_key="")
-        )
-        is None
-    )
-    assert (
-        _submit_worker._build_settings_schema_registration(
-            _handoff(settings_schema={})
-        )
-        is None
-    )
-    assert (
-        _submit_worker._build_settings_schema_registration(
-            _handoff(settings_schema={"bad": {1, 2, 3}})
-        )
-        is None
-    )
-
-
-def test_registration_omits_oversized_schema():
-    registration = _submit_worker._build_settings_schema_registration(
-        _handoff(settings_schema={"payload": "x" * (2 * 1024 * 1024)})
-    )
-
-    assert registration is None

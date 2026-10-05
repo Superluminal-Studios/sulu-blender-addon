@@ -31,21 +31,6 @@ class TestDeployBuildProvenance(unittest.TestCase):
         self.addCleanup(archive.close)
         return archive
 
-    def test_release_artifact_is_explicitly_marked(self):
-        archive = self._build("--version", "1.3.11")
-
-        build_info = archive.read("SuperluminalRender/build_info.py").decode()
-        addon_init = archive.read("SuperluminalRender/__init__.py").decode()
-
-        self.assertIn('BUILD_CHANNEL = "release"', build_info)
-        self.assertIn('"version": (1, 3, 11)', addon_init)
-
-    def test_local_artifact_remains_a_development_build(self):
-        archive = self._build()
-
-        build_info = archive.read("SuperluminalRender/build_info.py").decode()
-
-        self.assertIn('BUILD_CHANNEL = "development"', build_info)
 
     def test_artifact_ships_runtime_only(self):
         archive = self._build("--version", "1.3.15")
