@@ -11,39 +11,25 @@ from typing import List, Tuple
 from utils.worker_utils import (
     get_drive,
     is_win_drive_path,
-    norm_abs_for_detection,
     relpath_safe,
     s3key_clean,
-    samepath,
 )
-
-norm_path = norm_abs_for_detection
 
 __all__ = [
     "get_drive",
     "is_win_drive_path",
-    "norm_abs_for_detection",
-    "norm_path",
     "relpath_safe",
     "s3key_clean",
-    "samepath",
     "nfc",
-    "nfd",
     "process_for_upload",
     "validate_s3_key",
     "is_s3_safe",
-    "is_absolute_path",
 ]
 
 
 def nfc(s: str) -> str:
     """NFC normalize (critical for cross-platform Unicode)."""
     return unicodedata.normalize("NFC", str(s))
-
-
-def nfd(s: str) -> str:
-    """NFD normalize (macOS HFS+/APFS style)."""
-    return unicodedata.normalize("NFD", str(s))
 
 
 def process_for_upload(
@@ -121,15 +107,3 @@ def is_s3_safe(key: str) -> bool:
     """Check if S3 key is safe for upload."""
     return len(validate_s3_key(key)) == 0
 
-
-def is_absolute_path(path: str) -> bool:
-    """Check if path looks like an absolute path."""
-    if path.startswith("/"):
-        return True
-    if is_win_drive_path(path):
-        return True
-    if path.startswith("\\\\"):
-        return True
-    if ":" in path and not path.startswith("http"):
-        return True
-    return False

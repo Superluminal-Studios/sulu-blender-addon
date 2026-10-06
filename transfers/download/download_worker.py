@@ -712,7 +712,7 @@ def _fetch_job_details() -> Tuple[str, int, int]:
         return _stored_or_handoff_job_details()
 
     status = str(body.get("status", "unknown") or "unknown").lower()
-    tasks_raw = body.get("tasks") or {}
+    tasks_raw = body.get("tasks")
     tasks = tasks_raw if isinstance(tasks_raw, dict) else {}
     finished = _int_value(tasks.get("finished"), 0)
     total = _int_value(body.get("total_tasks", tasks.get("total")), 0)

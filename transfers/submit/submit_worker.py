@@ -203,19 +203,8 @@ def _emit_upload_success_payload_if_requested(
 
 
 def _rclone_bytes(result) -> int:
-    """Extract bytes_transferred from run_rclone's dict-or-None return."""
-    if result is None:
-        return 0
-    if isinstance(result, dict):
-        return result.get("bytes_transferred", 0)
-    return int(result)  # backward compat if somehow still int
-
-
-def _rclone_stats(result):
-    """Extract the stats dict from run_rclone's return, or None."""
-    if isinstance(result, dict):
-        return result
-    return None
+    """Extract bytes_transferred from run_rclone's stats dict."""
+    return (result or {}).get("bytes_transferred", 0)
 
 
 def _is_empty_upload(result, expected_file_count: int) -> bool:
@@ -224,18 +213,14 @@ def _is_empty_upload(result, expected_file_count: int) -> bool:
         return False
     if result is None:
         return True
-    if isinstance(result, dict):
-        if not result.get("stats_received", True):
-            return True
-        return result.get("transfers", 0) == 0
-    return False
+    if not result.get("stats_received", True):
+        return True
+    return result.get("transfers", 0) == 0
 
 
 def _get_rclone_tail(result) -> list:
     """Extract tail log lines from run_rclone result."""
-    if isinstance(result, dict):
-        return result.get("tail_lines", [])
-    return []
+    return (result or {}).get("tail_lines", [])
 
 
 def _log_upload_result(result, expected_bytes: int = 0, label: str = "") -> None:
@@ -244,9 +229,6 @@ def _log_upload_result(result, expected_bytes: int = 0, label: str = "") -> None
         return
     if result is None:
         _LOG(f"  {label}result: no stats (rclone returned None)")
-        return
-    if not isinstance(result, dict):
-        _LOG(f"  {label}result: {result}")
         return
 
     actual = result.get("bytes_transferred", 0)
@@ -296,8 +278,6 @@ def _is_filesystem_root(path: str) -> bool:
     if not p:
         return True
     if _WIN_DRIVE_ROOT_RE.match(p):
-        return True
-    if p == "":
         return True
     # macOS volume root: /Volumes/VolumeName
     if re.match(r"^/Volumes/[^/]+$", p):
@@ -2034,7 +2014,7 @@ def _upload(ctx: _SubmitContext) -> None:
             _check_rclone_errors(rclone_result, label="Archive")
             report.complete_upload_step(
                 bytes_transferred=_rclone_bytes(rclone_result),
-                rclone_stats=_rclone_stats(rclone_result),
+                rclone_stats=rclone_result,
             )
             step += 1
 
@@ -2059,7 +2039,7 @@ def _upload(ctx: _SubmitContext) -> None:
                 _check_rclone_errors(rclone_result, label="Add-ons")
                 report.complete_upload_step(
                     bytes_transferred=_rclone_bytes(rclone_result),
-                    rclone_stats=_rclone_stats(rclone_result),
+                    rclone_stats=rclone_result,
                 )
 
         else:
@@ -2102,7 +2082,7 @@ def _upload(ctx: _SubmitContext) -> None:
             _log_upload_result(rclone_result, expected_bytes=blend_size, label="Blend: ")
             report.complete_upload_step(
                 bytes_transferred=_rclone_bytes(rclone_result),
-                rclone_stats=_rclone_stats(rclone_result),
+                rclone_stats=rclone_result,
             )
             step += 1
 
@@ -2182,7 +2162,7 @@ def _upload(ctx: _SubmitContext) -> None:
                             file_count=len(group_entries),
                             source=group_source,
                             destination=group_dest,
-                            rclone_stats=_rclone_stats(grp_result),
+                            rclone_stats=grp_result,
                         )
 
                         # Clean up temp filelist
@@ -2264,10 +2244,9 @@ def _upload(ctx: _SubmitContext) -> None:
                     logger.upload_complete("Dependencies uploaded")
                     _log_upload_result(rclone_result, expected_bytes=dependency_total_size, label="Dependencies: ")
                     _check_rclone_errors(rclone_result, label="Dependencies")
-                    stats = _rclone_stats(rclone_result)
                     report.complete_upload_step(
                         bytes_transferred=_rclone_bytes(rclone_result),
-                        rclone_stats=stats,
+                        rclone_stats=rclone_result,
                     )
                     if _is_empty_upload(rclone_result, len(rel_manifest)) and _debug_enabled():
                         tail = _get_rclone_tail(rclone_result)
@@ -2281,8 +2260,8 @@ def _upload(ctx: _SubmitContext) -> None:
                             for line in tail[-10:]:
                                 _LOG(f"  {line}")
                     # Post-upload transfer count validation
-                    if stats and _debug_enabled():
-                        total_touched = (stats.get("transfers", 0) or 0) + (stats.get("checks", 0) or 0)
+                    if rclone_result and _debug_enabled():
+                        total_touched = (rclone_result.get("transfers", 0) or 0) + (rclone_result.get("checks", 0) or 0)
                         if total_touched > 0 and total_touched < len(rel_manifest):
                             _LOG(
                                 f"WARNING: rclone touched {total_touched} of "
@@ -2314,7 +2293,7 @@ def _upload(ctx: _SubmitContext) -> None:
             _check_rclone_errors(rclone_result, label="Manifest")
             report.complete_upload_step(
                 bytes_transferred=_rclone_bytes(rclone_result),
-                rclone_stats=_rclone_stats(rclone_result),
+                rclone_stats=rclone_result,
             )
             step += 1
 
@@ -2339,7 +2318,7 @@ def _upload(ctx: _SubmitContext) -> None:
                 _check_rclone_errors(rclone_result, label="Add-ons")
                 report.complete_upload_step(
                     bytes_transferred=_rclone_bytes(rclone_result),
-                    rclone_stats=_rclone_stats(rclone_result),
+                    rclone_stats=rclone_result,
                 )
 
         report.complete_stage("upload")

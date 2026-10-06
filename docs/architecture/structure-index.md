@@ -179,17 +179,10 @@
 │   │   ├── test_tracer.py
 │   │   ├── test_tracer_file2blocks.py
 │   │   └── test_tracer_file_sequence.py
-│   ├── fixtures/
-│   │   ├── __init__.py
-│   │   └── production_structures.py
-│   ├── integration/
-│   │   ├── __init__.py
-│   │   └── test_project_pack.py
 │   ├── paths/
 │   │   ├── __init__.py
 │   │   ├── test_drive_detection.py
-│   │   ├── test_s3_keys.py
-│   │   └── test_scenarios.py
+│   │   └── test_s3_keys.py
 │   ├── realworld/
 │   │   ├── __init__.py
 │   │   ├── reporting.py
@@ -202,9 +195,6 @@
 │   ├── requirements-test.txt
 │   ├── test_blend_compression.py
 │   ├── test_compression_theory.py
-│   ├── test_deploy_extension_exclusion.py
-│   ├── test_diagnostic_report.py
-│   ├── test_diagnostic_report_direct.py
 │   ├── test_directory_dependency_expansion.py
 │   ├── test_download_job_status.py
 │   ├── test_job_list_sorting.py

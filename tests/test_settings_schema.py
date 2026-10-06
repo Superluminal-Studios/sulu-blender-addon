@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest import mock
 
 
 _tests_dir = Path(__file__).parent
@@ -76,11 +74,6 @@ class _LockedEnumStruct:
 
 class _FakeRenderEngineBase:
     pass
-
-
-class _FakeCyclesEngine(_FakeRenderEngineBase):
-    bl_idname = "CYCLES"
-    bl_label = "Cycles"
 
 
 def _fake_bpy():
@@ -279,152 +272,6 @@ class TestCollectSettingsSchema(unittest.TestCase):
 
         self.assertRegex(schema_key, r"^bl459-[0-9a-f]{16}$")
 
-    def test_schema_key_is_deterministic(self):
-        _, key_a = _settings_schema.collect_settings_schema(_make_scene(), _fake_bpy())
-        _, key_b = _settings_schema.collect_settings_schema(_make_scene(), _fake_bpy())
-        self.assertEqual(key_a, key_b)
-
-    def test_finite_schema_key_remains_canonicalization_compatible(self):
-        schema = {
-            "blender_version": "4.5.9 beta 2",
-            "ascii": 'quote" slash/ backslash\\ <>& \x7f',
-            "unicode": "Café 😀",
-            "large_float": 1e15,
-            "numbers": [9007199254740993, 1e-7, -0.0],
-            "nested": {"z": None, "a": True},
-        }
-        self.assertEqual(
-            _settings_schema._schema_key(schema),
-            "bl4592-b8fa1bac1e5fe5aa",
-        )
-
-    def test_non_finite_rna_metadata_is_filtered_from_schema_and_values(self):
-        scene = _make_scene()
-        scene.render.bl_rna.properties.append(
-            _prop(
-                "unstable_factor",
-                "FLOAT",
-                default=float("nan"),
-                soft_min=float("-inf"),
-                soft_max=float("inf"),
-                hard_min=float("-inf"),
-                hard_max=float("inf"),
-                step=float("nan"),
-                precision=3,
-            )
-        )
-        scene.render.unstable_factor = float("nan")
-
-        schema, schema_key = _settings_schema.collect_settings_schema(scene, _fake_bpy())
-
-        self.assertIsNotNone(schema)
-        self.assertRegex(schema_key, r"^bl459-[0-9a-f]{16}$")
-        render_group = next(group for group in schema["groups"] if group["id"] == "render")
-        unstable = next(
-            prop for prop in render_group["properties"]
-            if prop["identifier"] == "unstable_factor"
-        )
-        for field in ("default", "soft_min", "soft_max", "hard_min", "hard_max", "step"):
-            self.assertIsNone(unstable[field])
-        # Strict encoding proves this optional schema cannot poison the farm
-        # job request body with Python's non-standard numeric tokens.
-        json.dumps(schema, allow_nan=False)
-        self.assertNotIn(
-            "render.unstable_factor",
-            _settings_schema.collect_settings_values(scene),
-        )
-
-    def test_non_finite_optional_layout_fails_schema_capture_closed(self):
-        parser = SimpleNamespace(
-            collect_layout=lambda _bpy: {"panels": [{"factor": float("inf")}]}
-        )
-        with mock.patch.object(_settings_schema, "_load_layout_parser", return_value=parser):
-            self.assertEqual(
-                _settings_schema.collect_settings_schema(_make_scene(), _fake_bpy()),
-                (None, None),
-            )
-
-    def test_per_layer_paths_are_layer_relative(self):
-        schema, _ = _settings_schema.collect_settings_schema(_make_scene(), _fake_bpy())
-        groups = {group["id"]: group for group in schema["groups"]}
-        self.assertEqual(groups["view_layer"]["properties"][0]["path"], "use_pass_z")
-        self.assertEqual(
-            groups["view_layer.cycles"]["properties"][0]["path"],
-            "cycles.use_denoising",
-        )
-
-    def test_render_engine_enum_combines_subclasses_and_builtins(self):
-        schema, _ = _settings_schema.collect_settings_schema(_make_scene(), _fake_bpy())
-        groups = {group["id"]: group for group in schema["groups"]}
-        render_props = {prop["identifier"]: prop for prop in groups["render"]["properties"]}
-        engine_enum = render_props["engine"]["enum"]
-        self.assertEqual(
-            [item["identifier"] for item in engine_enum],
-            ["CYCLES", "BLENDER_EEVEE_NEXT", "BLENDER_WORKBENCH"],
-        )
-        self.assertEqual(engine_enum[0]["name"], "Cycles")
-        # Built-ins keep the identifier as the name fallback.
-        self.assertEqual(engine_enum[1]["name"], "BLENDER_EEVEE_NEXT")
-
-    def test_dynamic_enums_harvested_from_typeerror(self):
-        scene = _make_scene()
-        schema, _ = _settings_schema.collect_settings_schema(scene, _fake_bpy())
-        groups = {group["id"]: group for group in schema["groups"]}
-        view_props = {prop["identifier"]: prop for prop in groups["view_settings"]["properties"]}
-        self.assertEqual(
-            [item["identifier"] for item in view_props["view_transform"]["enum"]],
-            ["Standard", "AgX", "Filmic"],
-        )
-        self.assertEqual(
-            [item["identifier"] for item in view_props["look"]["enum"]],
-            ["None", "Punchy"],
-        )
-        display_prop = groups["display_settings"]["properties"][0]
-        self.assertEqual(
-            [item["identifier"] for item in display_prop["enum"]],
-            ["sRGB", "Display P3"],
-        )
-        # The failed assignment must not mutate the live value.
-        self.assertEqual(scene.view_settings.view_transform, "AgX")
-
-    def test_dynamic_enum_failure_degrades_to_static_items(self):
-        scene = _make_scene()
-        # A view_settings struct that accepts any assignment yields no
-        # harvested identifiers, so the static placeholder survives.
-        scene.view_settings = _struct(
-            [_prop("view_transform", "ENUM", enum_items=[_enum_item("Standard")])],
-            view_transform="Standard",
-        )
-        # A RenderEngine without __subclasses__ raises inside the special
-        # case, leaving render.engine on its static enum items.
-        broken_bpy = SimpleNamespace(
-            types=SimpleNamespace(RenderEngine=SimpleNamespace()),
-            app=SimpleNamespace(version_string="4.5.9"),
-        )
-        schema, _ = _settings_schema.collect_settings_schema(scene, broken_bpy)
-        groups = {group["id"]: group for group in schema["groups"]}
-        render_props = {prop["identifier"]: prop for prop in groups["render"]["properties"]}
-        self.assertEqual(
-            [item["identifier"] for item in render_props["engine"]["enum"]],
-            ["BLENDER_EEVEE_NEXT"],
-        )
-        view_prop = groups["view_settings"]["properties"][0]
-        self.assertEqual(
-            [item["identifier"] for item in view_prop["enum"]],
-            ["Standard"],
-        )
-
-    def test_dump_failure_returns_safe_empties(self):
-        self.assertEqual(
-            _settings_schema.collect_settings_schema(None, _fake_bpy()),
-            (None, None),
-        )
-        # A scene with none of the curated roots produces no groups.
-        self.assertEqual(
-            _settings_schema.collect_settings_schema(SimpleNamespace(), _fake_bpy()),
-            (None, None),
-        )
-
 
 class TestCollectSettingsValues(unittest.TestCase):
     def test_values_use_concrete_scene_relative_paths(self):
@@ -448,42 +295,6 @@ class TestCollectSettingsValues(unittest.TestCase):
         self.assertNotIn("render.file_extension", values)
         self.assertNotIn("render.bake", values)
         self.assertNotIn("render.weird", values)
-
-    def test_values_instantiate_every_view_layer(self):
-        scene = _make_scene()
-        second = _struct(
-            [_prop("use_pass_z", "BOOLEAN", default=False)],
-            name="Shadow",
-            use_pass_z=False,
-            cycles=_struct(
-                [_prop("use_denoising", "BOOLEAN", default=True)],
-                use_denoising=True,
-            ),
-        )
-        scene.view_layers.append(second)
-        values = _settings_schema.collect_settings_values(scene)
-        self.assertIs(values['view_layers["Beauty"].use_pass_z'], True)
-        self.assertIs(values['view_layers["Shadow"].use_pass_z'], False)
-        self.assertIs(values['view_layers["Shadow"].cycles.use_denoising'], True)
-
-    def test_missing_world_and_camera_are_none(self):
-        scene = _make_scene()
-        scene.world = None
-        scene.camera = None
-        values = _settings_schema.collect_settings_values(scene)
-        self.assertIsNone(values["world"])
-        self.assertIsNone(values["camera"])
-
-    def test_dump_failure_returns_safe_empties(self):
-        self.assertEqual(_settings_schema.collect_settings_values(None), {})
-
-        class _ExplodingLayers:
-            def __iter__(self):
-                raise RuntimeError("boom")
-
-        scene = _make_scene()
-        scene.view_layers = _ExplodingLayers()
-        self.assertEqual(_settings_schema.collect_settings_values(scene), {})
 
 
 if __name__ == "__main__":

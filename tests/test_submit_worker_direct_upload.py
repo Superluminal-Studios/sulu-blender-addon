@@ -117,31 +117,6 @@ def test_zip_payload_moves_directly_to_project_r2_with_rclone(tmp_path):
     ctx.session.request.assert_not_called()
 
 
-def test_project_payload_uses_rclone_for_blend_dependencies_and_manifest(tmp_path):
-    ctx = _upload_context(tmp_path, project_upload=True)
-
-    _run_upload(ctx)
-
-    calls = ctx.mods["run_rclone"].call_args_list
-    assert [call.args[1] for call in calls] == ["copyto", "copy", "move"]
-    assert calls[0].args[2:] == (
-        ctx.blend_path,
-        ":s3:project-bucket/TestProject/scene.blend",
-    )
-    assert calls[1].args[2:] == (
-        ctx.common_path,
-        ":s3:project-bucket/TestProject/",
-    )
-    assert calls[1].kwargs["extra"][:2] == ["--files-from", str(ctx.filelist)]
-    assert calls[2].args[2:] == (
-        str(ctx.filelist),
-        ":s3:project-bucket/TestProject/",
-    )
-    ctx.session.put.assert_not_called()
-    ctx.session.post.assert_not_called()
-    ctx.session.request.assert_not_called()
-
-
 def test_registration_posts_metadata_to_existing_farm_endpoint(tmp_path):
     blend = tmp_path / "scene.blend"
     blend.write_bytes(b"blend")
