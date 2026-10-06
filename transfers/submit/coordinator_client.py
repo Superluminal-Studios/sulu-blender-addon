@@ -47,13 +47,14 @@ def logical_name(value: str) -> str:
 
 
 class RenderCoordinatorClient:
-    def __init__(self, base_url, token, session, journal_path, identity, confirm, *, sleep=time.sleep):
+    def __init__(self, base_url, token, session, journal_path, identity, confirm, *, sleep=time.sleep, storage_session=None):
         parsed = urlsplit(str(base_url))
         if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError("Render service must use its configured HTTPS origin")
         self.base = str(base_url).rstrip("/")
         self.headers = {"Authorization": str(token)}
         self.session = session
+        self.storage_session = storage_session
         self.journal_path = Path(journal_path)
         self.identity = str(identity)
         self.confirm = confirm
@@ -153,54 +154,112 @@ class RenderCoordinatorClient:
         return None
 
     def upload_file(self, source: Path, descriptor, *, progress=None, before_chunk=None):
-        # Only an opaque reference is accepted. Never follow a returned remote
-        # hostname or forward a PocketBase bearer to the MCP/storage origins.
+        try:
+            return self._upload_file_direct(source, descriptor, progress=progress, before_chunk=before_chunk)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            raise CoordinatorError("GENERATION_CHANGED") from None
+
+    def _upload_file_direct(self, source: Path, descriptor, *, progress=None, before_chunk=None):
+        # Resolve the complete S3 plan before sending bytes. The storage session
+        # has no PocketBase bearer, cookies or application upload endpoint.
         reference = descriptor.get("file_ref")
         if not isinstance(reference, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,200}", reference):
             raise CoordinatorError("NOT_FOUND")
-        address = self.base + "/api/render/v1/transfers/u_" + reference
         source = Path(source)
         before = source.stat()
         total = before.st_size
-        if total != descriptor.get("size"):
+        if type(descriptor.get("size")) is not int or total != descriptor.get("size"):
             raise CoordinatorError("GENERATION_CHANGED")
-        offset, failures = 0, 0
-        with source.open("rb") as stream:
-            while offset < total or total == 0:
-                try:
+        if not isinstance(descriptor.get("parts"), list):
+            raise CoordinatorError("GENERATION_CHANGED")
+        parts = list(descriptor["parts"])
+        expected_count = (total + CHUNK_BYTES - 1) // CHUNK_BYTES
+        if type(descriptor.get("part_count")) is not int or descriptor.get("part_count") != expected_count or expected_count > 10_000:
+            raise CoordinatorError("GENERATION_CHANGED")
+        next_page = descriptor.get("parts_href")
+        seen_pages = set()
+        while next_page:
+            parsed = urlsplit(str(next_page))
+            if (parsed.scheme or parsed.netloc or parsed.fragment or
+                    not re.fullmatch(r"/api/render/v1/uploads/[A-Za-z0-9_-]{1,200}/parts/" + re.escape(reference), parsed.path) or
+                    parsed.query != f"start={len(parts)+1}" or next_page in seen_pages or len(seen_pages) >= expected_count):
+                raise CoordinatorError("NOT_FOUND")
+            seen_pages.add(next_page)
+            try:
+                with self.session.get(self.base + next_page, headers=self.headers, timeout=(15, 45),
+                                      allow_redirects=False, stream=True) as response:
+                    payload = bytearray()
+                    for piece in response.iter_content(65536):
+                        payload.extend(piece)
+                        if len(payload) > MAX_JSON_BYTES:
+                            raise CoordinatorError("DEPENDENCY_UNAVAILABLE")
+                    page = json.loads(payload)
+                    if (response.status_code != 200 or not isinstance(page, dict) or
+                            page.get("file_ref") != reference or type(page.get("part_count")) is not int or
+                            page.get("part_count") != expected_count or not isinstance(page.get("parts"), list) or not page["parts"]):
+                        raise CoordinatorError("GENERATION_CHANGED")
+                    parts.extend(page["parts"])
+                    if len(parts) > expected_count:
+                        raise CoordinatorError("GENERATION_CHANGED")
+                    next_page = page.get("parts_href")
+            except (requests.RequestException, ValueError, KeyError, TypeError):
+                raise CoordinatorError("DEPENDENCY_UNAVAILABLE") from None
+        if len(parts) != expected_count:
+            raise CoordinatorError("GENERATION_CHANGED")
+        for number, part in enumerate(parts, 1):
+            if not isinstance(part, dict) or any(type(part.get(field)) is not int for field in ("part_number", "offset", "size")):
+                raise CoordinatorError("GENERATION_CHANGED")
+            offset = (number - 1) * CHUNK_BYTES
+            url = urlsplit(str(part.get("href", "")))
+            control_url = urlsplit(self.base)
+            headers = part.get("headers", {})
+            if (part.get("part_number") != number or part.get("offset") != offset or
+                    part.get("size") != min(CHUNK_BYTES, total - offset) or part.get("method") != "PUT" or
+                    url.scheme != "https" or not url.netloc or url.username or url.password or url.fragment or
+                    (url.hostname, url.port or 443) == (control_url.hostname, control_url.port or 443) or
+                    not isinstance(headers, dict) or any(not isinstance(key, str) or not isinstance(value, str) or
+                        key.lower() in ("authorization", "cookie", "content-range") for key, value in headers.items())):
+                raise CoordinatorError("GENERATION_CHANGED")
+        offset = 0
+        storage = self.storage_session or requests.Session()
+        if storage is self.session:
+            raise CoordinatorError("DEPENDENCY_UNAVAILABLE")
+        if isinstance(storage, requests.Session):
+            if (storage.auth is not None or storage.cookies or storage.params or
+                    any(key.lower() in ("authorization", "cookie") for key in storage.headers)):
+                raise CoordinatorError("DEPENDENCY_UNAVAILABLE")
+            # Do not let .netrc or environment credentials add Authorization to
+            # signed storage requests, including on an idempotent retry.
+            storage.trust_env = False
+        try:
+            with source.open("rb") as stream:
+                for part in parts:
                     if before_chunk:
                         before_chunk()
-                    with self.session.head(address, headers=self.headers, timeout=(15, 45), allow_redirects=False) as head:
-                        if head.status_code != 200:
-                            raise CoordinatorError("GENERATION_CHANGED" if head.status_code == 412 else "DEPENDENCY_UNAVAILABLE")
-                        offset = int(head.headers["Upload-Offset"])
-                        length = int(head.headers["Upload-Length"])
-                        if length != total or offset < 0 or offset > total or (offset != total and offset % CHUNK_BYTES):
-                            raise CoordinatorError("GENERATION_CHANGED")
-                    if offset == total:
-                        break
                     if source.stat().st_size != total or source.stat().st_mtime_ns != before.st_mtime_ns:
                         raise CoordinatorError("GENERATION_CHANGED")
-                    stream.seek(offset)
-                    chunk = stream.read(min(CHUNK_BYTES, total - offset))
-                    if not chunk:
+                    chunk = stream.read(part["size"])
+                    if len(chunk) != part["size"]:
                         raise CoordinatorError("GENERATION_CHANGED")
-                    headers = {**self.headers, "Content-Range": f"bytes {offset}-{offset + len(chunk) - 1}/{total}",
-                               "Content-Length": str(len(chunk)), "Content-Type": "application/octet-stream"}
-                    with self.session.put(address, headers=headers, data=chunk, timeout=(15, 300), allow_redirects=False) as response:
-                        if response.status_code not in (200, 204):
-                            raise CoordinatorError("GENERATION_CHANGED" if response.status_code == 412 else "DEPENDENCY_UNAVAILABLE")
+                    for attempt in range(3):
+                        try:
+                            with storage.put(part["href"], headers=part["headers"], data=chunk,
+                                             timeout=(15, 300), allow_redirects=False) as response:
+                                if response.status_code not in (200, 204) or not response.headers.get("ETag"):
+                                    raise CoordinatorError("GENERATION_CHANGED" if response.status_code == 412 else "DEPENDENCY_UNAVAILABLE")
+                            break
+                        except requests.RequestException:
+                            if attempt == 2:
+                                raise CoordinatorError("DEPENDENCY_UNAVAILABLE") from None
+                            self.sleep(attempt + 1)
+                            # Replacing the same S3 multipart part is idempotent;
+                            # no application HEAD or database check is involved.
                     offset += len(chunk)
-                    failures = 0
                     if progress:
                         progress(offset, total)
-                except requests.RequestException:
-                    failures += 1
-                    if failures >= 3:
-                        raise CoordinatorError("DEPENDENCY_UNAVAILABLE") from None
-                    self.sleep(failures)
-                    # A lost PUT response is recovered with HEAD, never by
-                    # blindly appending the same chunk a second time.
+        finally:
+            if self.storage_session is None:
+                storage.close()
         if source.stat().st_size != total or source.stat().st_mtime_ns != before.st_mtime_ns:
             raise CoordinatorError("GENERATION_CHANGED")
         return offset
