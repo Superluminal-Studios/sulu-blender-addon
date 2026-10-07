@@ -62,7 +62,25 @@ def live_job_update(self, context):
 
 
 # Main Superluminal scene properties
+_storage_profile_items = []
+
+
+def storage_profile_items_cb(self, context):
+    global _storage_profile_items
+    choices = Storage.data.get("storage_profiles", {}).get(Storage.data.get("org_id", ""), {})
+    profiles = choices.get("profiles", [])
+    default_profile = choices.get("default_profile")
+    ordered = sorted(profiles, key=lambda item: item["id"] != default_profile)
+    # Blender retains the callback strings, so keep their backing list alive.
+    _storage_profile_items = [(item["id"], item["name"], "") for item in ordered]
+    return _storage_profile_items
+
+
 class SuperluminalSceneProperties(bpy.types.PropertyGroup):
+    storage_profile: bpy.props.EnumProperty(
+        name="Storage", items=storage_profile_items_cb, default=0,
+        description="Choose where this job's inputs and results are stored.",
+    )
     # ------------------------------------------------------------
     #  Project packaging
     # ------------------------------------------------------------
@@ -70,13 +88,13 @@ class SuperluminalSceneProperties(bpy.types.PropertyGroup):
         name="Upload Type",
         items=[
             ("ZIP",     "Zip",     "Upload this .blend and its dependencies as a single ZIP archive."),
-            ("PROJECT", "Project", "Upload files to a project folder; subsequent uploads send only files that changed."),
+            ("PROJECT", "Project", "Upload this .blend and its dependencies as project files."),
         ],
         default="ZIP",
         description=(
             "Choose how to package and upload your scene:\n"
             "• Zip — upload this .blend and its dependencies as a single ZIP archive.\n"
-            "• Project — upload files into a project folder; subsequent uploads only send changed files."
+            "• Project — upload this .blend and its dependencies as project files."
         ),
     )
     automatic_project_path: bpy.props.BoolProperty(

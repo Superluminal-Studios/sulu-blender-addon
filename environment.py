@@ -1,7 +1,7 @@
 """Fixed Sulu environment profiles used by the add-on and its workers.
 
-Profiles are deliberately compiled into the add-on.  Preferences select a
-known profile; they never accept a user-provided URL.  Worker handoffs carry
+Profiles and the build's selected target are compiled into the add-on.
+Worker handoffs carry
 the selected profile name and redundant endpoints so a subprocess can reject
 a mixed or edited handoff before it makes a network request.
 """
@@ -14,11 +14,12 @@ import re
 from types import MappingProxyType
 from typing import Mapping
 from urllib.parse import quote, urlsplit
+from .build_info import BUILD_ENVIRONMENT
 
 
 PRODUCTION_ENVIRONMENT = "production"
 TEST_ENVIRONMENT = "test"
-DEFAULT_ENVIRONMENT = PRODUCTION_ENVIRONMENT
+DEFAULT_ENVIRONMENT = BUILD_ENVIRONMENT
 
 
 @dataclass(frozen=True)
@@ -54,19 +55,6 @@ _PROFILES: Mapping[str, EnvironmentProfile] = MappingProxyType(
             render_coordinator=True,
         ),
     }
-)
-
-ENVIRONMENT_ITEMS = (
-    (
-        PRODUCTION_ENVIRONMENT,
-        "Production",
-        "Use your production Sulu account, projects, storage, and render farm",
-    ),
-    (
-        TEST_ENVIRONMENT,
-        "Test",
-        "Use the isolated Sulu test account, projects, storage, and render farm",
-    ),
 )
 
 _SAFE_IDENTIFIER = re.compile(r"[A-Za-z0-9_-]{1,128}")

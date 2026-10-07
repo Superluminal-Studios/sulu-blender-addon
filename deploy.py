@@ -36,6 +36,7 @@ def main():
     parser = argparse.ArgumentParser(description="Build release zip")
     parser.add_argument("--version", default=None)
     parser.add_argument("--output", default=None)
+    parser.add_argument("--environment", choices=("production", "test"), default="production", help="Compile the service target into this build")
     args = parser.parse_args()
 
     tmpdir = tempfile.gettempdir()
@@ -53,6 +54,14 @@ def main():
     if os.path.exists(stage):
         shutil.rmtree(stage)
     shutil.copytree(src, stage, ignore=shutil.ignore_patterns(*EXCLUDE))
+    build_info_path = os.path.join(stage, "build_info.py")
+    with open(build_info_path, "r", encoding="utf-8") as f:
+        build_info = f.read()
+    build_info, n = re.subn(r'(^BUILD_ENVIRONMENT\s*=\s*)["\'][^"\']+["\']', rf'\1"{args.environment}"', build_info, count=1, flags=re.MULTILINE)
+    if n != 1:
+        raise SystemExit("Could not set staged build service target")
+    with open(build_info_path, "w", encoding="utf-8") as f:
+        f.write(build_info)
 
     # Patch version and provenance in the staged release artifact. Source
     # checkouts remain explicitly marked as development builds.

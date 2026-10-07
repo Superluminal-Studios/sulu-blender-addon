@@ -4,13 +4,11 @@ import bpy
 from .storage            import Storage
 from .utils.date_utils   import format_submitted
 from .icons              import get_status_icon_id, get_fallback_icon
-from .utils.request_utils import fetch_jobs, fetch_projects
+from .utils.request_utils import fetch_jobs, fetch_projects, fetch_storage_profiles
 from .utils.request_utils import invalidate_job_refresh_context
 from .environment import (
-    ENVIRONMENT_ITEMS,
-    TEST_ENVIRONMENT,
+    DEFAULT_ENVIRONMENT,
     active_profile,
-    normalize_environment,
 )
 from .utils.job_list import (
     get_indexed_item,
@@ -109,6 +107,7 @@ def apply_project_context(
             and validate_project_identity(cached_project)[0]
         )
     if use_cached:
+        fetch_storage_profiles(cached_org_id, auth_context)
         if refresh_jobs:
             fetch_jobs(cached_org_id, cached_user_key, project_id)
         with Storage._lock:
@@ -147,6 +146,7 @@ def apply_project_context(
         )
 
     org_id, user_key = resolve_org_context(project)
+    fetch_storage_profiles(org_id, auth_context)
     with Storage._lock:
         _require_auth_context(auth_context)
         Storage.data["project_id"] = project_id
@@ -532,45 +532,6 @@ def draw_login(layout):
 class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
-    def _on_environment_changed(self, context):
-        selected = normalize_environment(self.environment)
-        if Storage.data.get("environment") == selected:
-            return
-
-        # Make every result owned by the previous auth/environment epoch stale
-        # before clearing its storage. This ordering closes the small window in
-        # which an old job refresh could otherwise publish into the new profile.
-        invalidate_job_refresh_context()
-        if not Storage.switch_environment(selected):
-            return
-        Storage.suppress_project_callback = True
-        try:
-            # Dynamic EnumProperty items are now empty because the environment
-            # switch cleared projects. Assigning "" raises in Blender; unsetting
-            # the persisted RNA value safely removes the old profile's choice.
-            self.property_unset("project_id")
-        finally:
-            Storage.suppress_project_callback = False
-
-        credentials = getattr(getattr(context, "window_manager", None), "sulu_wm", None)
-        if credentials is not None:
-            credentials.username = ""
-            credentials.password = ""
-        Storage.last_refresh_error = ""
-        print(f"Sulu environment changed to {active_profile().label}; signed out.")
-
-    environment: bpy.props.EnumProperty(
-        name="Environment",
-        description=(
-            "Choose the fixed Sulu service environment. Changing it signs you "
-            "out and clears cached projects and jobs"
-        ),
-        items=ENVIRONMENT_ITEMS,
-        default="production",
-        update=_on_environment_changed,
-    )
-
-
     project_id: bpy.props.EnumProperty(
         name="Project",
         items=get_project_items,
@@ -622,13 +583,6 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(self, "environment", text="Environment")
-        if self.environment == TEST_ENVIRONMENT:
-            notice = layout.box()
-            notice.alert = True
-            notice.label(text="TEST ENVIRONMENT", icon="INFO")
-            notice.label(text="Uses separate lab accounts, projects, storage, and farm capacity.")
-        layout.separator()
         draw_login(layout)
         layout.separator()
 
@@ -640,6 +594,9 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
         if self.show_debug_panel:
             box = layout.box()
             box.prop(self, "debug_mode")
+            settings = getattr(getattr(context, "scene", None), "superluminal_settings", None)
+            if settings is not None:
+                box.prop(settings, "storage_profile", text="Storage")
 
 
 classes = (
@@ -655,16 +612,10 @@ def register():
     for c in classes:
         register_class(c)
 
-    # Reconcile the saved Blender preference with the environment recorded
-    # alongside the cached token.  A mismatch is treated as a switch and clears
-    # the session instead of reusing credentials across environments.
-    try:
-        prefs = bpy.context.preferences.addons[__package__].preferences
-        selected = normalize_environment(prefs.environment)
-        if Storage.data.get("environment") != selected:
-            prefs._on_environment_changed(bpy.context)
-    except (AttributeError, KeyError, TypeError, ValueError):
-        pass
+    # The build target owns the endpoint; a stale session cannot switch it.
+    if Storage.data.get("environment") != DEFAULT_ENVIRONMENT:
+        invalidate_job_refresh_context()
+        Storage.switch_environment(DEFAULT_ENVIRONMENT)
 
 def unregister():
     _jobs_collection_cache["owner"] = None

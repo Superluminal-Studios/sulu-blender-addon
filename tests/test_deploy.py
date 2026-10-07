@@ -48,6 +48,13 @@ class TestDeployBuildProvenance(unittest.TestCase):
         ):
             self.assertNotIn(excluded, parts)
         self.assertIn("SuperluminalRender/environment.py", names)
+        self.assertIn('BUILD_ENVIRONMENT = "production"', archive.read("SuperluminalRender/build_info.py").decode())
+
+    def test_lab_build_fixes_its_service_target_without_changing_source(self):
+        original = (REPO_ROOT / "build_info.py").read_bytes()
+        archive = self._build("--version", "1.3.15", "--environment", "test")
+        self.assertIn('BUILD_ENVIRONMENT = "test"', archive.read("SuperluminalRender/build_info.py").decode())
+        self.assertEqual((REPO_ROOT / "build_info.py").read_bytes(), original)
 
 
 if __name__ == "__main__":

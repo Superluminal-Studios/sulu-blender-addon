@@ -242,6 +242,29 @@ def fetch_projects():
     return projects
 
 
+def fetch_storage_profiles(org_id: str, auth_context=None) -> dict:
+    """Refresh choices outside panel drawing, scoped to the active login."""
+    auth_context = auth_context or Storage.auth_context()
+    response = authorized_request(
+        "GET", f"{active_profile().api_url}/api/render/v1/storage-profiles",
+        params={"organization_id": org_id},
+    )
+    payload = response.json()
+    if not isinstance(payload, dict) or not isinstance(payload.get("profiles"), list):
+        raise ProjectContextError("Storage listing returned an invalid response.")
+    profiles = payload["profiles"]
+    if not profiles or any(not isinstance(item, dict) or not all(isinstance(item.get(key), str) and item[key] for key in ("id", "name", "provider")) for item in profiles):
+        raise ProjectContextError("No storage choices are available.")
+    if payload.get("default_profile") not in {item["id"] for item in profiles}:
+        raise ProjectContextError("The default storage choice is unavailable.")
+    environment, generation, token, _ = auth_context
+    with Storage._lock:
+        if not Storage.auth_context_matches(environment, generation, token):
+            raise ProjectContextError("Your Sulu session changed. Refresh storage choices.")
+        Storage.data.setdefault("storage_profiles", {})[org_id] = payload
+    return payload
+
+
 def fetch_blender_versions() -> list[dict]:
     """Refresh the deployed farm Blender versions advertised by PocketBase."""
     api_url = active_profile().api_url

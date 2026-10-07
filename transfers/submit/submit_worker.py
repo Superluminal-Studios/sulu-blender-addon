@@ -487,28 +487,15 @@ def _missing_project_identity_fields(project: dict | None) -> list[str]:
     return missing
 
 
-def _parse_project_storage_payload(payload: dict | None) -> tuple[dict, str]:
-    """
-    Parse project_storage list payload and return (storage_record, bucket_name).
-    """
+def _parse_job_storage_payload(payload: dict | None) -> tuple[dict, str]:
+    """Parse the pinned credential configuration returned by upload preparation."""
     if not isinstance(payload, dict):
         raise RuntimeError("storage API returned a non-object payload")
 
-    items = payload.get("items")
-    if not isinstance(items, list) or not items:
-        raise RuntimeError(
-            "no accessible project_storage records found for this project "
-            "(organization membership may be missing)"
-        )
-
-    first = items[0]
-    if not isinstance(first, dict):
-        raise RuntimeError("storage API returned an invalid record shape")
-
-    bucket = str(first.get("bucket_name") or "").strip()
+    bucket = str(payload.get("bucket_name") or "").strip()
     if not bucket:
-        raise RuntimeError("project_storage record is missing bucket_name")
-    return first, bucket
+        raise RuntimeError("Job storage configuration is missing bucket_name")
+    return payload, bucket
 
 
 def _response_error_message(response) -> str:
@@ -638,9 +625,8 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     is_blend_saved = worker_utils.is_blend_saved
     requests_retry_session = worker_utils.requests_retry_session
     _build_base = worker_utils._build_base
-    CLOUDFLARE_R2_DOMAIN = worker_utils.CLOUDFLARE_R2_DOMAIN
     open_folder = worker_utils.open_folder
-    fetch_project_storage = worker_utils.fetch_project_storage
+    prepare_job_storage = worker_utils.prepare_job_storage
 
     bat_utils = importlib.import_module(f"{pkg_name}.utils.bat_utils")
     pack_blend = bat_utils.pack_blend
@@ -670,9 +656,8 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "is_blend_saved": is_blend_saved,
         "requests_retry_session": requests_retry_session,
         "_build_base": _build_base,
-        "CLOUDFLARE_R2_DOMAIN": CLOUDFLARE_R2_DOMAIN,
         "open_folder": open_folder,
-        "fetch_project_storage": fetch_project_storage,
+        "prepare_job_storage": prepare_job_storage,
         "pack_blend": pack_blend,
         "trace_dependencies": trace_dependencies,
         "compute_project_root": compute_project_root,
@@ -1039,7 +1024,7 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
         report.set_environment("rclone_version", _rclone_ver)
     except Exception:
         pass
-    report.set_environment("transfer_mode", "direct-r2-rclone")
+    report.set_environment("transfer_mode", "direct-s3-rclone")
     report.set_environment("sulu_environment", str(data["environment"]))
 
     if _source_unpack_blocked:
@@ -1064,7 +1049,7 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
     ctx.filelist = filelist
     ctx.org_id = org_id
     ctx.project_sqid = project_sqid
-    ctx.project_name = project_name
+    ctx.project_name = f"{job_id}/input" if use_project else project_name
     ctx.report = report
     _record_phase_timing(
         ctx,
@@ -1736,7 +1721,7 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
 
 
 def _start_storage_prefetch(ctx: _SubmitContext) -> None:
-    """Fetch short-lived R2 credentials while dependency packing is running."""
+    """Pin storage and obtain direct credentials while packing is running."""
     if ctx.no_submit or ctx.test_mode or ctx.storage_future is not None:
         return
 
@@ -1754,11 +1739,14 @@ def _start_storage_prefetch(ctx: _SubmitContext) -> None:
         failure: Optional[BaseException] = None
         try:
             session = mods["requests_retry_session"]()
-            payload = mods["fetch_project_storage"](
+            payload = mods["prepare_job_storage"](
                 session,
                 data["pocketbase_url"],
                 data["user_token"],
                 data["project"]["id"],
+                data["project"]["organization_id"],
+                data["job_id"],
+                str(data.get("storage_profile") or ""),
             )
             result = (payload, (time.perf_counter() - started_at) * 1000.0)
         except BaseException as exc:
@@ -1776,7 +1764,7 @@ def _start_storage_prefetch(ctx: _SubmitContext) -> None:
 
     # A daemon is deliberate: if tracing aborts while the bounded retrying HTTP
     # request is in flight, it must not keep the failed submit process open.
-    # On the normal path _project_storage_payload waits for the full existing
+    # On the normal path _job_storage_payload waits for the full existing
     # retry policy, preserving the synchronous behavior this replaced.
     thread = threading.Thread(
         target=_fetch,
@@ -1899,8 +1887,8 @@ def _cancel_update_discovery(ctx: _SubmitContext) -> None:
         future.cancel()
 
 
-def _project_storage_payload(ctx: _SubmitContext) -> object:
-    """Return prefetched storage data, falling back to the synchronous path."""
+def _job_storage_payload(ctx: _SubmitContext) -> object:
+    """Wait for upload preparation or perform it before the first transfer."""
     wait_started_at = time.perf_counter()
     future = ctx.storage_future
     thread = ctx.storage_thread
@@ -1909,11 +1897,14 @@ def _project_storage_payload(ctx: _SubmitContext) -> object:
 
     if future is None:
         started_at = time.perf_counter()
-        payload = ctx.mods["fetch_project_storage"](
+        payload = ctx.mods["prepare_job_storage"](
             ctx.session,
             ctx.data["pocketbase_url"],
             ctx.data["user_token"],
             ctx.data["project"]["id"],
+            ctx.data["project"]["organization_id"],
+            ctx.data["job_id"],
+            str(ctx.data.get("storage_profile") or ""),
         )
         _record_phase_timing(
             ctx,
@@ -1944,7 +1935,6 @@ def _upload(ctx: _SubmitContext) -> None:
     session = ctx.session
     report = ctx.report
     _build_base = mods["_build_base"]
-    CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
     run_rclone = mods["run_rclone"]
     rclone_bin = ctx.rclone_bin
     blend_path = ctx.blend_path
@@ -1963,16 +1953,20 @@ def _upload(ctx: _SubmitContext) -> None:
     logger.stage_header(3, "Uploading", "Transferring data to farm storage")
     report.start_stage("upload")
 
-    # R2 credentials
+    # Direct credentials for the storage binding pinned before input upload.
     try:
-        storage_payload = _project_storage_payload(ctx)
-        s3info, bucket = _parse_project_storage_payload(storage_payload)
+        storage_payload = _job_storage_payload(ctx)
+        s3info, bucket = _parse_job_storage_payload(storage_payload)
+        selected_profile = s3info["storage_profile"]
+        if data.get("storage_profile") and data["storage_profile"] != selected_profile:
+            raise RuntimeError("Upload preparation returned a different storage profile")
+        data["storage_profile"] = selected_profile
     except Exception as exc:
         logger.fatal(
             f"Couldn't get storage credentials. Check your connection and try again.\nDetails: {exc}"
         )
 
-    base_cmd = _build_base(rclone_bin, f"https://{CLOUDFLARE_R2_DOMAIN}", s3info)
+    base_cmd = _build_base(rclone_bin, s3info["endpoint_url"], s3info)
 
     rclone_settings = _build_rclone_upload_settings()
     zip_archive_settings = _build_rclone_upload_settings(
@@ -2376,6 +2370,7 @@ def _register_job(ctx: _SubmitContext) -> None:
         "job_data": {
             "id": data["job_id"],
             "project_id": data["project"]["id"],
+            "storage_profile": data["storage_profile"],
             "packed_addons": data["packed_addons"],
             "organization_id": org_id,
             "main_file": (

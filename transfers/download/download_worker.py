@@ -66,7 +66,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
     apply_debug_handoff(data)
     clear_console = worker_utils.clear_console
     open_folder = worker_utils.open_folder
-    fetch_project_storage = getattr(worker_utils, "fetch_project_storage", None)
+    fetch_job_storage = worker_utils.fetch_job_storage
 
     # Import download logger
     download_logger_mod = importlib.import_module(f"{pkg_name}.utils.download_logger")
@@ -84,12 +84,11 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
         "AUTH_MARKERS": AUTH_MARKERS,
         "clear_console": clear_console,
         "open_folder": open_folder,
-        "fetch_project_storage": fetch_project_storage,
+        "fetch_job_storage": fetch_job_storage,
         "DownloadLogger": DownloadLogger,
         "TerminalKeyReader": terminal_actions_mod.TerminalKeyReader,
         "_build_base": worker_utils._build_base,
         "requests_retry_session": worker_utils.requests_retry_session,
-        "CLOUDFLARE_R2_DOMAIN": worker_utils.CLOUDFLARE_R2_DOMAIN,
         "run_preflight_checks": worker_utils.run_preflight_checks,
         "validate_handoff_environment": environment_mod.validate_handoff_environment,
         "job_page_url": environment_mod.job_page_url,
@@ -115,10 +114,9 @@ ensure_rclone: Any
 NOT_FOUND_MARKERS: Tuple[str, ...] = ()
 AUTH_MARKERS: Tuple[str, ...] = ()
 open_folder: Any
-fetch_project_storage: Any = None
+fetch_job_storage: Any
 _build_base: Any
 requests_retry_session: Any
-CLOUDFLARE_R2_DOMAIN: str
 TerminalKeyReader: Any
 
 
@@ -280,7 +278,7 @@ class _OutputCopyState:
 def _build_rclone_base() -> List[str]:
     return _build_base(
         rclone_bin,
-        f"https://{CLOUDFLARE_R2_DOMAIN}",
+        str(s3info["endpoint_url"]),
         s3info,
     )
 
@@ -298,39 +296,10 @@ def _failure_category(exc: RuntimeError) -> str:
 
 
 def _fetch_storage_credentials(force_renew: bool = False) -> Tuple[Dict[str, object], str]:
-    if fetch_project_storage is not None:
-        payload = fetch_project_storage(
-            session,
-            data["pocketbase_url"],
-            data["user_token"],
-            data["project"]["id"],
-            force_renew=force_renew,
-        )
-    else:
-        params = {
-            "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')",
-            "sort": "-updated",
-            "perPage": 1,
-            "skipTotal": 1,
-        }
-        if force_renew:
-            params["force_renew"] = "1"
-        response = session.get(
-            f"{data['pocketbase_url']}/api/collections/project_storage/records",
-            headers={"Authorization": data["user_token"]},
-            params=params,
-            timeout=30,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    items = payload.get("items", [])
-    if not items:
-        raise RuntimeError(
-            "No accessible storage records found for this project "
-            "(organization membership may be missing)."
-        )
-
-    rec = items[0]
+    rec = fetch_job_storage(
+        session, data["pocketbase_url"], data["user_token"],
+        data["project"]["organization_id"], job_id,
+    )
     return rec, rec["bucket_name"]
 
 
@@ -1239,8 +1208,8 @@ def run_download(
     global download_type, sarfis_url, sarfis_token
     global logger
     global run_rclone, ensure_rclone, NOT_FOUND_MARKERS, AUTH_MARKERS
-    global open_folder, fetch_project_storage, _build_base
-    global requests_retry_session, CLOUDFLARE_R2_DOMAIN
+    global open_folder, fetch_job_storage, _build_base
+    global requests_retry_session
     global TerminalKeyReader, _download_actions
 
     t_start = time.perf_counter()
@@ -1252,10 +1221,9 @@ def run_download(
     NOT_FOUND_MARKERS = mods["NOT_FOUND_MARKERS"]
     AUTH_MARKERS = mods["AUTH_MARKERS"]
     open_folder = mods["open_folder"]
-    fetch_project_storage = mods["fetch_project_storage"]
+    fetch_job_storage = mods["fetch_job_storage"]
     _build_base = mods["_build_base"]
     requests_retry_session = mods["requests_retry_session"]
-    CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
     DownloadLogger = mods["DownloadLogger"]
     TerminalKeyReader = mods["TerminalKeyReader"]
     if clear_console:
@@ -1355,8 +1323,9 @@ def run_download(
             client = client_module.RenderCoordinatorClient(data["pocketbase_url"], data["user_token"], session,
                 Path(data["addon_dir"]) / "reports" / ("download-" + job_id + ".json"), identity, lambda *_: False)
             downloader = artifact_module.ArtifactDownloader(client, data["project"]["organization_id"], job_id, dest_dir,
+                storage_loader=lambda: _fetch_storage_credentials()[0],
                 poll=_poll_download_actions, wait=_wait_for_download_actions)
-            logger.info("Downloading authorized outputs by layout and generation. No storage credentials are requested.")
+            logger.info("Downloading outputs directly from job storage by layout and generation.")
             outcome = downloader.run(automatic=download_type == "auto")
         else:
             outcome = _run_selected_downloader(dest_dir, download_type, sarfis_url, sarfis_token)

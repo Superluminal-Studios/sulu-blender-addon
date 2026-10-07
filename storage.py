@@ -41,6 +41,7 @@ class Storage:
         "org_id": "",
         "user_key": "",
         "projects": [],
+        "storage_profiles": {},
         "jobs": {},
     }
     # Epoch for both environment and authenticated-user boundaries. A delayed
@@ -192,6 +193,7 @@ class Storage:
             org_id="",
             user_key="",
             projects=[],
+            storage_profiles={},
             jobs={},
         )
 
@@ -279,6 +281,7 @@ class Storage:
                     org_id="",
                     user_key="",
                     projects=[],
+                    storage_profiles={},
                     jobs={},
                 )
                 cls._atomic_write(cls._file, cls.data)
