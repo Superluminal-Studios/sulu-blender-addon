@@ -235,36 +235,6 @@ class TestRequestUtilsJobs(unittest.TestCase):
         )
 
 
-    def test_get_render_queue_key_repairs_missing_record_via_farm_status(self):
-        responses = [
-            _FakeResponse({"items": []}),
-            _FakeResponse({"ready": True}),
-            _FakeResponse({"items": [{"user_key": "recovered-user-key"}]}),
-        ]
-        with patch.object(
-            request_utils,
-            "authorized_request",
-            side_effect=responses,
-        ) as request:
-            self.assertEqual(
-                request_utils.get_render_queue_key("org-id"),
-                "recovered-user-key",
-            )
-
-        self.assertEqual(request.call_count, 3)
-        self.assertEqual(
-            request.call_args_list[1].args,
-            (
-                "GET",
-                f"{request_utils.POCKETBASE_URL}/api/farm_status/org-id",
-            ),
-        )
-        self.assertEqual(
-            request.call_args_list[1].kwargs,
-            {"isolated_session": True},
-        )
-
-
 class TestCoordinatedJobReads(unittest.TestCase):
     def setUp(self):
         profile = pocketbase_auth.profile_for_environment("test")
@@ -278,13 +248,77 @@ class TestCoordinatedJobReads(unittest.TestCase):
         with patch.object(request_utils, "authorized_request", side_effect=pages), \
              patch.object(request_utils, "_selected_project_identity", return_value=("project", "sqid")):
             with self.assertRaises(request_utils.ProjectContextError):
-                request_utils.request_jobs("organization", "", "project")
+                request_utils.request_jobs("organization", "project")
         with patch.object(request_utils, "authorized_request", return_value=_FakeResponse({"body": {"job-a": {"project_id": "project"}}})), \
              patch.object(request_utils, "_selected_project_identity", return_value=("project", "sqid")), \
              patch.object(request_utils, "_current_refresh_identity", side_effect=[(1, 1), (1, 2)]), \
              patch.dict(request_utils.Storage.data, {"jobs": {"other-user-job": {}}}):
-            request_utils._request_jobs_unlocked("organization", "", "project")
+            request_utils._request_jobs_unlocked("organization", "project")
             self.assertEqual(request_utils.Storage.data["jobs"], {"other-user-job": {}})
+
+    def test_auto_refresh_follows_project_switch_without_a_queue_credential(self):
+        calls = []
+
+        def read(method, url, **options):
+            project = options["params"]["project_id"]
+            calls.append((method, url, options))
+            return _FakeResponse({"body": {"job-" + project: {"project_id": project, "total_tasks": 200, "finished_tasks": 100}}})
+
+        class StopAfterProjectSwitch:
+            stopped = False
+            waits = 0
+
+            def is_set(self):
+                return self.stopped
+
+            def wait(self, _timeout):
+                self.waits += 1
+                if self.waits == 1:
+                    request_utils.Storage.data.update(org_id="organization-b", project_id="project-b")
+                    return False
+                self.stopped = True
+                return True
+
+        class ImmediateThread:
+            def __init__(self, target, args, daemon):
+                self.target, self.args = target, args
+                self.daemon = daemon
+
+            def start(self):
+                self.target(*self.args)
+
+        with patch.dict(request_utils.Storage.data, {
+            "org_id": "organization-a", "project_id": "project-a", "user_key": "",
+            "user_token": "listing-test-session", "jobs": {},
+            "projects": [{"id": "project-a", "sqid": "a"}, {"id": "project-b", "sqid": "b"}],
+        }), patch.object(request_utils.Storage, "enable_job_thread", False), \
+             patch.object(request_utils, "job_thread_running", False), \
+             patch.object(request_utils, "_job_thread_generation", None), \
+             patch.object(request_utils, "_job_loop_stop_event", StopAfterProjectSwitch()), \
+             patch.object(request_utils, "_refresh_infrastructure_enabled", True), \
+             patch.object(request_utils, "_request_properties_redraw"), \
+             patch.object(request_utils, "_ensure_pulse_timer"), \
+             patch.object(request_utils.threading, "Thread", ImmediateThread), \
+             patch.object(request_utils, "authorized_request", side_effect=read):
+            request_utils.fetch_jobs("organization-a", "project-a", live_update=True)
+            self.assertEqual(request_utils.Storage.data["jobs"], {"job-project-b": {"project_id": "project-b", "total_tasks": 200, "finished_tasks": 100}})
+            self.assertFalse(request_utils.job_thread_running)
+
+        self.assertEqual([(method, url.rsplit("/", 1)[-1], options["params"]) for method, url, options in calls], [
+            ("GET", "organization-a", {"project_id": "project-a", "limit": 200}),
+            ("GET", "organization-b", {"project_id": "project-b", "limit": 200}),
+        ])
+        self.assertTrue(all("/api/render/v1/browser/jobs/" in url and options["stored_job_session"] and "headers" not in options for _, url, options in calls))
+
+    def test_cleared_project_during_read_cannot_restore_previous_jobs(self):
+        def read(*_args, **_options):
+            request_utils.Storage.data.update(project_id="", jobs={})
+            return _FakeResponse({"body": {"old-project-job": {"project_id": "project"}}})
+
+        with patch.dict(request_utils.Storage.data, {"org_id": "organization", "project_id": "project", "projects": [{"id": "project", "sqid": "sqid"}]}), \
+             patch.object(request_utils, "authorized_request", side_effect=read):
+            request_utils.fetch_jobs("organization", "project")
+            self.assertEqual(request_utils.Storage.data["jobs"], {})
 
 
 if __name__ == "__main__":

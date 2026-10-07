@@ -54,7 +54,6 @@ def live_job_update(self, context):
     if self.live_job_updates:
         fetch_jobs(
             Storage.data["org_id"],
-            Storage.data["user_key"],
             prefs.project_id,
             True
         )

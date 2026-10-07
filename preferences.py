@@ -91,7 +91,6 @@ def apply_project_context(
     with Storage._lock:
         _require_auth_context(auth_context)
         cached_org_id = str(Storage.data.get("org_id") or "").strip()
-        cached_user_key = ""
         cached_project = next(
             (
                 p
@@ -100,7 +99,6 @@ def apply_project_context(
             ),
             None,
         )
-        Storage.data["user_key"] = ""
         use_cached = (
             Storage.data.get("project_id") == project_id
             and bool(cached_org_id)
@@ -109,7 +107,7 @@ def apply_project_context(
     if use_cached:
         fetch_storage_profiles(cached_org_id, auth_context)
         if refresh_jobs:
-            fetch_jobs(cached_org_id, cached_user_key, project_id)
+            fetch_jobs(cached_org_id, project_id)
         with Storage._lock:
             _require_auth_context(auth_context)
             Storage.save()
@@ -145,15 +143,14 @@ def apply_project_context(
             missing_fields=missing,
         )
 
-    org_id, user_key = resolve_org_context(project)
+    org_id, _ = resolve_org_context(project)
     fetch_storage_profiles(org_id, auth_context)
     with Storage._lock:
         _require_auth_context(auth_context)
         Storage.data["project_id"] = project_id
         Storage.data["org_id"] = org_id
-        Storage.data["user_key"] = user_key
     if refresh_jobs:
-        fetch_jobs(org_id, user_key, project_id)
+        fetch_jobs(org_id, project_id)
     with Storage._lock:
         _require_auth_context(auth_context)
         Storage.save()
@@ -248,9 +245,6 @@ def _jobs_collection_snapshot(prefs, jobs_source=None, projects_source=None):
         projects_source,
         prefs.project_id,
     ):
-        tasks = job.get("tasks", {}) or {}
-        if not isinstance(tasks, dict):
-            tasks = {}
         submit_time, _ = timestamp_value(job.get("submit_time"))
         start_time, _ = timestamp_value(job.get("start_time"))
         end_time, _ = timestamp_value(job.get("end_time"))
@@ -266,7 +260,7 @@ def _jobs_collection_snapshot(prefs, jobs_source=None, projects_source=None):
                 int_value(job.get("start"), 0),
                 int_value(job.get("end"), 0),
                 job_progress(job),
-                int_value(tasks.get("finished"), 0),
+                int_value(job.get("finished_tasks"), 0),
                 str(job.get("blender_version", "")),
                 job_type_label(job),
             )
@@ -378,10 +372,7 @@ def refresh_jobs_collection(prefs):
         it.start_frame      = int_value(job.get("start"), 0)
         it.end_frame        = int_value(job.get("end"),   0)
         it.progress         = job_progress(job)
-        tasks = job.get("tasks", {}) or {}
-        if not isinstance(tasks, dict):
-            tasks = {}
-        it.finished_frames  = int_value(tasks.get("finished"), 0)
+        it.finished_frames  = int_value(job.get("finished_tasks"), 0)
         it.blender_version  = job.get("blender_version", "")
         it.type             = job_type_label(job)
         if jid == active_job_id:
