@@ -93,7 +93,8 @@ class RenderCoordinatorClient:
                     raise CoordinatorError("DEPENDENCY_UNAVAILABLE") from None
                 if response.status_code not in (200, 202) or not isinstance(data, dict):
                     error = data.get("error", {}) if isinstance(data, dict) else {}
-                    raise CoordinatorError(error.get("code", "DEPENDENCY_UNAVAILABLE") if isinstance(error, dict) else "DEPENDENCY_UNAVAILABLE")
+                    code = data.get("code") if isinstance(data, dict) else None
+                    raise CoordinatorError(code or (error.get("code", "DEPENDENCY_UNAVAILABLE") if isinstance(error, dict) else "DEPENDENCY_UNAVAILABLE"))
                 return data
         except requests.RequestException:
             # URLs, headers, and upstream bodies never enter diagnostics.
@@ -159,7 +160,7 @@ class RenderCoordinatorClient:
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             raise CoordinatorError("GENERATION_CHANGED") from None
 
-    def _upload_file_direct(self, source: Path, descriptor, *, progress=None, before_chunk=None):
+    def resolve_upload_file(self, source: Path, descriptor):
         # Resolve the complete S3 plan before sending bytes. The storage session
         # has no PocketBase bearer, cookies or application upload endpoint.
         reference = descriptor.get("file_ref")
@@ -168,6 +169,9 @@ class RenderCoordinatorClient:
         source = Path(source)
         before = source.stat()
         total = before.st_size
+        signature = (total, before.st_mtime_ns)
+        if descriptor.get("_source_signature", signature) != signature:
+            raise CoordinatorError("GENERATION_CHANGED")
         if type(descriptor.get("size")) is not int or total != descriptor.get("size"):
             raise CoordinatorError("GENERATION_CHANGED")
         if not isinstance(descriptor.get("parts"), list):
@@ -220,6 +224,16 @@ class RenderCoordinatorClient:
                     not isinstance(headers, dict) or any(not isinstance(key, str) or not isinstance(value, str) or
                         key.lower() in ("authorization", "cookie", "content-range") for key, value in headers.items())):
                 raise CoordinatorError("GENERATION_CHANGED")
+        resolved = {**descriptor, "parts": parts, "_source_signature": signature}
+        resolved.pop("parts_href", None)
+        return resolved
+
+    def _upload_file_direct(self, source: Path, descriptor, *, progress=None, before_chunk=None):
+        descriptor = self.resolve_upload_file(source, descriptor)
+        source = Path(source)
+        before = source.stat()
+        total = before.st_size
+        parts = descriptor["parts"]
         offset = 0
         storage = self.storage_session or requests.Session()
         if storage is self.session:

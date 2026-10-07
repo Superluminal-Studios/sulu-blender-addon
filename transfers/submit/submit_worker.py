@@ -36,7 +36,6 @@ import zipfile
 import webbrowser
 from concurrent.futures import Future
 from dataclasses import dataclass, field
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -52,91 +51,7 @@ def _default_logger(msg: str) -> None:
 _LOG = _default_logger
 _UPLOAD_RESULT_PREFIX = "SULU_UPLOAD_RESULT "
 _PHASE_TIMING_PREFIX = "SULU_PHASE_TIMING "
-_ZIP_SINGLE_PUT_CUTOFF_BYTES = 100 * 1024 * 1024
-_MAX_CLOCK_DRIFT_SECONDS = 300
 _MAX_SETTINGS_SCHEMA_BYTES = 2 * 1024 * 1024
-
-
-def _build_rclone_upload_settings(
-    *,
-    single_zip_archive: bool = False,
-    archive_size_bytes: int = 0,
-) -> List[str]:
-    """Build bounded-memory S3 settings for the requested upload shape.
-
-    ZIP submissions upload one known-size archive.  Keep archives up to 100 MiB
-    on S3's single-PUT path, then use 16 MiB multipart chunks so concurrency is
-    useful for larger archives without the 64 MiB progress/memory lead observed
-    in the benchmark runs.  Other upload shapes retain their established
-    settings until they have their own live A/B evidence.
-    """
-    if single_zip_archive:
-        transfers = "1"
-        checkers = "1"
-        chunk_size = "16M"
-        upload_cutoff = "100M"
-        upload_concurrency = "8"
-        buffer_size = "16M"
-    else:
-        transfers = "4"
-        checkers = "4"
-        chunk_size = "64M"
-        upload_cutoff = "64M"
-        upload_concurrency = "4"
-        buffer_size = "64M"
-
-    settings = [
-        "--transfers",
-        transfers,
-        "--checkers",
-        checkers,
-        "--s3-chunk-size",
-        chunk_size,
-        "--s3-upload-cutoff",
-        upload_cutoff,
-        "--s3-upload-concurrency",
-        upload_concurrency,
-        "--buffer-size",
-        buffer_size,
-        "--retries",
-        "20",
-        "--low-level-retries",
-        "20",
-        "--retries-sleep",
-        "5s",
-        "--timeout",
-        "5m",
-        "--contimeout",
-        "30s",
-        "--no-traverse",
-    ]
-    if single_zip_archive:
-        # ZIP archive names are generated from a fresh job UUID. There is no
-        # useful destination object to compare before upload, so avoid the
-        # serial preflight HEAD. This does not disable rclone's post-upload
-        # verification, and a retried submission safely overwrites the same
-        # job-scoped archive.
-        settings.append("--no-check-dest")
-    if single_zip_archive and int(archive_size_bytes or 0) > _ZIP_SINGLE_PUT_CUTOFF_BYTES:
-        # The archive key is unique to this job. For multipart archives, avoid
-        # rereading the entire staged ZIP solely to attach a whole-object MD5;
-        # rclone still validates every uploaded part and performs its normal
-        # post-upload HEAD, while ZIP CRCs protect extraction on the node.
-        settings.append("--s3-disable-checksum")
-    return settings
-
-
-def _clock_drift_from_http_date(
-    value: object,
-    *,
-    local_time: Optional[float] = None,
-) -> Optional[int]:
-    """Return signed local-minus-server clock drift from an HTTP Date value."""
-    try:
-        server_time = parsedate_to_datetime(str(value or "")).timestamp()
-    except (TypeError, ValueError, OverflowError):
-        return None
-    return int((time.time() if local_time is None else float(local_time)) - server_time)
 
 
 def _set_logger(fn) -> None:
@@ -202,87 +117,16 @@ def _emit_upload_success_payload_if_requested(
         _emit_upload_success_payload(payload)
 
 
-def _rclone_bytes(result) -> int:
-    """Extract bytes_transferred from run_rclone's stats dict."""
-    return (result or {}).get("bytes_transferred", 0)
-
-
-def _is_empty_upload(result, expected_file_count: int) -> bool:
-    """True if rclone transferred nothing despite files being expected."""
-    if expected_file_count <= 0:
-        return False
-    if result is None:
-        return True
-    if not result.get("stats_received", True):
-        return True
-    return result.get("transfers", 0) == 0
-
-
-def _get_rclone_tail(result) -> list:
-    """Extract tail log lines from run_rclone result."""
-    return (result or {}).get("tail_lines", [])
-
-
-def _log_upload_result(result, expected_bytes: int = 0, label: str = "") -> None:
-    """Log a brief summary of rclone transfer stats to the terminal (debug only)."""
-    if not _debug_enabled or not _debug_enabled():
-        return
-    if result is None:
-        _LOG(f"  {label}result: no stats (rclone returned None)")
-        return
-
-    actual = result.get("bytes_transferred", 0)
-    checks = result.get("checks", 0)
-    transfers = result.get("transfers", 0)
-    errors = result.get("errors", 0)
-    received = result.get("stats_received", True)
-
-    parts = []
-    if not received:
-        parts.append("stats_received=False")
-    parts.append(f"transferred={_format_size(actual)}")
-    if expected_bytes > 0:
-        parts.append(f"expected={_format_size(expected_bytes)}")
-    parts.append(f"checks={checks}")
-    parts.append(f"transfers={transfers}")
-    if errors:
-        parts.append(f"errors={errors}")
-
-    _LOG(f"  {label}{', '.join(parts)}")
-
-    cmd = result.get("command")
-    if cmd:
-        _LOG(f"  {label}cmd: {cmd}")
-
-
-def _check_rclone_errors(result, label: str = "") -> None:
-    """Log a warning if rclone reported errors > 0 despite exit code 0 (debug only)."""
-    if not _debug_enabled or not _debug_enabled():
-        return
-    if not isinstance(result, dict):
-        return
-    errors = result.get("errors", 0) or 0
-    if errors > 0:
-        _LOG(
-            f"  WARNING ({label}): rclone reported {errors} error(s) "
-            "despite exit code 0 — some files may not have uploaded"
-        )
-
-
 _WIN_DRIVE_ROOT_RE = re.compile(r"^[A-Za-z]:[\\/]?$")
 
 
 def _is_filesystem_root(path: str) -> bool:
-    """True if path is a filesystem root where rclone --files-from is unreliable."""
+    """Identify a root that cannot define a portable project namespace."""
     p = str(path).replace("\\", "/").rstrip("/")
-    if not p:
+    if not p or _WIN_DRIVE_ROOT_RE.match(p):
         return True
-    if _WIN_DRIVE_ROOT_RE.match(p):
-        return True
-    # macOS volume root: /Volumes/VolumeName
     if re.match(r"^/Volumes/[^/]+$", p):
         return True
-    # Linux: /mnt/X or /media/user/X
     if re.match(r"^/mnt/[^/]+$", p):
         return True
     if re.match(r"^/media/[^/]+/[^/]+$", p):
@@ -487,54 +331,6 @@ def _missing_project_identity_fields(project: dict | None) -> list[str]:
     return missing
 
 
-def _parse_job_storage_payload(payload: dict | None) -> tuple[dict, str]:
-    """Parse the pinned credential configuration returned by upload preparation."""
-    if not isinstance(payload, dict):
-        raise RuntimeError("storage API returned a non-object payload")
-
-    bucket = str(payload.get("bucket_name") or "").strip()
-    if not bucket:
-        raise RuntimeError("Job storage configuration is missing bucket_name")
-    return payload, bucket
-
-
-def _response_error_message(response) -> str:
-    if response is None:
-        return ""
-
-    body = ""
-    try:
-        payload = response.json()
-    except Exception:
-        payload = None
-
-    if isinstance(payload, dict):
-        message = payload.get("message") or payload.get("error")
-        if isinstance(message, str) and message.strip():
-            body = message.strip()
-        elif payload:
-            body = json.dumps(payload, ensure_ascii=False)
-
-    if not body:
-        try:
-            body = str(response.text or "").strip()
-        except Exception:
-            body = ""
-
-    if len(body) > 800:
-        body = body[:800] + "..."
-    return body
-
-
-def _request_exception_details(exc: requests.RequestException) -> str:
-    details = str(exc)
-    response = getattr(exc, "response", None)
-    message = _response_error_message(response)
-    if message:
-        details = f"{details}\nServer response: {message}"
-    return details
-
-
 # Utilities imported after bootstrap
 # These will be set by _bootstrap_addon_modules() at runtime.
 # Declared here to satisfy static analysis and allow early use in type hints.
@@ -624,9 +420,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
     shorten_path = worker_utils.shorten_path
     is_blend_saved = worker_utils.is_blend_saved
     requests_retry_session = worker_utils.requests_retry_session
-    _build_base = worker_utils._build_base
     open_folder = worker_utils.open_folder
-    prepare_job_storage = worker_utils.prepare_job_storage
 
     bat_utils = importlib.import_module(f"{pkg_name}.utils.bat_utils")
     pack_blend = bat_utils.pack_blend
@@ -637,10 +431,6 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
 
     submit_logger = importlib.import_module(f"{pkg_name}.utils.submit_logger")
     create_logger = submit_logger.create_logger
-
-    rclone = importlib.import_module(f"{pkg_name}.transfers.rclone_utils")
-    run_rclone = rclone.run_rclone
-    ensure_rclone = rclone.ensure_rclone
 
     diagnostic_report_mod = importlib.import_module(
         f"{pkg_name}.utils.diagnostic_report"
@@ -655,16 +445,12 @@ def _bootstrap_addon_modules(data: Dict[str, object]):
         "shorten_path": shorten_path,
         "is_blend_saved": is_blend_saved,
         "requests_retry_session": requests_retry_session,
-        "_build_base": _build_base,
         "open_folder": open_folder,
-        "prepare_job_storage": prepare_job_storage,
         "pack_blend": pack_blend,
         "trace_dependencies": trace_dependencies,
         "compute_project_root": compute_project_root,
         "cloud_files": cloud_files,
         "create_logger": create_logger,
-        "run_rclone": run_rclone,
-        "ensure_rclone": ensure_rclone,
         "DiagnosticReport": DiagnosticReport,
         "generate_test_report": generate_test_report,
         "validate_handoff_environment": environment_mod.validate_handoff_environment,
@@ -684,7 +470,6 @@ class _SubmitContext:
     preflight_issues: List[str] = field(default_factory=list)
     preflight_user_override: Optional[bool] = None
     headers: Dict[str, str] = field(default_factory=dict)
-    rclone_bin: Any = None
     blend_path: str = ""
     use_project: bool = False
     automatic_project_path: bool = True
@@ -709,8 +494,6 @@ class _SubmitContext:
     main_blend_s3: str = ""
     project_root_str: str = ""
     phase_timings: Dict[str, Dict[str, object]] = field(default_factory=dict)
-    storage_future: Optional[Future] = None
-    storage_thread: Optional[threading.Thread] = None
     update_future: Optional[Future] = None
     update_thread: Optional[threading.Thread] = None
 
@@ -757,35 +540,6 @@ def _record_phase_timing(
                 {"phase": str(phase), **entry},
                 sort_keys=True,
             )
-        )
-
-
-def _record_archive_rclone_timings(ctx: _SubmitContext, result: object) -> None:
-    """Record rclone's process and post-byte-count finalization boundaries."""
-    if not isinstance(result, dict):
-        return
-
-    process_seconds = result.get("process_elapsed_time")
-    if isinstance(process_seconds, (int, float)):
-        reported_seconds = result.get("reported_bytes_complete_time")
-        _record_phase_timing(
-            ctx,
-            "archive_upload",
-            float(process_seconds) * 1000.0,
-            reported_bytes_complete_ms=(
-                float(reported_seconds) * 1000.0
-                if isinstance(reported_seconds, (int, float))
-                else None
-            ),
-        )
-
-    finalization_seconds = result.get("finalization_time")
-    if isinstance(finalization_seconds, (int, float)):
-        _record_phase_timing(
-            ctx,
-            "archive_finalization",
-            float(finalization_seconds) * 1000.0,
-            boundary="reported_bytes_complete_to_process_exit",
         )
 
 
@@ -853,97 +607,18 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
     preflight_ok = ctx.preflight_ok
     preflight_issues = ctx.preflight_issues
     _preflight_user_override = ctx.preflight_user_override
-    ensure_rclone = mods["ensure_rclone"]
     is_blend_saved = mods["is_blend_saved"]
     DiagnosticReport = mods["DiagnosticReport"]
-
     headers = {"Authorization": data["user_token"]}
-
-    # Ensure rclone is present (shows Rich download progress)
-    rclone_setup_started_at = time.perf_counter()
-    try:
-        rclone_bin = ensure_rclone(logger=logger)
-    except Exception as e:
-        logger.fatal(
-            "Couldn't set up transfer tool. "
-            "Restart Blender. If this keeps happening, reinstall the add-on.\n"
-            f"Details: {e}"
-        )
-    rclone_setup_duration_ms = (
-        time.perf_counter() - rclone_setup_started_at
-    ) * 1000.0
-
-    # Verify farm availability (nice error if org misconfigured)
+    test_mode = bool(data.get("test_mode", False))
+    no_submit = bool(data.get("no_submit", False))
     missing_project_fields = _missing_project_identity_fields(proj)
     if missing_project_fields:
-        logger.fatal(
-            "Selected project metadata is incomplete "
-            f"({', '.join(missing_project_fields)}).\n"
-            "Refresh projects in the add-on and try again."
-        )
-
-    # Credential resolution is independent of the farm readiness request.
-    # Starting it here hides that round trip behind farm preflight instead of
-    # waiting until the preflight has completed.  Test/no-submit modes retain
-    # their no-network behavior.
-    test_mode: bool = bool(data.get("test_mode", False))
-    no_submit: bool = bool(data.get("no_submit", False))
-    ctx.test_mode = test_mode
-    ctx.no_submit = no_submit
-    _start_storage_prefetch(ctx)
-
+        logger.fatal("Selected project metadata is incomplete. Refresh projects and try again.")
     farm_status_started_at = time.perf_counter()
-    farm_status_started_wall = time.time()
-    try:
-        farm_status = session.get(
-            f"{data['pocketbase_url']}/api/farm_status/{proj['organization_id']}",
-            headers=headers,
-            timeout=30,
-        )
-        if farm_status.status_code != 200:
-            # Keep the user-facing message calm; include details only in debug.
-            if _debug_enabled():
-                try:
-                    logger.error(f"Farm status check response: {farm_status.json()}")
-                except Exception:
-                    logger.error(f"Farm status check response: {farm_status.text}")
-
-            logger.fatal(
-                "Couldn't confirm farm availability.\n"
-                "Verify you're logged in and a project is selected. "
-                "If this continues, log out and log back in."
-            )
-
-        farm_status_finished_wall = time.time()
-        drift = _clock_drift_from_http_date(
-            farm_status.headers.get("Date"),
-            local_time=(farm_status_started_wall + farm_status_finished_wall) / 2.0,
-        )
-        if drift is not None and abs(drift) > _MAX_CLOCK_DRIFT_SECONDS:
-            direction = "ahead" if drift > 0 else "behind"
-            logger.fatal(
-                f"System clock is {abs(drift) // 60} minutes {direction}. "
-                "Cloud storage requires accurate time. Sync the system clock "
-                "in date and time settings, then try again."
-            )
-        if drift is not None and abs(drift) > 60:
-            direction = "ahead" if drift > 0 else "behind"
-            preflight_issues.append(
-                f"System clock is {abs(drift)} seconds {direction}"
-            )
-    except SystemExit:
-        raise
-    except Exception as exc:
-        if _debug_enabled():
-            logger.error(f"Farm status check exception: {exc}")
-        logger.fatal(
-            "Couldn't confirm farm availability.\n"
-            "Verify you're logged in and a project is selected. "
-            "If this continues, log out and log back in."
-        )
-    farm_status_duration_ms = (
-        time.perf_counter() - farm_status_started_at
-    ) * 1000.0
+    if not test_mode and not no_submit:
+        _coordinator(ctx).tool("render_capacity_get", {"organization_id": proj["organization_id"]})
+    farm_status_duration_ms = (time.perf_counter() - farm_status_started_at) * 1000.0
 
     # Local paths / settings
     blend_path: str = data["blend_path"]
@@ -1015,16 +690,7 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
         preflight_issues,
         _preflight_user_override,
     )
-    report.set_environment("rclone_bin", str(rclone_bin))
-    try:
-        _ver_out = subprocess.check_output(
-            [str(rclone_bin), "--version"], timeout=5, text=True
-        )
-        _rclone_ver = _ver_out.strip().splitlines()[0] if _ver_out.strip() else ""
-        report.set_environment("rclone_version", _rclone_ver)
-    except Exception:
-        pass
-    report.set_environment("transfer_mode", "direct-s3-rclone")
+    report.set_environment("transfer_mode", "direct-s3-multipart")
     report.set_environment("sulu_environment", str(data["environment"]))
 
     if _source_unpack_blocked:
@@ -1033,7 +699,6 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
         logger.fatal(_format_farm_unpack_blocking_message(_source_unpack_blocked))
 
     ctx.headers = headers
-    ctx.rclone_bin = rclone_bin
     ctx.blend_path = blend_path
     ctx.use_project = use_project
     ctx.automatic_project_path = automatic_project_path
@@ -1049,18 +714,12 @@ def _ensure_farm_ready(ctx: _SubmitContext) -> None:
     ctx.filelist = filelist
     ctx.org_id = org_id
     ctx.project_sqid = project_sqid
-    ctx.project_name = f"{job_id}/input" if use_project else project_name
+    ctx.project_name = project_name
     ctx.report = report
-    _record_phase_timing(
-        ctx,
-        "rclone_setup",
-        rclone_setup_duration_ms,
-    )
     _record_phase_timing(
         ctx,
         "farm_status",
         farm_status_duration_ms,
-        storage_prefetch_started=ctx.storage_future is not None,
     )
 
 
@@ -1720,71 +1379,6 @@ def _trace_and_pack(ctx: _SubmitContext) -> None:
     ctx.project_root_str = project_root_str if not use_project else ""
 
 
-def _start_storage_prefetch(ctx: _SubmitContext) -> None:
-    """Pin storage and obtain direct credentials while packing is running."""
-    if ctx.no_submit or ctx.test_mode or ctx.storage_future is not None:
-        return
-
-    data = ctx.data
-    mods = ctx.mods
-
-    future: Future = Future()
-
-    def _fetch() -> None:
-        if not future.set_running_or_notify_cancel():
-            return
-        started_at = time.perf_counter()
-        session = None
-        result: Optional[tuple[object, float]] = None
-        failure: Optional[BaseException] = None
-        try:
-            session = mods["requests_retry_session"]()
-            payload = mods["prepare_job_storage"](
-                session,
-                data["pocketbase_url"],
-                data["user_token"],
-                data["project"]["id"],
-                data["project"]["organization_id"],
-                data["job_id"],
-                str(data.get("storage_profile") or ""),
-            )
-            result = (payload, (time.perf_counter() - started_at) * 1000.0)
-        except BaseException as exc:
-            failure = exc
-        finally:
-            if session is not None:
-                try:
-                    session.close()
-                except Exception:
-                    pass
-        if failure is not None:
-            future.set_exception(failure)
-        else:
-            future.set_result(result)
-
-    # A daemon is deliberate: if tracing aborts while the bounded retrying HTTP
-    # request is in flight, it must not keep the failed submit process open.
-    # On the normal path _job_storage_payload waits for the full existing
-    # retry policy, preserving the synchronous behavior this replaced.
-    thread = threading.Thread(
-        target=_fetch,
-        name="sulu-storage-prefetch",
-        daemon=True,
-    )
-    ctx.storage_future = future
-    ctx.storage_thread = thread
-    thread.start()
-
-
-def _cancel_storage_prefetch(ctx: _SubmitContext) -> None:
-    """Detach optional prefetch work without delaying process shutdown."""
-    future = ctx.storage_future
-    ctx.storage_future = None
-    ctx.storage_thread = None
-    if future is not None:
-        future.cancel()
-
-
 def _version_numbers(value: object) -> tuple[int, int, int]:
     numbers = [int(part) for part in re.findall(r"\d+", str(value or ""))[:3]]
     return tuple((numbers + [0, 0, 0])[:3])
@@ -1887,578 +1481,183 @@ def _cancel_update_discovery(ctx: _SubmitContext) -> None:
         future.cancel()
 
 
-def _job_storage_payload(ctx: _SubmitContext) -> object:
-    """Wait for upload preparation or perform it before the first transfer."""
-    wait_started_at = time.perf_counter()
-    future = ctx.storage_future
-    thread = ctx.storage_thread
-    ctx.storage_future = None
-    ctx.storage_thread = None
+def _coordinator(ctx):
+    if getattr(ctx, "coordinator_client", None) is None:
+        module = importlib.import_module(f"{ctx.mods['pkg_name']}.transfers.submit.coordinator_client")
+        identity = module.recovery_identity(ctx.data)
 
-    if future is None:
-        started_at = time.perf_counter()
-        payload = ctx.mods["prepare_job_storage"](
-            ctx.session,
-            ctx.data["pocketbase_url"],
-            ctx.data["user_token"],
-            ctx.data["project"]["id"],
-            ctx.data["project"]["organization_id"],
-            ctx.data["job_id"],
-            str(ctx.data.get("storage_profile") or ""),
-        )
-        _record_phase_timing(
-            ctx,
-            "storage_credentials",
-            (time.perf_counter() - started_at) * 1000.0,
-            overlapped=False,
-        )
-        return payload
+        def confirm(tool, impact):
+            labels = {
+                "render_upload_prepare": "Upload this scene?",
+                "render_upload_finalize": "Use this uploaded scene for the render?",
+                "render_job_submit": "Submit this render at the quoted cost?",
+            }
+            # Impact is the sanitized semantic DTO. Never show request headers,
+            # raw dependency errors, transfer URLs, or identity assertions.
+            explanation = labels.get(tool, "Confirm render action?")
+            safe_impact = json.dumps(impact, ensure_ascii=False, sort_keys=True)[:8000]
+            return ctx.logger.ask_choice(explanation + "\n" + safe_impact,
+                                         [("y", "Confirm", "Continue"), ("n", "Cancel", "Do not commit")],
+                                         default="n") == "y"
 
-    payload, fetch_ms = future.result()
-    if thread is not None:
-        thread.join(timeout=0)
-    _record_phase_timing(
-        ctx,
-        "storage_credentials",
-        fetch_ms,
-        overlapped=True,
-        critical_path_wait_ms=(time.perf_counter() - wait_started_at) * 1000.0,
-    )
-    return payload
+        ctx.coordinator_client = module.RenderCoordinatorClient(
+            ctx.data["pocketbase_url"], ctx.data["user_token"], ctx.session,
+            Path(ctx.data["addon_dir"]) / "reports" / ("render-recovery-" + identity + ".json"),
+            identity, confirm,
+        )
+    return ctx.coordinator_client
+
+
+def _receipt_input_files(ctx):
+    """Preserve ZIP/project packaging but expose logical names only."""
+    module = importlib.import_module(f"{ctx.mods['pkg_name']}.transfers.submit.coordinator_client")
+    files = {}
+    if ctx.use_project:
+        main = module.logical_name(_nfc(_s3key_clean(ctx.main_blend_s3)))
+        files[main] = Path(ctx.blend_path)
+        root = Path(ctx.common_path)
+        for relative in ctx.rel_manifest:
+            logical = module.logical_name(_nfc(relative.replace("\\", "/")))
+            candidate = root.joinpath(*logical.split("/"))
+            if logical in files and files[logical].resolve() != candidate.resolve():
+                raise ValueError("Duplicate render input name")
+            files[logical] = candidate
+        mode = {"input_mode": "project", "main_file": main}
+    else:
+        main = module.logical_name(_nfc(Path(ctx.blend_path).relative_to(ctx.project_root_str).as_posix()))
+        archive = "render-input.zip"
+        files[archive] = Path(ctx.zip_file)
+        mode = {"input_mode": "zip", "main_file": main, "archive_file": archive}
+    addons_path = ctx.data.get("packed_addons_path")
+    addon_names = []
+    if ctx.data.get("packed_addons") and addons_path:
+        addon_root = Path(addons_path)
+        for candidate in sorted(addon_root.rglob("*")):
+            if candidate.is_file():
+                logical = module.logical_name("addons/" + candidate.relative_to(addon_root).as_posix())
+                if logical in files:
+                    raise ValueError("Duplicate render input name")
+                files[logical] = candidate
+                if candidate.suffix.lower() != ".zip":
+                    raise ValueError("Packed add-ons must be portable ZIP archives")
+                addon_names.append(logical)
+    if addon_names:
+        mode["packed_addons"] = addon_names
+    manifest = []
+    for name, source in files.items():
+        if not source.is_file() or source.is_symlink():
+            raise ValueError("A render input is unavailable or is a symbolic link")
+        manifest.append({"name": name, "size": source.stat().st_size})
+    return files, manifest, mode
 
 
 def _upload(ctx: _SubmitContext) -> None:
-    upload_started_at = time.perf_counter()
-    data = ctx.data
-    mods = ctx.mods
-    logger = ctx.logger
-    session = ctx.session
-    report = ctx.report
-    _build_base = mods["_build_base"]
-    run_rclone = mods["run_rclone"]
-    rclone_bin = ctx.rclone_bin
-    blend_path = ctx.blend_path
-    use_project = ctx.use_project
-    zip_file = ctx.zip_file
-    filelist = ctx.filelist
-    project_name = ctx.project_name
-    job_id = ctx.job_id
-    rel_manifest = ctx.rel_manifest
-    dependency_total_size = ctx.dependency_total_size
-    required_storage = ctx.required_storage
-    common_path = ctx.common_path
-    main_blend_s3 = ctx.main_blend_s3
-
-    # Stage 3: Uploading — transfer to cloud storage
-    logger.stage_header(3, "Uploading", "Transferring data to farm storage")
-    report.start_stage("upload")
-
-    # Direct credentials for the storage binding pinned before input upload.
-    try:
-        storage_payload = _job_storage_payload(ctx)
-        s3info, bucket = _parse_job_storage_payload(storage_payload)
-        selected_profile = s3info["storage_profile"]
-        if data.get("storage_profile") and data["storage_profile"] != selected_profile:
-            raise RuntimeError("Upload preparation returned a different storage profile")
-        data["storage_profile"] = selected_profile
-    except Exception as exc:
-        logger.fatal(
-            f"Couldn't get storage credentials. Check your connection and try again.\nDetails: {exc}"
-        )
-
-    base_cmd = _build_base(rclone_bin, s3info["endpoint_url"], s3info)
-
-    rclone_settings = _build_rclone_upload_settings()
-    zip_archive_settings = _build_rclone_upload_settings(
-        single_zip_archive=True,
-        archive_size_bytes=required_storage,
-    )
-
-    has_addons = data.get("packed_addons") and len(data["packed_addons"]) > 0
-
-    try:
-        if not use_project:
-            # Zip upload
-            total_steps = 2 if has_addons else 1
-            step = 1
-            logger.upload_start(total_steps)
-
-            logger.upload_step(step, total_steps, "Uploading archive")
-            report.start_upload_step(
-                step, total_steps, "Uploading archive",
-                expected_bytes=required_storage,
-                source=str(zip_file),
-                destination=f":s3:{bucket}/",
-                verb="move",
-            )
-            rclone_result = run_rclone(
-                base_cmd,
-                "move",
-                str(zip_file),
-                f":s3:{bucket}/",
-                extra=zip_archive_settings,
-                logger=logger,
-                total_bytes=required_storage,
-            )
-            _record_archive_rclone_timings(ctx, rclone_result)
-            if required_storage > 0 and logger._transfer_total == 0:
-                logger._transfer_total = required_storage
-            logger.upload_complete("Archive uploaded")
-            _log_upload_result(rclone_result, expected_bytes=required_storage, label="Archive: ")
-            _check_rclone_errors(rclone_result, label="Archive")
-            report.complete_upload_step(
-                bytes_transferred=_rclone_bytes(rclone_result),
-                rclone_stats=rclone_result,
-            )
-            step += 1
-
-            if has_addons:
-                logger.upload_step(step, total_steps, "Uploading add-ons")
-                report.start_upload_step(
-                    step, total_steps, "Uploading add-ons",
-                    source=data["packed_addons_path"],
-                    destination=f":s3:{bucket}/{job_id}/addons/",
-                    verb="moveto",
-                )
-                rclone_result = run_rclone(
-                    base_cmd,
-                    "moveto",
-                    data["packed_addons_path"],
-                    f":s3:{bucket}/{job_id}/addons/",
-                    extra=rclone_settings,
-                    logger=logger,
-                )
-                logger.upload_complete("Add-ons uploaded")
-                _log_upload_result(rclone_result, label="Add-ons: ")
-                _check_rclone_errors(rclone_result, label="Add-ons")
-                report.complete_upload_step(
-                    bytes_transferred=_rclone_bytes(rclone_result),
-                    rclone_stats=rclone_result,
-                )
-
-        else:
-            # Project upload
-            total_steps = 3 if rel_manifest else 2
-            if has_addons:
-                total_steps += 1
-            step = 1
-            logger.upload_start(total_steps)
-
-            blend_size = 0
-            try:
-                blend_size = os.path.getsize(blend_path)
-            except OSError:
-                pass
-            logger.upload_step(step, total_steps, "Uploading main blend")
-            move_to_path = _nfc(_s3key_clean(f"{project_name}/{main_blend_s3}"))
-            remote_main = f":s3:{bucket}/{move_to_path}"
-            report.start_upload_step(
-                step, total_steps, "Uploading main blend",
-                expected_bytes=blend_size,
-                source=blend_path,
-                destination=remote_main,
-                verb="copyto",
-            )
-            rclone_result = run_rclone(
-                base_cmd,
-                "copyto",
-                blend_path,
-                remote_main,
-                extra=rclone_settings,
-                logger=logger,
-                total_bytes=blend_size,
-            )
-            # Ensure completion panel shows the blend size even if rclone
-            # finished too fast to emit stats (stats_received=False).
-            if blend_size > 0 and logger._transfer_total == 0:
-                logger._transfer_total = blend_size
-            logger.upload_complete("Main blend uploaded")
-            _log_upload_result(rclone_result, expected_bytes=blend_size, label="Blend: ")
-            report.complete_upload_step(
-                bytes_transferred=_rclone_bytes(rclone_result),
-                rclone_stats=rclone_result,
-            )
-            step += 1
-
-            if rel_manifest:
-                logger.upload_step(step, total_steps, "Uploading dependencies")
-                if _debug_enabled():
-                    _LOG(f"Manifest: {len(rel_manifest)} files, {_format_size(dependency_total_size)} expected")
-
-                if _is_filesystem_root(common_path):
-                    # --- SPLIT PATH: filesystem root source ---
-                    if _debug_enabled():
-                        _LOG(f"Project root is a filesystem root ({common_path}), splitting upload by directory")
-                    groups = _split_manifest_by_first_dir(rel_manifest)
-                    if _debug_enabled():
-                        _LOG(f"Split into {len(groups)} group(s): {list(groups.keys())}")
-
-                    report.start_upload_step(
-                        step, total_steps, "Uploading dependencies (split)",
-                        manifest_entries=len(rel_manifest),
-                        expected_bytes=dependency_total_size,
-                        source=common_path,
-                        destination=f":s3:{bucket}/{project_name}/",
-                        verb="copy",
-                    )
-
-                    agg_bytes = 0
-                    agg_checks = 0
-                    agg_transfers = 0
-                    agg_errors = 0
-                    any_empty = False
-
-                    for group_name, group_entries in groups.items():
-                        if not group_entries:
-                            continue
-
-                        # Build group source and dest
-                        if group_name:
-                            group_source = common_path.rstrip("/") + "/" + group_name
-                            group_dest = f":s3:{bucket}/{project_name}/{group_name}/"
-                        else:
-                            # Files directly at root level (rare)
-                            group_source = common_path
-                            group_dest = f":s3:{bucket}/{project_name}/"
-
-                        # Write temporary filelist for this group
-                        group_filelist = Path(tempfile.gettempdir()) / f"{job_id}_g_{hash(group_name) & 0xFFFF:04x}.txt"
-                        with group_filelist.open("w", encoding="utf-8") as fp:
-                            for entry in group_entries:
-                                fp.write(f"{entry}\n")
-
-                        # Validate group filelist write-back
-                        try:
-                            gl = group_filelist.read_text("utf-8").splitlines()
-                            gc = len([line for line in gl if line.strip()])
-                            if gc != len(group_entries) and _debug_enabled():
-                                _LOG(
-                                    f"  WARNING: Group '{group_name}' filelist mismatch — "
-                                    f"expected {len(group_entries)}, got {gc}"
-                                )
-                        except Exception:
-                            pass
-
-                        group_rclone = ["--files-from", str(group_filelist)]
-                        group_rclone.extend(rclone_settings)
-
-                        if _debug_enabled():
-                            _LOG(f"  Group '{group_name}': {len(group_entries)} files, source={group_source}")
-                        grp_result = run_rclone(
-                            base_cmd, "copy", group_source, group_dest,
-                            extra=group_rclone, logger=logger,
-                            total_bytes=dependency_total_size,
-                        )
-                        _log_upload_result(grp_result, label=f"  Group '{group_name}': ")
-                        _check_rclone_errors(grp_result, label=f"Group '{group_name}'")
-                        report.add_upload_split_group(
-                            group_name=group_name or "(root)",
-                            file_count=len(group_entries),
-                            source=group_source,
-                            destination=group_dest,
-                            rclone_stats=grp_result,
-                        )
-
-                        # Clean up temp filelist
-                        try:
-                            group_filelist.unlink(missing_ok=True)
-                        except Exception:
-                            pass
-
-                        # Accumulate stats
-                        agg_bytes += _rclone_bytes(grp_result)
-                        if isinstance(grp_result, dict):
-                            agg_checks += grp_result.get("checks", 0)
-                            agg_transfers += grp_result.get("transfers", 0)
-                            agg_errors += grp_result.get("errors", 0)
-                        if _is_empty_upload(grp_result, len(group_entries)):
-                            any_empty = True
-                            if _debug_enabled():
-                                grp_tail = _get_rclone_tail(grp_result)
-                                _LOG(f"  WARNING: Group '{group_name}' transferred 0 files")
-                                if grp_tail:
-                                    for line in grp_tail[-5:]:
-                                        _LOG(f"    {line}")
-
-                    # Set aggregated total so upload_complete panel shows correct size
-                    logger._transfer_total = dependency_total_size
-                    logger.upload_complete("Dependencies uploaded")
-                    if _debug_enabled():
-                        _LOG(
-                            f"  Split upload totals: "
-                            f"transferred={_format_size(agg_bytes)}, "
-                            f"checks={agg_checks}, transfers={agg_transfers}, "
-                            f"errors={agg_errors}, groups={len(groups)}"
-                        )
-                    agg_stats = {
-                        "bytes_transferred": agg_bytes,
-                        "checks": agg_checks,
-                        "transfers": agg_transfers,
-                        "errors": agg_errors,
-                        "stats_received": True,
-                        "split_groups": len(groups),
-                    }
-                    report.complete_upload_step(
-                        bytes_transferred=agg_bytes,
-                        rclone_stats=agg_stats,
-                    )
-                    if any_empty and dependency_total_size > 0 and _debug_enabled():
-                        _LOG(
-                            "WARNING: Some dependency groups transferred 0 files. "
-                            "See diagnostic report."
-                        )
-                    # Post-upload transfer count validation
-                    total_touched = agg_transfers + agg_checks
-                    if total_touched > 0 and total_touched < len(rel_manifest) and _debug_enabled():
-                        _LOG(
-                            f"WARNING: rclone touched {total_touched} of "
-                            f"{len(rel_manifest)} manifest files — "
-                            f"{len(rel_manifest) - total_touched} file(s) may have been skipped"
-                        )
-                else:
-                    report.start_upload_step(
-                        step, total_steps, "Uploading dependencies",
-                        manifest_entries=len(rel_manifest),
-                        expected_bytes=dependency_total_size,
-                        source=str(common_path),
-                        destination=f":s3:{bucket}/{project_name}/",
-                        verb="copy",
-                    )
-                    dependency_rclone_settings = ["--files-from", str(filelist)]
-                    dependency_rclone_settings.extend(rclone_settings)
-                    rclone_result = run_rclone(
-                        base_cmd,
-                        "copy",
-                        str(common_path),
-                        f":s3:{bucket}/{project_name}/",
-                        extra=dependency_rclone_settings,
-                        logger=logger,
-                        total_bytes=dependency_total_size,
-                    )
-                    logger.upload_complete("Dependencies uploaded")
-                    _log_upload_result(rclone_result, expected_bytes=dependency_total_size, label="Dependencies: ")
-                    _check_rclone_errors(rclone_result, label="Dependencies")
-                    report.complete_upload_step(
-                        bytes_transferred=_rclone_bytes(rclone_result),
-                        rclone_stats=rclone_result,
-                    )
-                    if _is_empty_upload(rclone_result, len(rel_manifest)) and _debug_enabled():
-                        tail = _get_rclone_tail(rclone_result)
-                        _LOG(
-                            f"WARNING: Expected {_format_size(dependency_total_size)} "
-                            f"across {len(rel_manifest)} files, but rclone transferred 0. "
-                            "See diagnostic report for details."
-                        )
-                        if tail:
-                            _LOG("rclone tail log:")
-                            for line in tail[-10:]:
-                                _LOG(f"  {line}")
-                    # Post-upload transfer count validation
-                    if rclone_result and _debug_enabled():
-                        total_touched = (rclone_result.get("transfers", 0) or 0) + (rclone_result.get("checks", 0) or 0)
-                        if total_touched > 0 and total_touched < len(rel_manifest):
-                            _LOG(
-                                f"WARNING: rclone touched {total_touched} of "
-                                f"{len(rel_manifest)} manifest files — "
-                                f"{len(rel_manifest) - total_touched} file(s) may have been skipped"
-                            )
-                step += 1
-
-            with filelist.open("a", encoding="utf-8") as fp:
-                fp.write(_nfc(_s3key_clean(main_blend_s3)) + "\n")
-
-            logger.upload_step(step, total_steps, "Uploading manifest")
-            report.start_upload_step(
-                step, total_steps, "Uploading manifest",
-                source=str(filelist),
-                destination=f":s3:{bucket}/{project_name}/",
-                verb="move",
-            )
-            rclone_result = run_rclone(
-                base_cmd,
-                "move",
-                str(filelist),
-                f":s3:{bucket}/{project_name}/",
-                extra=rclone_settings,
-                logger=logger,
-            )
-            logger.upload_complete("Manifest uploaded")
-            _log_upload_result(rclone_result, label="Manifest: ")
-            _check_rclone_errors(rclone_result, label="Manifest")
-            report.complete_upload_step(
-                bytes_transferred=_rclone_bytes(rclone_result),
-                rclone_stats=rclone_result,
-            )
-            step += 1
-
-            if has_addons:
-                logger.upload_step(step, total_steps, "Uploading add-ons")
-                report.start_upload_step(
-                    step, total_steps, "Uploading add-ons",
-                    source=data["packed_addons_path"],
-                    destination=f":s3:{bucket}/{job_id}/addons/",
-                    verb="moveto",
-                )
-                rclone_result = run_rclone(
-                    base_cmd,
-                    "moveto",
-                    data["packed_addons_path"],
-                    f":s3:{bucket}/{job_id}/addons/",
-                    extra=rclone_settings,
-                    logger=logger,
-                )
-                logger.upload_complete("Add-ons uploaded")
-                _log_upload_result(rclone_result, label="Add-ons: ")
-                _check_rclone_errors(rclone_result, label="Add-ons")
-                report.complete_upload_step(
-                    bytes_transferred=_rclone_bytes(rclone_result),
-                    rclone_stats=rclone_result,
-                )
-
-        report.complete_stage("upload")
-        _record_phase_timing(
-            ctx,
-            "upload",
-            (time.perf_counter() - upload_started_at) * 1000.0,
-            outcome="completed",
-        )
-
-    except RuntimeError as exc:
-        report.set_status("failed")
-        _record_phase_timing(
-            ctx,
-            "upload",
-            (time.perf_counter() - upload_started_at) * 1000.0,
-            outcome="failed",
-        )
-        logger.fatal(
-            f"Upload stopped. Check your connection and try again.\nDetails: {exc}"
-        )
-
-    finally:
-        try:
-            if "packed_addons_path" in data and data["packed_addons_path"]:
-                shutil.rmtree(data["packed_addons_path"], ignore_errors=True)
-        except Exception:
-            pass
+    started = time.perf_counter()
+    client = _coordinator(ctx)
+    completed = client.completed("render_upload_finalize")
+    if completed:
+        prepared = client.completed("render_upload_prepare")
+        profile = prepared.get("storage_profile") if isinstance(prepared, dict) else None
+        if not isinstance(profile, str) or not profile or (ctx.data.get("storage_profile") and ctx.data["storage_profile"] != profile):
+            raise ValueError("The retained upload uses different storage")
+        ctx.upload_receipt = completed["upload_receipt"]
+        ctx.storage_profile = profile
+        ctx.data["storage_profile"] = profile
+        return
+    files, manifest, mode = _receipt_input_files(ctx)
+    ctx.logger.stage_header(3, "Uploading", "Transferring verified render inputs")
+    ctx.report.start_stage("upload")
+    preparation = {
+        "organization_id": ctx.org_id, "project_id": ctx.proj["id"], "files": manifest, **mode,
+        **({"storage_profile": ctx.data["storage_profile"]} if ctx.data.get("storage_profile") else {}),
+    }
+    prepared = client.mutate("render_upload_prepare", preparation)
+    profile = prepared.get("storage_profile")
+    if not isinstance(profile, str) or not profile or (ctx.data.get("storage_profile") and ctx.data["storage_profile"] != profile):
+        raise ValueError("Upload preparation changed the selected storage")
+    ctx.storage_profile = profile
+    ctx.data["storage_profile"] = profile
+    descriptors = prepared.get("files")
+    if not isinstance(descriptors, list) or len(descriptors) != len(files):
+        raise ValueError("Upload preparation did not cover every input")
+    expected = {item["name"]: item["size"] for item in manifest}
+    if {item.get("name"): item.get("size") for item in descriptors} != expected:
+        raise ValueError("Upload preparation did not match the intended inputs")
+    descriptors = [client.resolve_upload_file(files[item["name"]], item) for item in descriptors]
+    ctx.logger.upload_start(len(files))
+    for index, descriptor in enumerate(descriptors, 1):
+        ctx.logger.upload_step(index, len(files), descriptor["name"])
+        client.upload_file(files[descriptor["name"]], descriptor)
+        ctx.logger._transfer_total = descriptor["size"]
+        ctx.logger.upload_complete("Input uploaded")
+    finalized = client.mutate("render_upload_finalize", {
+        "organization_id": ctx.org_id, "upload_session": prepared["upload_session"],
+    })
+    receipt = finalized.get("upload_receipt")
+    if not isinstance(receipt, str) or not receipt:
+        raise ValueError("Upload finalization did not return a receipt")
+    ctx.upload_receipt = receipt
+    ctx.required_storage = sum(item["size"] for item in manifest)
+    ctx.report.complete_stage("upload")
+    _record_phase_timing(ctx, "upload", (time.perf_counter() - started) * 1000, outcome="completed")
 
 
 def _register_job(ctx: _SubmitContext) -> None:
-    registration_started_at = time.perf_counter()
+    started = time.perf_counter()
     data = ctx.data
-    logger = ctx.logger
-    session = ctx.session
-    report = ctx.report
-    headers = ctx.headers
-    blend_path = ctx.blend_path
-    use_project = ctx.use_project
-    org_id = ctx.org_id
-    project_name = ctx.project_name
-    project_root_str = ctx.project_root_str
-    main_blend_s3 = ctx.main_blend_s3
-    effective_end_frame = ctx.effective_end_frame
-    frame_step_val = ctx.frame_step_val
-    render_order = ctx.render_order
-    render_tasks = ctx.render_tasks
-    required_storage = ctx.required_storage
-
-    use_scene_image_format = bool(data.get("use_scene_image_format")) or (
-        str(data.get("image_format", "")).upper() == "SCENE"
-    )
-
-    payload: Dict[str, object] = {
-        "job_data": {
-            "id": data["job_id"],
-            "project_id": data["project"]["id"],
-            "storage_profile": data["storage_profile"],
-            "packed_addons": data["packed_addons"],
-            "organization_id": org_id,
-            "main_file": (
-                _nfc(
-                    str(Path(blend_path).relative_to(project_root_str)).replace(
-                        "\\", "/"
-                    )
-                )
-                if not use_project
-                else _nfc(_s3key_clean(main_blend_s3))
-            ),
-            "project_path": project_name,
-            "name": data["job_name"],
-            "status": "queued",
-            "start": data["start_frame"],
-            "end": effective_end_frame,
-            "frame_step": frame_step_val,
-            "render_order": render_order,
-            "batch_size": 1,
-            "image_format": data["image_format"],
-            "use_scene_image_format": use_scene_image_format,
-            "render_engine": data["render_engine"],
-            "scene_metadata": data.get("scene_metadata") or {},
-            "version": "20241125",
-            "blender_version": data["blender_version"],
-            "required_storage": required_storage,
-            "zip": not use_project,
-            "ignore_errors": data["ignore_errors"],
-            "use_bserver": data["use_bserver"],
-            "use_async_upload": True,
-            "defer_status": True,
-            "farm_url": data["farm_url"],
-            "tasks": render_tasks,
-        }
+    client = _coordinator(ctx)
+    registration = _build_settings_schema_registration(data)
+    if registration:
+        client.register_schema(registration)
+    metadata = dict(data.get("scene_metadata") or {})
+    if registration:
+        # The independently registered immutable schema is not duplicated in
+        # each template; scene settings and actual overrides remain intact.
+        metadata.pop("settings_schema", None)
+    coordinator_started = time.perf_counter()
+    template = {
+        "name": data["job_name"], "blender_version": data["blender_version"],
+        "storage_profile": ctx.storage_profile,
+        "frame_start": int(data["start_frame"]), "frame_end": ctx.effective_end_frame,
+        "frame_step": ctx.frame_step_val, "render_order": ctx.render_order, "batch_size": 1,
+        "image_format": data["image_format"],
+        "use_scene_image_format": bool(data.get("use_scene_image_format")) or str(data.get("image_format", "")).upper() == "SCENE",
+        "render_engine": data["render_engine"], "scene_metadata": metadata,
+        "zip": not ctx.use_project, "ignore_errors": bool(data.get("ignore_errors")),
+        "use_bserver": bool(data.get("use_bserver")), "packed_addons": data.get("packed_addons") or [],
     }
-
-    # Optional: only present when the addon's settings schema dump succeeded.
-    settings_schema_key = str(data.get("settings_schema_key") or "")
-    if settings_schema_key:
-        payload["job_data"]["settings_schema_key"] = settings_schema_key
-
-    schema_registration = _build_settings_schema_registration(data)
-    if schema_registration is not None:
-        payload["settings_schema_registration"] = schema_registration
-
-    request_body = json.dumps(payload, separators=(",", ":"))
-    schema_payload_bytes = (
-        len(
-            json.dumps(schema_registration, separators=(",", ":")).encode("utf-8")
-        )
-        if schema_registration is not None
-        else 0
-    )
-
-    job_post_started_at = time.perf_counter()
-    try:
-        post_resp = session.post(
-            f"{data['pocketbase_url']}/api/farm/{org_id}/jobs",
-            headers={**headers, "Content-Type": "application/json"},
-            data=request_body,
-            timeout=30,
-        )
-        post_resp.raise_for_status()
-    except requests.RequestException as exc:
-        registration_finished_at = time.perf_counter()
-        _record_phase_timing(
-            ctx,
-            "registration",
-            (registration_finished_at - registration_started_at) * 1000.0,
-            schema_payload_bytes=schema_payload_bytes,
-            job_post_ms=(registration_finished_at - job_post_started_at) * 1000.0,
-            outcome="failed",
-        )
-        report.set_status("failed")
-        logger.fatal(
-            "Couldn't register job. Check your connection and try again.\n"
-            f"Details: {_request_exception_details(exc)}"
-        )
-    else:
-        registration_finished_at = time.perf_counter()
-        _record_phase_timing(
-            ctx,
-            "registration",
-            (registration_finished_at - registration_started_at) * 1000.0,
-            schema_payload_bytes=schema_payload_bytes,
-            job_post_ms=(registration_finished_at - job_post_started_at) * 1000.0,
-            outcome="completed",
-        )
+    if data.get("settings_schema_key"):
+        template["settings_schema_key"] = str(data["settings_schema_key"])
+    request = {"organization_id": ctx.org_id, "project_id": ctx.proj["id"],
+               "upload_receipt": ctx.upload_receipt, "template": template}
+    result = client.completed("render_job_submit")
+    if result is None:
+        # If acceptance was committed but its response was lost, the receipt
+        # may already be claimed. Recover the durable command before quoting
+        # that receipt again. A missing/expired quote is safe to replace only
+        # after the server explicitly says the command is still uncommitted.
+        if "render_job_submit" in client.journal:
+            try:
+                result = client.mutate("render_job_submit", request)
+            except Exception as exc:
+                if getattr(exc, "code", "") != "QUOTE_EXPIRED":
+                    raise
+        if result is None:
+            quote = client.tool("render_job_quote", request)
+            result = client.mutate("render_job_submit", {**request, "quote_token": quote["quote_token"]})
+    new_job = result.get("job_id")
+    if not isinstance(new_job, str) or not new_job:
+        raise ValueError("Completed render submission did not return its job reference")
+    # Only the backend allocates execution identity. Keep the journal's local
+    # intent stable, then hand the actual new job ID to the existing viewer.
+    ctx.job_id = new_job
+    data["job_id"] = new_job
+    data["render_coordinator"] = True
+    data["storage_profile"] = ctx.storage_profile
+    _record_phase_timing(ctx, "registration", (time.perf_counter() - started) * 1000,
+                         schema_payload_bytes=len(json.dumps(registration).encode()) if registration else 0,
+                         coordinator_ms=(time.perf_counter() - coordinator_started) * 1000,
+                         outcome="completed")
 
 
 def _run_integrated_download(data: Dict[str, object], pkg_name: str) -> str:
@@ -2587,7 +1786,7 @@ def main() -> None:
         t_start=t_start,
         proj=proj,
         logger=logger,
-        session=mods["requests_retry_session"](),
+        session=mods["requests_retry_session"](allowed_methods=("HEAD", "GET", "OPTIONS")),
     )
     try:
         # Let release users decide whether to update before any submission work
@@ -2596,15 +1795,11 @@ def main() -> None:
         _show_update_before_submit(ctx)
         _preflight(ctx)
         _ensure_farm_ready(ctx)
-        # Credential prefetch normally began during farm preflight; this
-        # idempotent call preserves a safe fallback before dependency packing.
-        _start_storage_prefetch(ctx)
         _trace_and_pack(ctx)
         _upload(ctx)
         _register_job(ctx)
         _finish(ctx)
     finally:
-        _cancel_storage_prefetch(ctx)
         _cancel_update_discovery(ctx)
         try:
             ctx.session.close()
