@@ -1,6 +1,7 @@
 # properties.py (scene & WM properties)
 from __future__ import annotations
 import bpy
+import hashlib
 
 from .utils.prefs import get_prefs
 from .utils.version_utils import (
@@ -65,6 +66,10 @@ def live_job_update(self, context):
 _storage_profile_items = []
 
 
+def _storage_profile_number(profile_id):
+    return int.from_bytes(hashlib.sha256(profile_id.encode("utf-8")).digest()[:4], "big") & 0x7fffffff or 1
+
+
 def storage_profile_items_cb(self, context):
     global _storage_profile_items
     choices = Storage.data.get("storage_profiles", {}).get(Storage.data.get("org_id", ""), {})
@@ -72,13 +77,30 @@ def storage_profile_items_cb(self, context):
     default_profile = choices.get("default_profile")
     ordered = sorted(profiles, key=lambda item: item["id"] != default_profile)
     # Blender retains the callback strings, so keep their backing list alive.
-    _storage_profile_items = [(item["id"], item["name"], "") for item in ordered]
+    _storage_profile_items = [(item["id"], item["name"], "", _storage_profile_number(item["id"])) for item in ordered]
+    if len({item[3] for item in _storage_profile_items}) != len(_storage_profile_items):
+        raise ValueError("Storage choices have conflicting identifiers")
     return _storage_profile_items
+
+
+def storage_profile_get(self):
+    selected = self.get("_storage_profile_id")
+    if selected is None:
+        choices = Storage.data.get("storage_profiles", {}).get(Storage.data.get("org_id", ""), {})
+        selected = choices.get("default_profile")
+    return _storage_profile_number(selected) if selected else 0
+
+
+def storage_profile_set(self, value):
+    matches = [item[0] for item in storage_profile_items_cb(self, None) if item[3] == value]
+    if len(matches) != 1:
+        raise ValueError("Selected storage is unavailable")
+    self["_storage_profile_id"] = matches[0]
 
 
 class SuperluminalSceneProperties(bpy.types.PropertyGroup):
     storage_profile: bpy.props.EnumProperty(
-        name="Storage", items=storage_profile_items_cb, default=0,
+        name="Storage", items=storage_profile_items_cb, get=storage_profile_get, set=storage_profile_set,
         description="Choose where this job's inputs and results are stored.",
     )
     # ------------------------------------------------------------
