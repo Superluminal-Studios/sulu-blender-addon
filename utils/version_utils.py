@@ -10,12 +10,6 @@ from typing import Dict, List, Tuple
 
 # (enum_key, label, description)
 _FALLBACK_BLENDER_VERSION_ITEMS: List[Tuple[str, str, str]] = [
-    ("BLENDER40", "Blender 4.0", "Use Blender 4.0 on the farm"),
-    ("BLENDER41", "Blender 4.1", "Use Blender 4.1 on the farm"),
-    ("BLENDER42", "Blender 4.2", "Use Blender 4.2 on the farm"),
-    ("BLENDER43", "Blender 4.3", "Use Blender 4.3 on the farm"),
-    ("BLENDER44", "Blender 4.4", "Use Blender 4.4 on the farm"),
-    ("BLENDER45", "Blender 4.5", "Use Blender 4.5 on the farm"),
     ("BLENDER50", "Blender 5.0", "Use Blender 5.0 on the farm"),
     ("BLENDER51", "Blender 5.1", "Use Blender 5.1 on the farm"),
     ("BLENDER52", "Blender 5.2", "Use Blender 5.2 on the farm"),
@@ -63,7 +57,7 @@ def update_deployed_blender_versions(records) -> bool:
         label = str(record.get("label") or "").strip()
         version = str(record.get("version") or "").strip()
         if (
-            not identifier.startswith("BLENDER")
+            identifier not in {"BLENDER50", "BLENDER51", "BLENDER52", "BLENDER53"}
             or not identifier.replace("BLENDER", "").isdigit()
             or not worker_value
             or not label
