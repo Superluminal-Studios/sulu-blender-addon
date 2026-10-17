@@ -60,16 +60,8 @@ def resolve_selected_project(
     return refreshed_project, refreshed_projects, True
 
 
-def resolve_org_context(
-    project: dict | None,
-    get_render_queue_key_fn: Callable[[str], str] | None = None,
-) -> tuple[str, str]:
-    """
-    Resolve organization identity without requiring a farm credential.
-
-    The optional key resolver supports explicit legacy callers only. New
-    regular-user flows leave it unset and use the authenticated coordinator.
-    """
+def resolve_org_context(project: dict | None) -> str:
+    """Resolve the selected project's organization for authenticated API calls."""
     is_valid, missing = validate_project_identity(project)
     if not is_valid:
         raise ProjectContextError(
@@ -77,12 +69,4 @@ def resolve_org_context(
             missing_fields=missing,
         )
 
-    org_id = str(project["organization_id"]).strip()
-    if get_render_queue_key_fn is None:
-        return org_id, ""
-    user_key = str(get_render_queue_key_fn(org_id) or "").strip()
-    if not user_key:
-        raise ProjectContextError(
-            f"Could not resolve render queue key for organization '{org_id}'."
-        )
-    return org_id, user_key
+    return str(project["organization_id"]).strip()

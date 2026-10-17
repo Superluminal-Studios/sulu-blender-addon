@@ -58,7 +58,6 @@ def get_project_items(self, context):
 def _clear_project_runtime_state(clear_jobs: bool = True) -> None:
     Storage.data["project_id"] = ""
     Storage.data["org_id"] = ""
-    Storage.data["user_key"] = ""
     if clear_jobs:
         Storage.data["jobs"] = {}
 
@@ -77,7 +76,7 @@ def apply_project_context(
     auth_context=None,
 ) -> dict | None:
     """
-    Resolve selected project context and persist org/user-key (and optionally jobs).
+    Resolve selected project context and persist organization identity (and optionally jobs).
     """
     if auth_context is None:
         auth_context = Storage.auth_context()
@@ -93,7 +92,6 @@ def apply_project_context(
     with Storage._lock:
         _require_auth_context(auth_context)
         cached_org_id = str(Storage.data.get("org_id") or "").strip()
-        cached_user_key = ""
         cached_project = next(
             (
                 p
@@ -102,7 +100,6 @@ def apply_project_context(
             ),
             None,
         )
-        Storage.data["user_key"] = ""
         use_cached = (
             Storage.data.get("project_id") == project_id
             and bool(cached_org_id)
@@ -110,7 +107,7 @@ def apply_project_context(
         )
     if use_cached:
         if refresh_jobs:
-            fetch_jobs(cached_org_id, cached_user_key, project_id)
+            fetch_jobs(cached_org_id, project_id)
         with Storage._lock:
             _require_auth_context(auth_context)
             Storage.save()
@@ -146,14 +143,13 @@ def apply_project_context(
             missing_fields=missing,
         )
 
-    org_id, user_key = resolve_org_context(project)
+    org_id = resolve_org_context(project)
     with Storage._lock:
         _require_auth_context(auth_context)
         Storage.data["project_id"] = project_id
         Storage.data["org_id"] = org_id
-        Storage.data["user_key"] = user_key
     if refresh_jobs:
-        fetch_jobs(org_id, user_key, project_id)
+        fetch_jobs(org_id, project_id)
     with Storage._lock:
         _require_auth_context(auth_context)
         Storage.save()

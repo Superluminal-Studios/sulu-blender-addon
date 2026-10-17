@@ -24,7 +24,7 @@ def blender_python_args() -> list[str]:
 def launch_worker(worker_py: str | Path, handoff: dict[str, Any], tmp_name: str) -> Path:
     """Write a worker handoff and launch it with Blender's Python."""
     handoff_path = Path(tempfile.gettempdir()) / tmp_name
-    # The handoff carries user_token and sarfis_token into a world-readable temp
+    # The handoff carries the PocketBase user_token into a world-readable temp
     # dir, so it must never be created with default permissions. The worker
     # unlinks it right after reading. Unlink first: O_CREAT's mode is ignored for
     # an existing path, so a stale handoff would keep its old permissions.

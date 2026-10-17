@@ -496,7 +496,6 @@ class SUPERLUMINAL_OT_FetchProjects(bpy.types.Operator):
                             )
                         Storage.data["project_id"] = ""
                         Storage.data["org_id"] = ""
-                        Storage.data["user_key"] = ""
                         Storage.data["jobs"] = {}
                         Storage.save()
                 else:

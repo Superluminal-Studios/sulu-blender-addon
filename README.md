@@ -52,7 +52,8 @@ flowchart LR
 
   UI --> DownloadOp[transfers/download/download_operator.py]
   DownloadOp --> DownloadWorker[transfers/download/download_worker.py]
-  DownloadWorker -->|authorized output transfer| Backend
+  DownloadWorker -->|authorized discovery and coordinator transfer| Backend
+  DownloadWorker -->|signed source URL| R2
   Backend -->|generation-bound read| R2
 ```
 
@@ -73,7 +74,7 @@ Repository map:
 │   ├── submit/coordinator_client.py      # Semantic command and transfer helper retained for output flows
 │   ├── download/artifact_client.py       # Generation-bound resumable output transfer
 │   └── download/download_worker.py       # Output download orchestration
-├── utils/project_context.py              # Project identity and org/user-key guards
+├── utils/project_context.py              # Project and organization identity guards
 └── docs/architecture/structure-index.md # Generated structure index
 ```
 
@@ -99,8 +100,8 @@ Repository map:
 | Account auth | `/api/collections/users/auth-with-password`, `/api/cli/start`, `/api/cli/token`, `/api/collections/users/auth-refresh` | backend session / bearer flow | sign-in and token refresh |
 | Project context | `/api/collections/projects/records` | backend auth token | resolve the selected project and organization |
 | Job discovery | Production: `/api/jobs/{organization_id}?view=addon`; test: `/api/render/v1/browser/jobs/{organization_id}` | backend auth token | bounded job snapshot for the selected project, selected explicitly by deployed environment capability |
+| Production download | `/api/jobs/{organization_id}/{job_id}`, `…/source_manifest`, `…/source_urls` | backend auth token | job status, paginated output listing, and signed object download URLs |
 | Temporary project storage | `/api/collections/project_storage/records` | backend auth token | obtain the selected project's short-lived R2 credentials for direct rclone upload |
-| Farm readiness | `/api/farm_status/{organization_id}` | backend auth token | verify the selected organization can accept a render |
 | Job registration | `/api/farm/{organization_id}/jobs` | backend auth token | register job metadata after direct R2 upload |
 | Render coordination | `/api/render/v1/tools/{tool}` | backend auth token | authorized render reads/controls, output listing, and operation recovery |
 | Output transfer | `/api/render/v1/transfers/{opaque_ref}` | backend auth token | generation-bound resumable output downloads |
@@ -108,9 +109,26 @@ Repository map:
 New UI submissions use the proven production boundary: BAT packs locally,
 rclone transfers bytes directly to the selected project's R2 bucket, and the
 worker sends only job metadata to the existing registration endpoint.
-Production downloads use the existing project-scoped R2/rclone worker and HTTPS
-job-status gateway. Test-profile downloads use generation-bound coordinator
-transfers. The profile capability is explicit: a missing or denied resource
+Production downloads read job status and request signed output URLs through the
+backend, then download those objects directly from storage without bucket or
+queue credentials. Manifest cursors enumerate the complete output listing,
+including empty pages with continuation cursors. Downloads resume when local
+size matches and mtime is within two seconds of the manifest timestamp. Missing
+or nonpositive modification times fail manifest validation. A sliding pool of
+up to eight transfers uses a buffer of sixteen signed URLs, refilled in groups.
+Queued URLs are re-signed before use when they reach the server's TTL minus two
+minutes, or five minutes when no TTL is returned.
+Connection errors, 403s, and server errors request fresh signed URLs within a
+bounded retry budget. Missing or changing objects wait for the next listing in
+automatic mode. Five consecutive deferrals for a file end the run as incomplete
+and name that file; a manual download re-lists once before reporting unresolved
+files. Startup removes only transfer files untouched for ten minutes and skips
+locked or vanished files. Writers touch their temporary files at most once a minute.
+Names that collide without case
+distinction are refused with a warning. An outage that exceeds the retry budget
+ends an automatic download with an explicit error; run it again to resume.
+Test-profile downloads use generation-bound coordinator transfers. The profile
+capability is explicit: a missing or denied resource
 never silently downgrades the test client to legacy storage access.
 
 Primary interface sources:
@@ -124,10 +142,10 @@ Primary interface sources:
 | File/Field | Purpose |
 |---|---|
 | Add-on preference -> `Environment` | fixed `Production` or `Test` service profile; arbitrary URLs are not accepted |
-| `environment.py` | immutable API, web, and farm origins for the two supported profiles |
-| `constants.py` -> `POCKETBASE_URL`, `FARM_IP` | production compatibility aliases for older developer utilities; runtime paths use `environment.py` |
+| `environment.py` | immutable API and web origins for the two supported profiles |
+| `constants.py` -> `POCKETBASE_URL` | production compatibility alias for older developer utilities; runtime paths use `environment.py` |
 | `dev_config.example.json` | local developer override template |
-| `storage.py` / `session.json` | selected environment plus its cached `user_token`, `org_id`, `user_key`, project list, and jobs |
+| `storage.py` / `session.json` | selected environment plus its cached `user_token`, `org_id`, project list, and jobs; old queue keys are discarded on load |
 | `properties.py` scene settings | upload mode, frame range, Blender version, download path |
 | selected project identity | must include `id`, `organization_id`, and `sqid` |
 

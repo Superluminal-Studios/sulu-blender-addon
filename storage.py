@@ -39,7 +39,6 @@ class Storage:
         "user_email": "",
         "project_id": "",
         "org_id": "",
-        "user_key": "",
         "projects": [],
         "jobs": {},
     }
@@ -190,7 +189,6 @@ class Storage:
             user_email="",
             project_id="",
             org_id="",
-            user_key="",
             projects=[],
             jobs={},
         )
@@ -277,11 +275,13 @@ class Storage:
                     user_email="",
                     project_id="",
                     org_id="",
-                    user_key="",
                     projects=[],
                     jobs={},
                 )
                 cls._atomic_write(cls._file, cls.data)
+            else:
+                if "user_key" in loaded:
+                    cls._atomic_write(cls._file, cls.data)
 
     @classmethod
     def clear(cls):

@@ -235,34 +235,37 @@ class TestRequestUtilsJobs(unittest.TestCase):
         )
 
 
-    def test_get_render_queue_key_repairs_missing_record_via_farm_status(self):
-        responses = [
-            _FakeResponse({"items": []}),
-            _FakeResponse({"ready": True}),
-            _FakeResponse({"items": [{"user_key": "recovered-user-key"}]}),
-        ]
-        with patch.object(
-            request_utils,
-            "authorized_request",
-            side_effect=responses,
-        ) as request:
-            self.assertEqual(
-                request_utils.get_render_queue_key("org-id"),
-                "recovered-user-key",
-            )
 
-        self.assertEqual(request.call_count, 3)
-        self.assertEqual(
-            request.call_args_list[1].args,
-            (
-                "GET",
-                f"{request_utils.POCKETBASE_URL}/api/farm_status/org-id",
-            ),
-        )
-        self.assertEqual(
-            request.call_args_list[1].kwargs,
-            {"isolated_session": True},
-        )
+    def test_production_job_list_uses_the_authenticated_addon_snapshot(self):
+        class Session:
+            def __init__(self):
+                self.calls = []
+
+            def request(self, method, url, **kwargs):
+                self.calls.append((method, url, kwargs))
+                return _FakeResponse({"body": {"job-1": {"project_id": "project-1", "status": "running"}}})
+
+            def close(self):
+                pass
+
+        session = Session()
+        pocketbase_auth.reset_stored_job_session()
+        try:
+            with patch.dict(pocketbase_auth.Storage.data, {
+                "environment": "production", "user_token": "session-fixture",
+                "user_token_time": int(time.time()), "org_id": "org-1",
+                "project_id": "project-1", "projects": [],
+            }), patch.object(pocketbase_auth, "_new_isolated_session", return_value=session), \
+                 patch.object(request_utils, "active_profile", return_value=pocketbase_auth.profile_for_environment("production")):
+                jobs = request_utils.request_jobs("org-1", "project-1")
+            self.assertEqual(jobs, {"job-1": {"project_id": "project-1", "status": "running"}})
+            self.assertEqual(len(session.calls), 1)
+            method, url, kwargs = session.calls[0]
+            self.assertEqual((method, url), ("GET", f"{_API_URL}/api/jobs/org-1"))
+            self.assertEqual(kwargs["params"], {"project_id": "project-1", "limit": 200, "view": "addon"})
+            self.assertEqual(kwargs["headers"], {"Authorization": "session-fixture"})
+        finally:
+            pocketbase_auth.reset_stored_job_session()
 
 
 class TestCoordinatedJobReads(unittest.TestCase):
@@ -278,12 +281,12 @@ class TestCoordinatedJobReads(unittest.TestCase):
         with patch.object(request_utils, "authorized_request", side_effect=pages), \
              patch.object(request_utils, "_selected_project_identity", return_value=("project", "sqid")):
             with self.assertRaises(request_utils.ProjectContextError):
-                request_utils.request_jobs("organization", "", "project")
+                request_utils.request_jobs("organization", "project")
         with patch.object(request_utils, "authorized_request", return_value=_FakeResponse({"body": {"job-a": {"project_id": "project"}}})), \
              patch.object(request_utils, "_selected_project_identity", return_value=("project", "sqid")), \
              patch.object(request_utils, "_current_refresh_identity", side_effect=[(1, 1), (1, 2)]), \
              patch.dict(request_utils.Storage.data, {"jobs": {"other-user-job": {}}}):
-            request_utils._request_jobs_unlocked("organization", "", "project")
+            request_utils._request_jobs_unlocked("organization", "project")
             self.assertEqual(request_utils.Storage.data["jobs"], {"other-user-job": {}})
 
 

@@ -27,7 +27,6 @@ class EnvironmentProfile:
     label: str
     api_url: str
     web_url: str
-    farm_url: str
     render_coordinator: bool
 
 
@@ -38,9 +37,6 @@ _PROFILES: Mapping[str, EnvironmentProfile] = MappingProxyType(
             label="Production",
             api_url="https://api.superlumin.al",
             web_url="https://superlumin.al",
-            # Retained for explicitly legacy handoffs.  Receipt-based clients
-            # use the API coordinator and never call this origin directly.
-            farm_url="http://178.156.167.251",
             # Production has not deployed the /api/render/v1 contract yet.
             # Flip this only alongside a verified backend rollout.
             render_coordinator=False,
@@ -50,7 +46,6 @@ _PROFILES: Mapping[str, EnvironmentProfile] = MappingProxyType(
             label="Test",
             api_url="https://lab-api.superlumin.al",
             web_url="https://lab.superlumin.al",
-            farm_url="https://lab-api.superlumin.al",
             render_coordinator=True,
         ),
     }
@@ -113,15 +108,11 @@ def _profile_handoff_values(
     profile: EnvironmentProfile,
     organization_id: object,
 ) -> dict[str, str]:
-    org_id = _safe_identifier(organization_id, "organization reference")
-    encoded_org = quote(org_id, safe="")
-    farm_base = profile.farm_url.rstrip("/")
+    _safe_identifier(organization_id, "organization reference")
     return {
         "environment": profile.key,
         "pocketbase_url": profile.api_url,
         "web_url": profile.web_url,
-        "farm_url": f"{farm_base}/farm/{encoded_org}/api/",
-        "sarfis_url": f"{profile.api_url}/farm/{encoded_org}",
     }
 
 
@@ -195,7 +186,7 @@ def validate_handoff_environment(
     """Validate and canonicalize a submit/download subprocess handoff.
 
     Handoffs created before environment selection existed have no environment
-    or web URL.  They migrate to the production profile only when every endpoint
+    or web URL.  They migrate to the production profile only when every active endpoint
     they do carry is compatible with that profile.
     """
     if not isinstance(data, MutableMapping):
@@ -210,6 +201,8 @@ def validate_handoff_environment(
     if not isinstance(project, dict):
         raise ValueError("Invalid render handoff project")
     expected = _profile_handoff_values(profile, project.get("organization_id"))
+    data.pop("farm_url", None)
+    data.pop("sarfis_url", None)
 
     for key, expected_value in expected.items():
         if key == "environment":
@@ -220,19 +213,7 @@ def validate_handoff_environment(
             data[key] = expected_value
             continue
         actual_text = str(actual).strip()
-        # Older production submit handoffs contained a harmless double slash
-        # before ``farm``.  Accept only that known spelling, then canonicalize.
-        legacy_farm = (
-            profile.key == PRODUCTION_ENVIRONMENT
-            and key == "farm_url"
-            and actual_text == expected_value.replace("/farm/", "//farm/", 1)
-        )
-        legacy_status = (
-            profile.key == PRODUCTION_ENVIRONMENT
-            and key == "sarfis_url"
-            and actual_text.rstrip("/") == expected_value.replace(profile.api_url, profile.farm_url, 1)
-        )
-        if actual_text.rstrip("/") != expected_value.rstrip("/") and not (legacy_farm or legacy_status):
+        if actual_text.rstrip("/") != expected_value.rstrip("/"):
             raise ValueError("Render handoff mixes Sulu environments")
         data[key] = expected_value
 

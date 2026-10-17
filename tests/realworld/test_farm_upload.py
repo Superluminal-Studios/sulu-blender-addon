@@ -160,7 +160,6 @@ def load_credentials() -> Tuple[bool, str, Dict]:
 
         token = Storage.data.get("user_token", "")
         org_id = Storage.data.get("org_id", "")
-        user_key = Storage.data.get("user_key", "")
         projects = Storage.data.get("projects", [])
         environment = Storage.data.get("environment", "production")
         profile = profile_for_environment(environment)
@@ -177,7 +176,6 @@ def load_credentials() -> Tuple[bool, str, Dict]:
         return True, "", {
             "token": token,
             "org_id": org_id,
-            "user_key": user_key,
             "projects": projects,
             "project_id": Storage.data.get("project_id", ""),
             "environment": profile.key,

@@ -76,9 +76,6 @@ class SUPERLUMINAL_OT_DownloadJob(bpy.types.Operator):
             "debug_mode": bool(getattr(prefs, "debug_mode", False)),
         }
 
-        if not handoff["render_coordinator"]:
-            handoff["sarfis_token"] = Storage.data.get("user_key", "")
-
         worker = Path(__file__).with_name("download_worker.py")
 
         if not Storage.auth_context_matches(

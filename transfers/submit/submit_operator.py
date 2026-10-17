@@ -17,9 +17,8 @@ from ...utils.version_utils import resolved_worker_blender_value
 from ...storage import Storage
 from ...utils.prefs import get_prefs, get_addon_dir
 from ...utils.project_scan import quick_cross_drive_hint
-from ...utils.request_utils import fetch_projects, get_render_queue_key
+from ...utils.request_utils import fetch_projects
 from ...utils.project_context import (
-    ProjectContextError,
     resolve_org_context,
     resolve_selected_project,
     validate_project_identity,
@@ -140,17 +139,9 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             )
             return {"CANCELLED"}
 
-        try:
-            org_id, user_key = resolve_org_context(project, get_render_queue_key)
-        except ProjectContextError as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-        except Exception as exc:
-            self.report({"ERROR"}, f"Could not resolve project context: {exc}")
-            return {"CANCELLED"}
+        org_id = resolve_org_context(project)
 
         Storage.data["org_id"] = org_id
-        Storage.data["user_key"] = user_key
         Storage.save()
         auth_context = Storage.auth_context()
         token = auth_context[2]
@@ -305,7 +296,6 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "blender_binary": str(bpy.app.binary_path),
             "video_fps": int(scene.render.fps),
             "video_fps_base": float(scene.render.fps_base or 1.0),
-            "sarfis_token": user_key,
         }
 
         worker = Path(__file__).with_name("submit_worker.py")

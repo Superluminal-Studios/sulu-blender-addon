@@ -4,14 +4,19 @@ Relies on generic helpers defined in worker_utils.py.
 
 Modes:
 - "single": one-time download of everything currently available
-- "auto"  : periodically pulls newly published frame files as they appear
+- "auto"  : periodically downloads newly published frame files as they appear
 """
 
 from __future__ import annotations
 
 # Standard library
 import importlib
+import errno
 import json
+import queue
+import threading
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from collections import deque
 import os
 import re
 import subprocess
@@ -22,6 +27,7 @@ import types
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
+from urllib.parse import quote, urlsplit
 import traceback
 import requests
 
@@ -56,17 +62,11 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
         sys.modules[pkg_name] = pkg
 
     # Import helpers
-    rclone = importlib.import_module(f"{pkg_name}.transfers.rclone_utils")
-    run_rclone = rclone.run_rclone
-    ensure_rclone = rclone.ensure_rclone
-    NOT_FOUND_MARKERS = getattr(rclone, "NOT_FOUND_MARKERS", ())
-    AUTH_MARKERS = getattr(rclone, "AUTH_MARKERS", ())
     worker_utils = importlib.import_module(f"{pkg_name}.utils.worker_utils")
     apply_debug_handoff = getattr(worker_utils, "apply_debug_handoff", lambda handoff: None)
     apply_debug_handoff(data)
     clear_console = worker_utils.clear_console
     open_folder = worker_utils.open_folder
-    fetch_project_storage = getattr(worker_utils, "fetch_project_storage", None)
 
     # Import download logger
     download_logger_mod = importlib.import_module(f"{pkg_name}.utils.download_logger")
@@ -78,18 +78,11 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
 
     return {
         "pkg_name": pkg_name,
-        "run_rclone": run_rclone,
-        "ensure_rclone": ensure_rclone,
-        "NOT_FOUND_MARKERS": NOT_FOUND_MARKERS,
-        "AUTH_MARKERS": AUTH_MARKERS,
         "clear_console": clear_console,
         "open_folder": open_folder,
-        "fetch_project_storage": fetch_project_storage,
         "DownloadLogger": DownloadLogger,
         "TerminalKeyReader": terminal_actions_mod.TerminalKeyReader,
-        "_build_base": worker_utils._build_base,
         "requests_retry_session": worker_utils.requests_retry_session,
-        "CLOUDFLARE_R2_DOMAIN": worker_utils.CLOUDFLARE_R2_DOMAIN,
         "run_preflight_checks": worker_utils.run_preflight_checks,
         "validate_handoff_environment": environment_mod.validate_handoff_environment,
         "job_page_url": environment_mod.job_page_url,
@@ -102,23 +95,10 @@ session: requests.Session
 job_id: str
 job_name: str
 download_path: str
-rclone_bin: str
-s3info: Dict[str, object]
-bucket: str
-base_cmd: List[str]
 download_type: str
-sarfis_url: Optional[str]
-sarfis_token: Optional[str]
 logger: DownloadLogger
-run_rclone: Any
-ensure_rclone: Any
-NOT_FOUND_MARKERS: Tuple[str, ...] = ()
-AUTH_MARKERS: Tuple[str, ...] = ()
 open_folder: Any
-fetch_project_storage: Any = None
-_build_base: Any
 requests_retry_session: Any
-CLOUDFLARE_R2_DOMAIN: str
 TerminalKeyReader: Any
 
 
@@ -252,21 +232,41 @@ def _ensure_dir(path: str) -> None:
 
 
 def _existing_relative_files(path: str) -> Set[str]:
-    """Return destination files using the same slash-separated paths as rclone."""
+    """Return destination files as slash-separated output paths."""
     if not os.path.isdir(path):
         return set()
 
     existing: Set[str] = set()
     for root, _, files in os.walk(path):
         for filename in files:
+            if filename.casefold().startswith(".sulu-download-"):
+                continue
             absolute = os.path.join(root, filename)
             relative = os.path.relpath(absolute, path).replace(os.sep, "/")
             existing.add(relative)
     return existing
 
 
+def _cleanup_stale_downloads(path: str) -> None:
+    """Remove transfer files untouched for ten minutes; active writers own theirs."""
+    cutoff = time.time() - 600
+    for root, _, files in os.walk(path):
+        for filename in files:
+            if not filename.casefold().startswith(".sulu-download-"):
+                continue
+            candidate = Path(root, filename)
+            try:
+                if candidate.lstat().st_mtime < cutoff:
+                    candidate.unlink()
+            except (FileNotFoundError, PermissionError):
+                continue
+            except OSError as exc:
+                if exc.errno != errno.EBUSY and getattr(exc, "winerror", None) not in {32, 33}:
+                    raise
+
+
 class _OutputCopyState:
-    """Per-worker cache used to copy each immutable output key only once."""
+    """Per-worker output discovery and download completion state."""
 
     def __init__(self, downloaded_files: Optional[Set[str]] = None) -> None:
         self.downloaded_files: Set[str] = set(downloaded_files or ())
@@ -275,73 +275,34 @@ class _OutputCopyState:
         self.last_copy_count = 0
         self.listing_passes = 0
         self.reported_empty = False
+        self.deferred_files: Set[str] = set()
 
 
-def _build_rclone_base() -> List[str]:
-    return _build_base(
-        rclone_bin,
-        f"https://{CLOUDFLARE_R2_DOMAIN}",
-        s3info,
+def _job_api_url() -> str:
+    project = data["project"]
+    org = str(project["organization_id"]).strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", org) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", job_id):
+        raise ValueError("Invalid organization or job reference")
+    if not data["user_token"]:
+        raise ValueError("Missing Sulu session")
+    return f"{str(data['pocketbase_url']).rstrip('/')}/api/jobs/{quote(org, safe='')}/{quote(job_id, safe='')}"
+
+
+def _job_api_request(method: str, suffix: str = "", **kwargs) -> dict:
+    response = session.request(
+        method,
+        _job_api_url() + suffix,
+        headers={"Authorization": data["user_token"]},
+        timeout=20,
+        allow_redirects=False,
+        **kwargs,
     )
-
-
-def _failure_category(exc: RuntimeError) -> str:
-    category = str(getattr(exc, "category", "") or "").strip()
-    if category:
-        return category
-    low = str(exc).lower()
-    if any(marker in low for marker in NOT_FOUND_MARKERS):
-        return "not_found"
-    if any(marker in low for marker in AUTH_MARKERS):
-        return "forbidden"
-    return "unknown"
-
-
-def _fetch_storage_credentials(force_renew: bool = False) -> Tuple[Dict[str, object], str]:
-    if fetch_project_storage is not None:
-        payload = fetch_project_storage(
-            session,
-            data["pocketbase_url"],
-            data["user_token"],
-            data["project"]["id"],
-            force_renew=force_renew,
-        )
-    else:
-        params = {
-            "filter": f"(project_id='{data['project']['id']}' && bucket_name~'render-')",
-            "sort": "-updated",
-            "perPage": 1,
-            "skipTotal": 1,
-        }
-        if force_renew:
-            params["force_renew"] = "1"
-        response = session.get(
-            f"{data['pocketbase_url']}/api/collections/project_storage/records",
-            headers={"Authorization": data["user_token"]},
-            params=params,
-            timeout=30,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    items = payload.get("items", [])
-    if not items:
-        raise RuntimeError(
-            "No accessible storage records found for this project "
-            "(organization membership may be missing)."
-        )
-
-    rec = items[0]
-    return rec, rec["bucket_name"]
-
-
-def _refresh_storage_credentials(reason: str | None = None, force_renew: bool = False) -> None:
-    global s3info, bucket, base_cmd
-
-    if reason:
-        logger.warning(reason)
-
-    s3info, bucket = _fetch_storage_credentials(force_renew=force_renew)
-    base_cmd = _build_rclone_base()
+    if response.status_code != 200:
+        raise RuntimeError(f"Job request failed (HTTP {response.status_code}). Sign in again or retry.")
+    payload = response.json()
+    if not isinstance(payload, dict) or payload.get("status") != "success" or not isinstance(payload.get("body"), dict):
+        raise RuntimeError("Invalid job response")
+    return payload["body"]
 
 
 _WINDOWS_RESERVED_NAMES = frozenset(
@@ -356,22 +317,11 @@ _WINDOWS_RESERVED_NAMES = frozenset(
 )
 
 _WINDOWS_MAX_COMPONENT_LEN = 240
-_WINDOWS_SAFE_LOCAL_ENCODING = (
-    "Slash,LtGt,DoubleQuote,Colon,Question,Asterisk,Pipe,BackSlash,Del,Ctl,"
-    "LeftSpace,LeftPeriod,RightSpace,RightPeriod,InvalidUtf8,Dot"
-)
 _SKIPPED_OUTPUTS_WARNED = False
 
 
 def _windows_local_path_issue(rel_path: str) -> Optional[str]:
-    """
-    Return a reason this object key cannot be safely materialized on Windows.
-
-    rclone's `--local-encoding` can encode ordinary illegal filename
-    characters (`:`, `*`, trailing spaces/dots, control chars, etc.). It cannot
-    create a file whose final path component is empty, and Windows reserved
-    device names are still unsafe in practice, especially on network drives.
-    """
+    """Return a reason an output path cannot be materialized on Windows."""
     rel = str(rel_path or "").replace("\\", "/").strip("/")
     if not rel:
         return "empty relative path"
@@ -383,6 +333,8 @@ def _windows_local_path_issue(rel_path: str) -> Optional[str]:
             return "empty or relative path segment"
         if len(part) > _WINDOWS_MAX_COMPONENT_LEN:
             return "path segment is too long for Windows"
+        if part.endswith((" ", ".")) or any(char in '<>:"|?*' or ord(char) < 32 for char in part):
+            return "invalid Windows filename"
         device_name = part.rstrip(" .").split(".", 1)[0].upper()
         if device_name in _WINDOWS_RESERVED_NAMES:
             return f"reserved Windows device name '{device_name}'"
@@ -392,75 +344,135 @@ def _windows_local_path_issue(rel_path: str) -> Optional[str]:
 def _filter_downloadable_output_files(raw_paths: List[str]) -> Tuple[List[str], List[Tuple[str, str]]]:
     files: List[str] = []
     skipped: List[Tuple[str, str]] = []
-    seen = set()
+    seen = {}
 
     for raw in raw_paths:
-        rel = str(raw or "").strip().replace("\\", "/")
+        rel = str(raw or "")
         if not rel:
             continue
         issue = _windows_local_path_issue(rel)
         if issue:
             skipped.append((rel, issue))
             continue
-        if rel in seen:
+        if Path(rel).name.casefold().startswith(".sulu-download-"):
+            skipped.append((rel, "reserved temporary download filename"))
             continue
-        seen.add(rel)
+        folded = rel.casefold()
+        if folded in seen:
+            if seen[folded] != rel:
+                skipped.append((rel, f"case-insensitive name collision with '{seen[folded]}'; refusing to overwrite"))
+            continue
+        seen[folded] = rel
         files.append(rel)
 
     return files, skipped
 
 
-def _rclone_list_output_files(remote: str) -> Tuple[List[str], List[Tuple[str, str]]]:
-    """
-    Return downloadable remote paths and malformed object keys.
+def _list_output_files() -> Tuple[Dict[str, dict], List[Tuple[str, str]]]:
+    sources = {}
+    cursor = ""
+    seen_cursors = set()
+    prefix = f"{job_id}/output/"
+    while True:
+        _poll_download_actions()
+        body = _job_api_request(
+            "GET", "/source_manifest", params={"limit": 2000, "cursor": cursor}
+        )
+        if not isinstance(body.get("files"), list) or not isinstance(body.get("nextCursor"), str):
+            raise RuntimeError("Invalid output manifest")
+        for source in body["files"]:
+            if not isinstance(source, dict) or not isinstance(source.get("key"), str):
+                raise RuntimeError("Invalid output source")
+            if not source["key"].startswith(prefix):
+                if data.get("debug_mode"):
+                    logger.info("Skipping source outside this job's output prefix.")
+                continue
+            relative = source["key"][len(prefix):]
+            if not relative or "\\" in relative or relative.startswith("/") or any(part in {"", ".", ".."} for part in relative.split("/")):
+                raise RuntimeError("Invalid output path")
+            if not isinstance(source.get("frame"), str) or not source["frame"] or type(source.get("size")) is not int or source["size"] < 0 or relative in sources:
+                raise RuntimeError("Invalid output source identity")
+            if type(source.get("last_modified")) is not int or source["last_modified"] <= 0:
+                raise RuntimeError("Invalid output modification time")
+            sources[relative] = source
+        cursor = body["nextCursor"]
+        if cursor == "":
+            break
+        if cursor in seen_cursors:
+            raise RuntimeError("Output manifest repeated a page. Retry the download.")
+        seen_cursors.add(cursor)
+    files, skipped = _filter_downloadable_output_files(list(sources))
+    return {relative: sources[relative] for relative in files}, skipped
 
-    S3/R2 can contain real object keys ending in "/". rclone exposes those as
-    files in recursive listings, but Windows cannot materialize them as files:
-    rclone creates the directory, then fails renaming the partial file onto that
-    same path. The worker copies from an explicit, pre-filtered files list so
-    one malformed object cannot abort the whole download.
-    """
-    cmd = [
-        str(base_cmd[0]),
-        "lsf",
-        remote,
-        "--recursive",
-        "--files-only",
-        "--exclude",
-        "thumbnails/**",
-        *base_cmd[1:],
-    ]
-    proc = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if proc.returncode != 0:
-        combined = "\n".join([proc.stdout or "", proc.stderr or ""])
-        tail = "\n".join(combined.splitlines()[-20:]).strip()
-        raise RuntimeError(f"Failed to list output files: {tail or proc.returncode}")
 
-    return _filter_downloadable_output_files((proc.stdout or "").splitlines())
+class _SourceDownloadFailed(RuntimeError):
+    """A transfer failed and may be retried with newly authorized URLs."""
 
 
-def _write_files_from_list(files: List[str]) -> str:
-    fp = tempfile.NamedTemporaryFile(
-        "w",
-        prefix="superluminal_download_files_",
-        suffix=".txt",
-        encoding="utf-8",
-        newline="\n",
-        delete=False,
-    )
+class _SourceChanged(RuntimeError):
+    """The listed object disappeared or changed size; the next pass must relist."""
+
+
+_SOURCE_URL_BATCH_LIMIT = 100  # Backend jobsFrameAssetDirectBatchLimit.
+_DOWNLOAD_WORKERS = 8
+_SOURCE_DOWNLOAD_ATTEMPTS = 3
+
+
+def _download_source(source: dict, address: str, target: Path, progress: queue.Queue, stop: threading.Event) -> None:
+    parsed = urlsplit(address)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username is not None or parsed.password is not None or parsed.fragment:
+        raise RuntimeError("Invalid source download URL")
+    if stop.is_set():
+        raise _DownloadCancelled()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
     try:
-        for rel in files:
-            fp.write(f"{rel}\n")
-        return fp.name
+        with tempfile.NamedTemporaryFile(dir=target.parent, prefix=".sulu-download-", delete=False) as output:
+            temporary = Path(output.name)
+            last_touch = time.monotonic()
+            received = 0
+            progress.put((source["key"], 0))
+            # Plain sessions have zero adapter retries. urllib3 must never
+            # retry/log signed query strings; the caller requests fresh URLs.
+            with requests.Session() as objects:
+                # Also suppress implicit netrc authentication at storage hosts.
+                objects.auth = lambda request: request
+                with objects.get(address, headers={}, timeout=(15, 60), allow_redirects=False, stream=True) as response:
+                    if response.status_code == 404:
+                        raise _SourceChanged("Source disappeared from storage.")
+                    if response.status_code == 403 or 500 <= response.status_code < 600:
+                        raise _SourceDownloadFailed(f"Source download failed (HTTP {response.status_code}).")
+                    if response.status_code != 200:
+                        raise RuntimeError(f"Source download failed (HTTP {response.status_code}).")
+                    for chunk in response.iter_content(64 * 1024):
+                        if stop.is_set():
+                            raise _DownloadCancelled()
+                        received += len(chunk)
+                        if received > source["size"]:
+                            raise _SourceChanged("Source size changed during download.")
+                        output.write(chunk)
+                        now = time.monotonic()
+                        if now - last_touch >= 60:
+                            os.utime(temporary, None)
+                            last_touch = now
+                        progress.put((source["key"], received))
+            if received != source["size"]:
+                raise _SourceChanged("Source size changed during download.")
+            output.flush()
+            os.fsync(output.fileno())
+        if stop.is_set():
+            raise _DownloadCancelled()
+        os.replace(temporary, target)
+        modified_ns = source["last_modified"] * 1_000_000
+        os.utime(target, ns=(modified_ns, modified_ns))
+    except (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError):
+        # requests includes the signed URL in its errors; keep it out of logs.
+        raise _SourceDownloadFailed("Source download failed. Check your connection and retry.") from None
+    except requests.RequestException:
+        raise RuntimeError("Source request failed. Retry the download.") from None
     finally:
-        fp.close()
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _warn_skipped_outputs(skipped: List[Tuple[str, str]]) -> None:
@@ -472,8 +484,8 @@ def _warn_skipped_outputs(skipped: List[Tuple[str, str]]) -> None:
     more = "" if len(skipped) <= 3 else f"; +{len(skipped) - 3} more"
     logger.warning(
         "Skipped "
-        f"{len(skipped)} malformed output object"
-        f"{'' if len(skipped) == 1 else 's'} with Windows-incompatible names. "
+        f"{len(skipped)} output file"
+        f"{'' if len(skipped) == 1 else 's'} whose names cannot be written safely. "
         "Valid frame files will continue downloading. "
         f"Skipped: {examples}{more}"
     )
@@ -494,87 +506,149 @@ def _run_output_copy(
     dest_dir: str,
     state: Optional[_OutputCopyState] = None,
     progress_label: Optional[str] = None,
-    *,
-    reconcile_existing: bool = False,
 ) -> int:
-    remote = f":s3:{bucket}/{job_id}/output/"
-    local = dest_dir.rstrip("/") + "/"
     if state is not None:
         state.last_copy_count = 0
-
-    files, skipped = _rclone_list_output_files(remote)
+        state.deferred_files.clear()
+    sources, skipped = _list_output_files()
     _warn_skipped_outputs(skipped)
+    files = list(sources)
     if state is not None:
         state.listing_passes += 1
         state.last_visible_count = len(files)
         state.visible_frame_numbers = _output_frame_numbers(files)
-
     if not files:
         if state is None or not state.reported_empty:
             logger.info("No downloadable frame files found yet")
         if state is not None:
             state.reported_empty = True
         return 0
-
     if state is not None:
         state.reported_empty = False
-        new_files = [path for path in files if path not in state.downloaded_files]
-        if not reconcile_existing:
-            files = new_files
-        if not files:
-            return 0
-    else:
-        new_files = files
-
+    root = Path(dest_dir).resolve()
+    pending = {}
+    existing_names = {}
+    for name in sorted(_existing_relative_files(dest_dir)):
+        existing_names.setdefault(name.casefold(), name)
+    for relative in files:
+        target = root / relative
+        if not target.resolve().is_relative_to(root):
+            raise RuntimeError("Output path leaves the download folder")
+        for parent in [target, *target.parents]:
+            if parent == root:
+                break
+            if parent.is_symlink():
+                raise RuntimeError("Output path leaves the download folder")
+        previous = existing_names.get(relative.casefold())
+        if previous is not None and previous != relative:
+            logger.warning(f"Skipping '{relative}': case-insensitive name collision with '{previous}'; refusing to overwrite.")
+            continue
+        existing_names[relative.casefold()] = relative
+        if target.is_file():
+            local = target.stat()
+            source = sources[relative]
+            if local.st_size == source["size"] and abs(local.st_mtime_ns // 1_000_000 - source["last_modified"]) <= 2000:
+                if state is not None:
+                    state.downloaded_files.add(relative)
+                continue
+        if state is not None:
+            state.downloaded_files.discard(relative)
+        pending[relative] = target
+    if not pending:
+        return 0
     if progress_label:
         logger.transfer_start(progress_label)
-
-    files_from = _write_files_from_list(files)
-    rclone_args = [
-        "--files-from-raw",
-        files_from,
-        "--no-traverse",
-        "--local-encoding",
-        _WINDOWS_SAFE_LOCAL_ENCODING,
-        "--transfers",
-        "8",
-        "--checkers",
-        "8",
-        "--retries",
-        "10",
-        "--low-level-retries",
-        "20",
-        "--retries-sleep",
-        "5s",
-    ]
-    if not reconcile_existing:
-        rclone_args.append("--size-only")
-
-    try:
-        rclone_result = run_rclone(
-            base_cmd,
-            "copy",
-            remote,
-            local,
-            rclone_args,
-            logger=logger,
-            action_callback=_poll_download_actions,
-        )
-        changed_count = len(new_files)
-        if reconcile_existing and isinstance(rclone_result, dict):
-            changed_count = max(
-                changed_count,
-                max(0, _int_value(rclone_result.get("transfers"))),
-            )
-        if state is not None:
-            state.downloaded_files.update(files)
-            state.last_copy_count = changed_count
-        return changed_count
-    finally:
+    total_bytes = sum(sources[relative]["size"] for relative in pending)
+    received = {sources[relative]["key"]: 0 for relative in pending}
+    received_bytes = 0
+    progress = queue.Queue()
+    stop = threading.Event()
+    copied = 0
+    with ThreadPoolExecutor(max_workers=_DOWNLOAD_WORKERS) as pool:
         try:
-            os.unlink(files_from)
-        except OSError:
-            pass
+            for attempt in range(_SOURCE_DOWNLOAD_ATTEMPTS):
+                failed = {}
+                waiting = deque(pending)
+                buffered = deque()
+                futures = {}
+                while waiting or buffered or futures:
+                    _poll_download_actions()
+                    # Start already signed files before a refill request so
+                    # signing latency cannot idle a newly available worker.
+                    while buffered and len(futures) < _DOWNLOAD_WORKERS:
+                        relative, address, signed_at, safe_age = buffered.popleft()
+                        if time.monotonic() - signed_at >= safe_age:
+                            waiting.appendleft(relative)
+                            continue
+                        future = pool.submit(_download_source, sources[relative], address, pending[relative], progress, stop)
+                        futures[future] = relative
+                    if waiting and len(buffered) < _DOWNLOAD_WORKERS:
+                        count = min(_SOURCE_URL_BATCH_LIMIT, _DOWNLOAD_WORKERS * 2 - len(buffered), len(waiting))
+                        batch = [waiting.popleft() for _ in range(count)]
+                        signed_at = time.monotonic()
+                        body = _job_api_request("POST", "/source_urls", json={"sources": [
+                            {"frame": sources[relative]["frame"], "key": sources[relative]["key"]}
+                            for relative in batch
+                        ]})
+                        urls = body.get("urls")
+                        if not isinstance(urls, list) or len(urls) != len(batch):
+                            raise RuntimeError("Invalid source URL response")
+                        safe_age = 300
+                        if "expires_in" in body:
+                            if type(body["expires_in"]) is not int or body["expires_in"] <= 120:
+                                raise RuntimeError("Invalid source URL lifetime")
+                            safe_age = body["expires_in"] - 120
+                        entries = {}
+                        for entry in urls:
+                            if not isinstance(entry, dict) or not isinstance(entry.get("key"), str) or entry["key"] in entries or not isinstance(entry.get("url"), str):
+                                raise RuntimeError("Invalid source URL response")
+                            entries[entry["key"]] = entry
+                        for relative in batch:
+                            source = sources[relative]
+                            entry = entries.get(source["key"])
+                            if entry is None or entry.get("frame") != source["frame"]:
+                                raise RuntimeError("Source URL identity does not match the manifest")
+                        buffered.extend((relative, entries[sources[relative]["key"]]["url"], signed_at, safe_age) for relative in batch)
+                        continue
+                    done, _ = wait(futures, timeout=0.1, return_when=FIRST_COMPLETED)
+                    while True:
+                        try:
+                            key, count = progress.get_nowait()
+                        except queue.Empty:
+                            break
+                        received_bytes += count - received[key]
+                        received[key] = count
+                        logger.transfer_progress(received_bytes, total_bytes)
+                    for future in done:
+                        relative = futures.pop(future)
+                        try:
+                            future.result()
+                        except _SourceChanged:
+                            logger.info(f"Output '{relative}' changed or disappeared; deferring it until the next listing.")
+                            if state is not None:
+                                state.deferred_files.add(relative)
+                        except _SourceDownloadFailed as exc:
+                            failed[relative] = pending[relative]
+                            failure = exc
+                        else:
+                            copied += 1
+                            if state is not None:
+                                state.downloaded_files.add(relative)
+                                state.last_copy_count = copied
+                if not failed:
+                    break
+                if attempt == _SOURCE_DOWNLOAD_ATTEMPTS - 1:
+                    raise failure
+                pending = failed
+                logger.warning(f"Retrying {len(failed)} failed output download(s) with fresh URLs.")
+                _wait_for_download_actions(attempt + 1)
+        finally:
+            stop.set()
+    if state is not None:
+        state.visible_frame_numbers = _output_frame_numbers([
+            relative for relative in files if relative not in state.deferred_files
+        ])
+    return copied
 
 
 def _int_value(value: object, default: int = 0) -> int:
@@ -584,11 +658,6 @@ def _int_value(value: object, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
-
-
-def _handoff_job_details() -> Tuple[str, int, int]:
-    job = data.get("job") or data.get("job_data") or {}
-    return _job_snapshot_details(job)
 
 
 def _job_snapshot_details(job: object) -> Tuple[str, int, int]:
@@ -613,184 +682,34 @@ def _job_snapshot_details(job: object) -> Tuple[str, int, int]:
     return (status, finished, total)
 
 
-_JOB_DETAILS_WARNED: set = set()
-
-
-def _fetch_stored_job_details() -> Tuple[str, int, int]:
-    """Read the persisted job when the queue's in-memory record is gone."""
-    unavailable = ("unknown", 0, 0)
-    project = data.get("project") or {}
-    org_id = (
-        str(project.get("organization_id", "") or "").strip()
-        if isinstance(project, dict)
-        else ""
-    )
-    api_url = str(data.get("pocketbase_url", "") or "").rstrip("/")
-    user_token = str(data.get("user_token", "") or "").strip()
-    if not org_id or not api_url or not user_token or not job_id:
-        return unavailable
-
-    try:
-        response = session.get(
-            f"{api_url}/api/jobs/{org_id}/{job_id}",
-            headers={"Authorization": user_token},
-            timeout=20,
-        )
-    except Exception:
-        return unavailable
-    if response.status_code != 200:
-        return unavailable
-    try:
-        payload = response.json()
-    except (TypeError, ValueError):
-        return unavailable
-    body = payload.get("body") if isinstance(payload, dict) else None
-    stored_job = body.get("job_data") if isinstance(body, dict) else None
-    return _job_snapshot_details(stored_job)
-
-
-def _stored_or_handoff_job_details() -> Tuple[str, int, int]:
-    stored = _fetch_stored_job_details()
-    if stored != ("unknown", 0, 0):
-        return stored
-    return _handoff_job_details()
-
-
 def _fetch_job_details() -> Tuple[str, int, int]:
-    """
-    Returns (status, finished, total) with safe defaults.
-    Falls back to the job snapshot passed by Blender when live queue data is gone.
-
-    The queue manager's `job_details` endpoint returns `None` whenever the
-    job_id isn't in `Database.jobs` (jobs that were just submitted, finished
-    and aged out, or were deleted). Sanic wraps that as
-    `{"status": "success", "body": null}`, while the gateway can return a
-    bare JSON `null`. Both forms are valid protocol responses and fall back to
-    the persisted job, then the handoff snapshot, without warning spam.
-    """
-    if not sarfis_url or not sarfis_token:
-        return _handoff_job_details()
-
-    try:
-        resp = session.get(
-            f"{sarfis_url}/api/job_details",
-            params={"job_id": job_id},
-            headers={"Auth-Token": sarfis_token},
-            timeout=20,
-        )
-    except Exception as exc:
-        key = f"req:{type(exc).__name__}"
-        if key not in _JOB_DETAILS_WARNED:
-            _JOB_DETAILS_WARNED.add(key)
-            logger.warning(f"Job status check failed: {exc}")
-        return _handoff_job_details()
-
-    if resp.status_code != 200:
-        key = f"http:{resp.status_code}"
-        if key not in _JOB_DETAILS_WARNED:
-            _JOB_DETAILS_WARNED.add(key)
-            logger.warning(f"Job status check returned {resp.status_code}")
-        return _handoff_job_details()
-
-    parsed: object = None
-    if resp.headers.get("content-type", "").startswith("application/json"):
-        try:
-            parsed = resp.json()
-        except ValueError:
-            parsed = None
-
-    # `parsed` can be None when the upstream returns the JSON literal
-    # `null` (jobs not in Database.jobs) — silent fallback, this is the
-    # expected case for freshly-submitted jobs and aged-out terminal jobs.
-    if not isinstance(parsed, dict):
-        return _stored_or_handoff_job_details()
-
-    body = parsed.get("body")
-    # Same dict-or-fallback pattern: `body` is None when the wrapped
-    # response is `{"status": "success", "body": null}`.
-    if not isinstance(body, dict) or not body:
-        return _stored_or_handoff_job_details()
-
-    status = str(body.get("status", "unknown") or "unknown").lower()
-    tasks_raw = body.get("tasks")
-    tasks = tasks_raw if isinstance(tasks_raw, dict) else {}
-    finished = _int_value(tasks.get("finished"), 0)
-    total = _int_value(body.get("total_tasks", tasks.get("total")), 0)
-    if body.get("missing") or (status == "unknown" and total <= 0):
-        return _fetch_stored_job_details()
-    # Clear the dedupe set so a transient failure doesn't permanently
-    # suppress future warnings of the same kind.
-    _JOB_DETAILS_WARNED.clear()
-    return (status, finished, total)
-
-
-def _rclone_copy_output(
-    dest_dir: str,
-    state: Optional[_OutputCopyState] = None,
-    progress_label: Optional[str] = None,
-    *,
-    reconcile_existing: bool = False,
-) -> bool:
-    """
-    Copy job output from remote to dest_dir.
-    Returns True if copy succeeded (even if nothing new), False if remote likely doesn't exist yet.
-    """
-    try:
-        _run_output_copy(
-            dest_dir,
-            state,
-            progress_label,
-            reconcile_existing=reconcile_existing,
-        )
-        return True
-    except RuntimeError as exc:
-        category = _failure_category(exc)
-        if category == "not_found":
-            logger.info("No frames available yet")
-            return False
-        if category == "forbidden":
-            _refresh_storage_credentials(
-                "Storage credentials were rejected. Refreshing credentials and retrying once.",
-                force_renew=True,
-            )
-            try:
-                _run_output_copy(
-                    dest_dir,
-                    state,
-                    progress_label,
-                    reconcile_existing=reconcile_existing,
-                )
-                return True
-            except RuntimeError as retry_exc:
-                if _failure_category(retry_exc) == "not_found":
-                    logger.info("No frames available yet")
-                    return False
-                logger.error(f"Download stopped: {retry_exc}")
-                raise
-        logger.error(f"Download stopped: {exc}")
-        raise
+    """Read job progress through the authenticated, job-authorized backend."""
+    body = _job_api_request("GET")
+    job = body.get("job_data")
+    if not isinstance(job, dict) or not isinstance(job.get("status"), str):
+        raise RuntimeError("Invalid stored job response")
+    return _job_snapshot_details(job)
 
 
 def single_downloader(dest_dir: str) -> None:
     _ensure_dir(dest_dir)
+    _cleanup_stale_downloads(dest_dir)
 
     # Check for existing files (resuming previous download)
     existing_files = _existing_relative_files(dest_dir)
     if existing_files:
         logger.resume_info(len(existing_files))
 
-    # A manual retry must also revalidate existing paths so a rerendered frame
-    # can replace a same-name local file.  Keeping listing state additionally
-    # lets us distinguish a successful empty listing from a real download.
     copy_state = _OutputCopyState(existing_files)
-
     logger.transfer_start("Downloading")
-    ok = _rclone_copy_output(
-        dest_dir,
-        copy_state,
-        reconcile_existing=True,
-    )
-    if ok and copy_state.last_visible_count > 0:
+    for listing in range(2):
+        _run_output_copy(dest_dir, copy_state)
+        if not copy_state.deferred_files:
+            break
+        if listing == 1:
+            raise RuntimeError("Some output files are still changing or unavailable. Retry the download.")
+        logger.info("Output files changed; refreshing the manifest before retrying.")
+    if copy_state.last_visible_count > 0:
         logger.transfer_complete("Downloaded")
     else:
         logger.warning("No frames ready yet. Run again later to download.")
@@ -828,17 +747,9 @@ _VIDEO_FRAME_SUFFIX = re.compile(r"^(.*?)(\d+)$")
 def _run_selected_downloader(
     dest_dir: str,
     mode: str,
-    status_url: Optional[str],
-    status_token: Optional[str],
 ) -> str:
     """Dispatch without bypassing terminal object-visibility reconciliation."""
     if mode == "single":
-        single_downloader(dest_dir)
-        return "available"
-    elif not status_url or not status_token:
-        logger.warning(
-            "Can't track job progress. Downloading available frames only."
-        )
         single_downloader(dest_dir)
         return "available"
     else:
@@ -1028,9 +939,10 @@ def auto_downloader(
 ) -> str:
     """Poll for new frames, copying newly discovered output keys in batches."""
     _ensure_dir(dest_dir)
+    _cleanup_stale_downloads(dest_dir)
 
     # Files already present are completed work from an earlier downloader. Seed
-    # the key cache so a resumed run asks rclone only for missing outputs.
+    # the key cache so a resumed run initially asks only for missing outputs.
     existing_files = _existing_relative_files(dest_dir)
     if existing_files:
         logger.resume_info(len(existing_files))
@@ -1057,6 +969,7 @@ def auto_downloader(
     terminal_listing_passes = 0
     stable_terminal_passes = 0
     terminal_last_change_at: Optional[float] = None
+    deferral_counts: Dict[str, int] = {}
 
     logger.auto_mode_info()
 
@@ -1112,38 +1025,45 @@ def auto_downloader(
             else:
                 progress_label = "Checking final frame files"
 
-            reconcile_existing = refresh_due or terminal_sync
-            ok = _rclone_copy_output(
+            _run_output_copy(
                 dest_dir,
                 copy_state,
                 progress_label,
-                reconcile_existing=reconcile_existing,
             )
+            deferral_counts = {
+                relative: deferral_counts.get(relative, 0) + 1
+                for relative in copy_state.deferred_files
+            }
+            exhausted = sorted(relative for relative, count in deferral_counts.items() if count >= 5)
+            if exhausted:
+                names = ", ".join(f"'{relative}'" for relative in exhausted)
+                logger.warning(f"Download incomplete: {names} changed or disappeared in 5 consecutive listings. Run again to resume.")
+                return "incomplete"
             sync_finished_at = time.monotonic()
             if unknown_refresh_due:
                 next_unknown_refresh = (
                     sync_finished_at + _AUTO_UNKNOWN_REFRESH_SECONDS
                 )
-            if ok:
-                next_refresh = sync_finished_at + refresh_interval
-                # Count distinct Blender frame suffixes, not objects. A
-                # compositor can publish several outputs for one frame; using
-                # the object count would suppress polling while a later frame
-                # is still becoming visible. Unknown naming stays conservative
-                # and keeps polling until the terminal quiet-window fallback.
-                last_synced_finished = max(
-                    last_synced_finished,
-                    min(finished, len(copy_state.visible_frame_numbers)),
-                )
-                if last_synced_finished >= finished:
-                    pending_since = None
-                elif pending_since is None:
-                    pending_since = sync_finished_at
+            next_refresh = sync_finished_at + refresh_interval
+            # Count distinct Blender frame suffixes, not objects. A
+            # compositor can publish several outputs for one frame; using
+            # the object count would suppress polling while a later frame
+            # is still becoming visible. Unknown naming stays conservative
+            # and keeps polling until the terminal quiet-window fallback.
+            last_synced_finished = max(
+                last_synced_finished,
+                min(finished, len(copy_state.visible_frame_numbers)),
+            )
+            if last_synced_finished >= finished:
+                pending_since = None
+            elif pending_since is None:
+                pending_since = sync_finished_at
 
-            if ok and copy_state.last_copy_count > 0:
+            if copy_state.last_copy_count > 0:
                 logger.transfer_complete("Downloaded")
                 if terminal_status is not None:
                     terminal_last_change_at = sync_finished_at
+                    terminal_deadline = sync_finished_at + settle_interval
 
         elif finished == 0 and terminal_status is None and not shown_waiting:
             logger.info("Waiting for first frame")
@@ -1158,7 +1078,7 @@ def auto_downloader(
             # to frame count.
             if (
                 terminal_listing_passes > 1
-                and ok
+                and not copy_state.deferred_files
                 and copy_state.last_copy_count == 0
             ):
                 stable_terminal_passes += 1
@@ -1188,7 +1108,11 @@ def auto_downloader(
                 and stable_terminal_passes >= stable_pass_target
                 and quiet_for >= required_quiet
             )
-            timed_out = bool(terminal_deadline is not None and now >= terminal_deadline)
+            timed_out = bool(
+                not copy_state.deferred_files
+                and terminal_deadline is not None
+                and now >= terminal_deadline
+            )
             if settled or timed_out:
                 if not settled:
                     logger.warning(
@@ -1213,7 +1137,7 @@ def auto_downloader(
         now = time.monotonic()
         next_poll = _next_poll_deadline(next_poll, poll_interval, now)
         wake_at = next_poll
-        if terminal_deadline is not None:
+        if terminal_deadline is not None and not copy_state.deferred_files:
             wake_at = min(wake_at, terminal_deadline)
         if quiet_wake_at is not None and quiet_wake_at > now:
             wake_at = min(wake_at, quiet_wake_at)
@@ -1235,27 +1159,18 @@ def run_download(
     downloader, polling, resume, and completion behavior as manual downloads.
     """
     global data, session, job_id, job_name, download_path
-    global rclone_bin, s3info, bucket, base_cmd
-    global download_type, sarfis_url, sarfis_token
+    global download_type
     global logger
-    global run_rclone, ensure_rclone, NOT_FOUND_MARKERS, AUTH_MARKERS
-    global open_folder, fetch_project_storage, _build_base
-    global requests_retry_session, CLOUDFLARE_R2_DOMAIN
+    global open_folder
+    global requests_retry_session
     global TerminalKeyReader, _download_actions
 
     t_start = time.perf_counter()
     data = dict(handoff)
     mods = _bootstrap_addon_modules(data)
     mods["validate_handoff_environment"](data)
-    run_rclone = mods["run_rclone"]
-    ensure_rclone = mods["ensure_rclone"]
-    NOT_FOUND_MARKERS = mods["NOT_FOUND_MARKERS"]
-    AUTH_MARKERS = mods["AUTH_MARKERS"]
     open_folder = mods["open_folder"]
-    fetch_project_storage = mods["fetch_project_storage"]
-    _build_base = mods["_build_base"]
     requests_retry_session = mods["requests_retry_session"]
-    CLOUDFLARE_R2_DOMAIN = mods["CLOUDFLARE_R2_DOMAIN"]
     DownloadLogger = mods["DownloadLogger"]
     TerminalKeyReader = mods["TerminalKeyReader"]
     if clear_console:
@@ -1294,8 +1209,6 @@ def run_download(
     preflight_ok, preflight_issues = run_preflight_checks(
         session=session,
         storage_checks=storage_checks,
-        # rclone reports clock-skew failures explicitly. Avoid a separate
-        # external HEAD before every download just to discover the same issue.
         check_clock=False,
     )
 
@@ -1305,31 +1218,13 @@ def run_download(
         # Don't block for downloads - just warn
 
     # Determine mode
-    sarfis_url = data.get("sarfis_url")
-    sarfis_token = data.get("sarfis_token")
     requested_mode = str(data.get("download_type", "") or "").lower()
     if requested_mode in {"single", "auto"}:
         download_type = requested_mode
     else:
-        download_type = "auto" if sarfis_url and sarfis_token else "single"
+        download_type = "auto"
 
     coordinated = data.get("render_coordinator") is True
-    # New clients never obtain project storage credentials or call raw farm
-    # endpoints. Only explicitly older handoffs retain the old worker path.
-    if not coordinated:
-        try:
-            rclone_bin = ensure_rclone(logger=logger)
-        except Exception as exc:
-            logger.fatal(f"Couldn't set up transfer tool: {exc}")
-        try:
-            _refresh_storage_credentials()
-        except (RuntimeError, requests.RequestException, KeyError) as exc:
-            logger.fatal(
-                "Couldn't get storage credentials. Check your connection and try again.\n"
-                f"Details: {exc}"
-            )
-
-    # Make sure the target directory exists
     _ensure_dir(download_path)
 
     actions = _DownloadActionController(
@@ -1359,7 +1254,7 @@ def run_download(
             logger.info("Downloading authorized outputs by layout and generation. No storage credentials are requested.")
             outcome = downloader.run(automatic=download_type == "auto")
         else:
-            outcome = _run_selected_downloader(dest_dir, download_type, sarfis_url, sarfis_token)
+            outcome = _run_selected_downloader(dest_dir, download_type)
 
         mp4_path = None
         if bool(data.get("create_mp4_after_download")):

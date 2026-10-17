@@ -53,7 +53,6 @@ def isolated_storage(tmp_path):
         "user_email": "",
         "project_id": "",
         "org_id": "",
-        "user_key": "",
         "projects": [],
         "jobs": {},
     }
@@ -88,13 +87,11 @@ def test_profiles_are_fixed_and_production_is_the_default():
     assert production.key == "production"
     assert production.api_url == "https://api.superlumin.al"
     assert production.web_url == "https://superlumin.al"
-    assert production.farm_url == "http://178.156.167.251"
     assert production.render_coordinator is False
     assert test.render_coordinator is True
     assert test.key == "test"
     assert test.api_url == "https://lab-api.superlumin.al"
     assert test.web_url == "https://lab.superlumin.al"
-    assert test.farm_url == test.api_url
     with pytest.raises(ValueError, match="Unknown Sulu environment"):
         environment.profile_for_environment("https://operator.example")
 
@@ -106,7 +103,6 @@ def test_switching_environment_clears_state_rotates_transport_and_persists():
         user_email="artist@example.test",
         project_id="project-1",
         org_id="org-1",
-        user_key="farm-key",
         projects=[{"id": "project-1"}],
         jobs={"job-1": {"status": "running"}},
     )
@@ -124,7 +120,6 @@ def test_switching_environment_clears_state_rotates_transport_and_persists():
         "user_email": "",
         "project_id": "",
         "org_id": "",
-        "user_key": "",
         "projects": [],
         "jobs": {},
     }
@@ -142,3 +137,47 @@ def test_authorized_requests_reject_cross_environment_urls_before_transport():
         )
 
 
+
+
+def test_loading_an_old_session_discards_the_retired_queue_key():
+    previous = {**Storage.data, "user_key": "retired-key-fixture"}
+    Path(Storage._file).write_text(json.dumps(previous), encoding="utf-8")
+
+    Storage.load()
+
+    assert "user_key" not in Storage.data
+    assert "user_key" not in json.loads(Path(Storage._file).read_text("utf-8"))
+
+
+def test_queue_key_discard_write_failure_keeps_the_authenticated_session(monkeypatch):
+    previous = {**Storage.data, "user_token": "session-fixture", "user_key": "retired-key-fixture"}
+    Path(Storage._file).write_text(json.dumps(previous), encoding="utf-8")
+    generation = Storage.environment_generation
+
+    def write_failure(*_args):
+        raise OSError("Session file is read-only")
+
+    monkeypatch.setattr(Storage, "_atomic_write", write_failure)
+    with pytest.raises(OSError, match="read-only"):
+        Storage.load()
+
+    assert Storage.data["user_token"] == "session-fixture"
+    assert Storage.environment_generation == generation
+    assert "user_key" not in Storage.data
+
+
+def test_retired_worker_urls_are_removed_from_new_and_old_handoffs():
+    handoff = environment.environment_handoff_values("production", "org-1")
+    assert "sarfis_url" not in handoff
+    assert "farm_url" not in handoff
+    handoff.update(
+        project={"id": "project-1", "organization_id": "org-1"},
+        sarfis_url="http://retired-queue.invalid",
+        farm_url="http://retired-farm.invalid",
+    )
+
+    environment.validate_handoff_environment(handoff)
+
+    assert "sarfis_url" not in handoff
+    assert "farm_url" not in handoff
+    assert handoff["pocketbase_url"] == "https://api.superlumin.al"

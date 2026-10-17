@@ -138,7 +138,6 @@ def test_registration_posts_metadata_to_existing_farm_endpoint(tmp_path):
             "blender_version": "blender52",
             "ignore_errors": False,
             "use_bserver": True,
-            "farm_url": "https://farm.lab.invalid",
             "pocketbase_url": "https://api.lab.invalid",
         },
         logger=mock.MagicMock(),
@@ -174,6 +173,7 @@ def test_registration_posts_metadata_to_existing_farm_endpoint(tmp_path):
     call = session.post.call_args
     assert call.args[0] == "https://api.lab.invalid/api/farm/org-1/jobs"
     payload = json.loads(call.kwargs["data"])
+    assert "farm_url" not in payload["job_data"]
     assert payload["job_data"]["id"] == "job-1"
     assert payload["job_data"]["project_id"] == "project-1"
     assert payload["job_data"]["zip"] is True

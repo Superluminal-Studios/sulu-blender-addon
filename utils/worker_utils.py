@@ -54,11 +54,8 @@ COMMON_RCLONE_FLAGS: list[str] = [
 
 
 def _request_endpoint(url: str) -> str:
-    parsed = urlparse(url)
-    endpoint = parsed.path or url
-    if parsed.query:
-        endpoint = f"{endpoint}?{parsed.query}"
-    return endpoint
+    # Signed object URLs carry credentials in their query string.
+    return urlparse(url).path or "/"
 
 
 def request_timing_logs_enabled() -> bool:

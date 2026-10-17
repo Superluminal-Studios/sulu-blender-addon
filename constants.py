@@ -8,7 +8,6 @@ except ImportError:  # pragma: no cover - standalone developer utilities
 # the selected fixed environment profile instead of importing these constants.
 _PRODUCTION_PROFILE = profile_for_environment("production")
 POCKETBASE_URL = _PRODUCTION_PROFILE.api_url
-FARM_IP = _PRODUCTION_PROFILE.farm_url
 
 
 DEFAULT_ADDONS = {

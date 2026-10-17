@@ -2407,7 +2407,6 @@ def _register_job(ctx: _SubmitContext) -> None:
             "use_bserver": data["use_bserver"],
             "use_async_upload": True,
             "defer_status": True,
-            "farm_url": data["farm_url"],
             "tasks": render_tasks,
         }
     }
