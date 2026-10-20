@@ -29,15 +29,6 @@ if str(_addon_dir) not in sys.path:
     sys.path.insert(0, str(_addon_dir))
 
 
-def _load_module_directly(name: str, filepath: Path):
-    """Load a single .py file as a module, bypassing package __init__.py."""
-    spec = importlib.util.spec_from_file_location(name, filepath)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def _synthesize_addon_package() -> str:
     """Create the package tree workers use without importing add-on __init__.py."""
     pkg_name = "_test_sulu_blender_addon"
@@ -65,9 +56,6 @@ _submit_worker = importlib.import_module(
     f"{_pkg_name}.transfers.submit.submit_worker"
 )
 _environment = importlib.import_module(f"{_pkg_name}.environment")
-_farm_upload_harness = _load_module_directly(
-    "farm_upload_harness", _addon_dir / "tests" / "realworld" / "test_farm_upload.py"
-)
 
 
 class TestStorageCredentialPrefetch(unittest.TestCase):

@@ -54,6 +54,7 @@ def isolated_storage(tmp_path):
         "project_id": "",
         "org_id": "",
         "projects": [],
+        "storage_profiles": {},
         "jobs": {},
     }
     Storage._file = str(tmp_path / "session.json")
@@ -121,6 +122,7 @@ def test_switching_environment_clears_state_rotates_transport_and_persists():
         "project_id": "",
         "org_id": "",
         "projects": [],
+        "storage_profiles": {},
         "jobs": {},
     }
     persisted = json.loads(Path(Storage._file).read_text("utf-8"))

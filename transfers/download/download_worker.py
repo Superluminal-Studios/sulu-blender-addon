@@ -67,6 +67,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
     apply_debug_handoff(data)
     clear_console = worker_utils.clear_console
     open_folder = worker_utils.open_folder
+    fetch_job_storage = worker_utils.fetch_job_storage
 
     # Import download logger
     download_logger_mod = importlib.import_module(f"{pkg_name}.utils.download_logger")
@@ -80,6 +81,7 @@ def _bootstrap_addon_modules(data: Dict[str, object]) -> Dict[str, object]:
         "pkg_name": pkg_name,
         "clear_console": clear_console,
         "open_folder": open_folder,
+        "fetch_job_storage": fetch_job_storage,
         "DownloadLogger": DownloadLogger,
         "TerminalKeyReader": terminal_actions_mod.TerminalKeyReader,
         "requests_retry_session": worker_utils.requests_retry_session,
@@ -98,6 +100,7 @@ download_path: str
 download_type: str
 logger: DownloadLogger
 open_folder: Any
+fetch_job_storage: Any
 requests_retry_session: Any
 TerminalKeyReader: Any
 
@@ -303,6 +306,13 @@ def _job_api_request(method: str, suffix: str = "", **kwargs) -> dict:
     if not isinstance(payload, dict) or payload.get("status") != "success" or not isinstance(payload.get("body"), dict):
         raise RuntimeError("Invalid job response")
     return payload["body"]
+
+
+def _fetch_storage_credentials() -> Dict[str, object]:
+    return fetch_job_storage(
+        session, data["pocketbase_url"], data["user_token"],
+        data["project"]["organization_id"], job_id,
+    )
 
 
 _WINDOWS_RESERVED_NAMES = frozenset(
@@ -1161,7 +1171,7 @@ def run_download(
     global data, session, job_id, job_name, download_path
     global download_type
     global logger
-    global open_folder
+    global open_folder, fetch_job_storage
     global requests_retry_session
     global TerminalKeyReader, _download_actions
 
@@ -1170,6 +1180,7 @@ def run_download(
     mods = _bootstrap_addon_modules(data)
     mods["validate_handoff_environment"](data)
     open_folder = mods["open_folder"]
+    fetch_job_storage = mods["fetch_job_storage"]
     requests_retry_session = mods["requests_retry_session"]
     DownloadLogger = mods["DownloadLogger"]
     TerminalKeyReader = mods["TerminalKeyReader"]
@@ -1250,8 +1261,9 @@ def run_download(
             client = client_module.RenderCoordinatorClient(data["pocketbase_url"], data["user_token"], session,
                 Path(data["addon_dir"]) / "reports" / ("download-" + job_id + ".json"), identity, lambda *_: False)
             downloader = artifact_module.ArtifactDownloader(client, data["project"]["organization_id"], job_id, dest_dir,
+                storage_loader=_fetch_storage_credentials,
                 poll=_poll_download_actions, wait=_wait_for_download_actions)
-            logger.info("Downloading authorized outputs by layout and generation. No storage credentials are requested.")
+            logger.info("Downloading outputs directly from job storage by layout and generation.")
             outcome = downloader.run(automatic=download_type == "auto")
         else:
             outcome = _run_selected_downloader(dest_dir, download_type)

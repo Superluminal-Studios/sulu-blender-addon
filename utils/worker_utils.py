@@ -26,7 +26,7 @@ import time
 import unicodedata
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 # third-party
 import requests
@@ -38,19 +38,7 @@ from urllib3.util import Retry
 CREATE_NEW_CONSOLE = 0x00000010  # force a new console window
 CREATE_NEW_PROCESS_GROUP = 0x00000200  # allow Ctrl+C to target child
 
-CLOUDFLARE_ACCOUNT_ID = "f09fa628d989ddd93cbe3bf7f7935591"
-CLOUDFLARE_R2_DOMAIN = f"{CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
 DEBUG_MODE = False
-
-# Common flags we want on *every* rclone call that uses R2
-COMMON_RCLONE_FLAGS: list[str] = [
-    "--s3-provider",
-    "Cloudflare",
-    "--s3-env-auth",  # allow env creds if present
-    "--s3-region",
-    "auto",
-    "--s3-no-check-bucket",
-]
 
 
 def _request_endpoint(url: str) -> str:
@@ -336,32 +324,35 @@ def requests_retry_session(
     return session
 
 
-def fetch_project_storage(
+def fetch_job_storage(
     session: requests.Session,
     pocketbase_url: str,
     user_token: str,
-    project_id: str,
+    organization_id: str,
+    job_id: str,
     *,
-    force_renew: bool = False,
-) -> object:
-    """Fetch the newest render-storage record list for a project."""
-    params: Dict[str, object] = {
-        "filter": f"(project_id='{project_id}' && bucket_name~'render-')",
-        "sort": "-updated",
-        "perPage": 1,
-        "skipTotal": 1,
-    }
-    if force_renew:
-        params["force_renew"] = "1"
-
+    kind: str = "output",
+) -> dict:
+    """Read one canonical job binding; bytes continue directly through S3."""
     response = session.get(
-        f"{pocketbase_url}/api/collections/project_storage/records",
+        f"{pocketbase_url}/api/jobs/{quote(organization_id, safe='')}/{quote(job_id, safe='')}/storage",
         headers={"Authorization": user_token},
-        params=params,
+        params={"kind": "input"} if kind == "input" else {},
         timeout=30,
     )
     response.raise_for_status()
-    return response.json()
+    return validate_job_storage(response.json())
+
+
+def validate_job_storage(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        raise RuntimeError("Job storage returned an invalid configuration")
+    required = ("endpoint_url", "region", "bucket_name", "access_key_id", "secret_access_key", "storage_profile", "storage_provider", "binding_id")
+    if any(not isinstance(payload.get(field), str) or not payload[field].strip() for field in required):
+        raise RuntimeError("Job storage configuration is incomplete")
+    if urlparse(payload["endpoint_url"]).scheme not in {"http", "https"}:
+        raise RuntimeError("Job storage endpoint is invalid")
+    return payload
 
 
 # save/flush detection
@@ -447,46 +438,6 @@ def is_blend_saved(
                 warned = True
 
         time.sleep(stability_poll_seconds)
-
-
-# rclone base command
-def _build_base(
-    rclone_bin: Path,
-    endpoint: str,
-    s3: Dict[str, str],
-) -> List[str]:
-    """
-    Construct the base rclone CLI invocation shared by all commands.
-
-    Credentials are placed in the worker environment for rclone's env-auth
-    provider; the returned list contains only the executable and non-secret
-    global flags.
-    """
-    # Validate and lift credentials with friendly errors
-    try:
-        access_key = s3["access_key_id"]
-        secret_key = s3["secret_access_key"]
-    except KeyError as exc:
-        raise ValueError(f"Missing S3 credential: {exc}") from exc
-
-    session_token = s3.get("session_token") or ""
-
-    os.environ["AWS_ACCESS_KEY_ID"] = str(access_key)
-    os.environ["AWS_SECRET_ACCESS_KEY"] = str(secret_key)
-    if session_token:
-        os.environ["AWS_SESSION_TOKEN"] = str(session_token)
-    else:
-        os.environ.pop("AWS_SESSION_TOKEN", None)
-
-    base: list[str] = [
-        str(rclone_bin),
-        "--s3-endpoint",
-        endpoint,
-    ]
-
-    # Add our shared flags (provider, region, etc.)
-    base.extend(COMMON_RCLONE_FLAGS)
-    return base
 
 
 # Text formatting utilities

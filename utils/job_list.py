@@ -91,10 +91,7 @@ def timestamp_value(value: Any) -> tuple[float, bool]:
 
 
 def job_progress(job: dict[str, Any]) -> float:
-    tasks = job.get("tasks", {}) or {}
-    if not isinstance(tasks, dict):
-        tasks = {}
-    finished = number_value(tasks.get("finished"), 0.0)
+    finished = number_value(job.get("finished_tasks"), 0.0)
     total = number_value(job.get("total_tasks"), 0.0)
     if total <= 0:
         return 0.0
@@ -120,10 +117,7 @@ def _raw_sort_value(job_id: str, job: dict[str, Any], column: str) -> tuple[Any,
     if column == "progress":
         return job_progress(job), False
     if column == "finished_frames":
-        tasks = job.get("tasks", {}) or {}
-        if not isinstance(tasks, dict):
-            tasks = {}
-        return int_value(tasks.get("finished"), 0), False
+        return int_value(job.get("finished_tasks"), 0), False
     if column == "type":
         return _text_value(job_type_label(job))
     if column in TEXT_COLUMNS:

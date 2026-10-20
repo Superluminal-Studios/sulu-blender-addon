@@ -319,7 +319,8 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
         using_video_format = effective_format in VIDEO_FORMATS
 
         row = layout.row(align=True)
-        row.enabled = logged_in and projects_ok and not using_video_format
+        storage_choices = Storage.data.get("storage_profiles", {}).get(Storage.data.get("org_id", ""), {}).get("profiles", [])
+        row.enabled = logged_in and projects_ok and bool(storage_choices) and not using_video_format
 
         op_still = row.operator(
             "superluminal.submit_job", text="Submit Still", icon="RENDER_STILL"

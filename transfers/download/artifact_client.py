@@ -1,4 +1,4 @@
-"""Generation-bound render artifact downloads, without storage credentials.
+"""Generation-bound render artifacts fetched directly from pinned job storage.
 
 Files are kept under layout/generation/logical-name so aliases, retries, and
 overwritten objects cannot replace each other. The manifest retains the exact
@@ -7,12 +7,15 @@ logical names when portable local filename encoding is necessary.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
 import sqlite3
 import time
 from pathlib import Path, PurePosixPath
+from datetime import datetime, timezone
+from urllib.parse import quote, urlencode, urlsplit
 
 import requests
 
@@ -50,7 +53,7 @@ def artifact_relative_path(output):
 
 
 class ArtifactDownloader:
-    def __init__(self, client, organization, job, destination, *, poll=lambda: None, wait=time.sleep, progress=lambda *_: None):
+    def __init__(self, client, organization, job, destination, *, storage_loader, storage_session=None, poll=lambda: None, wait=time.sleep, progress=lambda *_: None):
         self.client, self.organization, self.job = client, str(organization), str(job)
         if not _OPAQUE.fullmatch(self.organization) or not _OPAQUE.fullmatch(self.job):
             raise CoordinatorError("NOT_FOUND")
@@ -75,6 +78,10 @@ class ArtifactDownloader:
             self.lock.close()
             raise ValueError("Another downloader is using this folder. Resume after it stops.") from None
         self.poll, self.wait, self.progress = poll, wait, progress
+        self.storage_loader = storage_loader
+        self.storage = None
+        self.storage_session = storage_session or requests.Session()
+        self.storage_session.trust_env = False
         self.verified = {}
         self.active_outputs = set()
         self.last_tool_call = 0.0
@@ -98,6 +105,9 @@ class ArtifactDownloader:
         self.receipts.commit()
 
     def close(self):
+        if getattr(self, "storage_session", None):
+            self.storage_session.close()
+            self.storage_session = None
         if getattr(self, "receipts", None):
             self.receipts.close()
             self.receipts = None
@@ -152,21 +162,43 @@ class ArtifactDownloader:
         self.last_tool_call = time.monotonic()
         return self.client.tool(name, body)
 
-    def _prepare(self, output, previous=None):
-        result = self._tool("render_output_download_prepare", {"organization_id": self.organization, "output_refs": [output["output_ref"]], **({"transfer_refs": [previous]} if previous else {})})
-        transfers = result.get("transfers")
-        if not isinstance(transfers, list) or len(transfers) != 1 or not isinstance(transfers[0], dict):
+    def _object_url(self, output):
+        """Sign locally; no API permission checks occur per output or range."""
+        now = datetime.now(timezone.utc)
+        if self.storage is None or (self.storage.get("expiry") and datetime.fromisoformat(self.storage["expiry"].replace("Z", "+00:00")).timestamp() <= now.timestamp()):
+            self.storage = self.storage_loader()
+        storage = self.storage
+        endpoint = urlsplit(storage["endpoint_url"])
+        if endpoint.scheme not in {"https", "http"} or not endpoint.netloc or endpoint.username or endpoint.password or endpoint.query or endpoint.fragment:
             raise CoordinatorError("DEPENDENCY_UNAVAILABLE")
-        transfer = transfers[0]
-        if transfer.get("output_ref") != output["output_ref"] or transfer.get("generation") != output["generation"] or not isinstance(transfer.get("transfer_ref"), str) or not _OPAQUE.fullmatch(transfer["transfer_ref"]) or type(transfer.get("expires_at")) is not int or transfer["expires_at"] <= time.time():
-            raise CoordinatorError("GENERATION_CHANGED")
-        return transfer
+        path = quote(endpoint.path.rstrip("/") + "/" + storage["bucket_name"] + "/" + output["object_key"], safe="/-_.~")
+        timestamp = now.strftime("%Y%m%dT%H%M%SZ")
+        date = timestamp[:8]
+        scope = f"{date}/{storage['region']}/s3/aws4_request"
+        query = {"X-Amz-Algorithm": "AWS4-HMAC-SHA256", "X-Amz-Credential": storage["access_key_id"] + "/" + scope,
+                 "X-Amz-Date": timestamp, "X-Amz-Expires": "300", "X-Amz-SignedHeaders": "host"}
+        if storage.get("session_token"):
+            query["X-Amz-Security-Token"] = storage["session_token"]
+        if output.get("version_id"):
+            query["versionId"] = output["version_id"]
+        canonical_query = urlencode(sorted(query.items()), quote_via=quote, safe="-_.~")
+        canonical = f"GET\n{path}\n{canonical_query}\nhost:{endpoint.netloc}\n\nhost\nUNSIGNED-PAYLOAD"
+        to_sign = f"AWS4-HMAC-SHA256\n{timestamp}\n{scope}\n{hashlib.sha256(canonical.encode()).hexdigest()}"
+        signing_key = ("AWS4" + storage["secret_access_key"]).encode()
+        for value in (date, storage["region"], "s3", "aws4_request"):
+            signing_key = hmac.new(signing_key, value.encode(), hashlib.sha256).digest()
+        signature = hmac.new(signing_key, to_sign.encode(), hashlib.sha256).hexdigest()
+        return f"{endpoint.scheme}://{endpoint.netloc}{path}?{canonical_query}&X-Amz-Signature={signature}"
 
     def download(self, output):
         self.poll()
         if not isinstance(output, dict) or not isinstance(output.get("output_ref"), str) or not _OPAQUE.fullmatch(output["output_ref"]) or output.get("downloadable") is not True or type(output.get("size")) is not int or output["size"] < 0:
             raise CoordinatorError("NOT_FOUND")
         relative = artifact_relative_path(output)
+        object_key, etag = output.get("object_key"), output.get("etag")
+        if not isinstance(object_key, str) or not object_key.startswith(self.job + "/output/") or "\\" in object_key or any(part in ("", ".", "..") for part in object_key.split("/")) or not isinstance(etag, str) or not etag or "\r" in etag or "\n" in etag:
+            raise CoordinatorError("GENERATION_CHANGED")
+        etag = etag if etag.startswith('"') and etag.endswith('"') else '"' + etag + '"'
         target = self.root / relative
         for parent in [target, *target.parents]:
             if parent == self.root:
@@ -209,19 +241,15 @@ class ArtifactDownloader:
             if offset == output["size"] and entry.get("complete"):
                 self.verified[identity] = (target.stat().st_size, target.stat().st_mtime_ns)
                 return target
-            transfer = self._prepare(output)
             failures = 0
             while offset < output["size"] or not entry.get("complete"):
                 self.poll()
-                if transfer["expires_at"] < time.time() + 120:
-                    transfer = self._prepare(output, transfer["transfer_ref"])
                 length = min(CHUNK_BYTES, output["size"] - offset)
-                etag = '"' + output["generation"] + '"'
-                address = self.client.base + "/api/render/v1/transfers/d_" + transfer["transfer_ref"]
-                headers = {**self.client.headers, "If-Match": etag, "If-Range": etag, "Accept-Encoding": "identity", **({"Range": f"bytes={offset}-{offset + length - 1}"} if length else {})}
+                address = self._object_url(output)
+                headers = {"If-Match": etag, "If-Range": etag, "Accept-Encoding": "identity", **({"Range": f"bytes={offset}-{offset + length - 1}"} if length else {})}
                 candidate = digest.copy()
                 try:
-                    with self.client.session.get(address, headers=headers, timeout=(15, 300), allow_redirects=False, stream=True) as response:
+                    with self.storage_session.get(address, headers=headers, timeout=(15, 300), allow_redirects=False, stream=True) as response:
                         if response.status_code == 412:
                             raise CoordinatorError("GENERATION_CHANGED")
                         if response.status_code != (206 if length else 200) or response.headers.get("ETag") != etag or response.headers.get("Content-Length") != str(length) or response.headers.get("Content-Encoding", "identity") not in ("identity", "") or (length and response.headers.get("Content-Range") != f"bytes {offset}-{offset + length - 1}/{output['size']}"):

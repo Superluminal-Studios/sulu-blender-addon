@@ -116,6 +116,29 @@ def fetch_projects():
     return projects
 
 
+def fetch_storage_profiles(org_id: str, auth_context=None) -> dict:
+    """Refresh choices outside panel drawing, scoped to the active login."""
+    auth_context = auth_context or Storage.auth_context()
+    response = authorized_request(
+        "GET", f"{active_profile().api_url}/api/render/v1/storage-profiles",
+        params={"organization_id": org_id},
+    )
+    payload = response.json()
+    if not isinstance(payload, dict) or not isinstance(payload.get("profiles"), list):
+        raise ProjectContextError("Storage listing returned an invalid response.")
+    profiles = payload["profiles"]
+    if not profiles or any(not isinstance(item, dict) or not all(isinstance(item.get(key), str) and item[key] for key in ("id", "name", "provider")) for item in profiles):
+        raise ProjectContextError("No storage choices are available.")
+    if payload.get("default_profile") not in {item["id"] for item in profiles}:
+        raise ProjectContextError("The default storage choice is unavailable.")
+    environment, generation, token, _ = auth_context
+    with Storage._lock:
+        if not Storage.auth_context_matches(environment, generation, token):
+            raise ProjectContextError("Your Sulu session changed. Refresh storage choices.")
+        Storage.data.setdefault("storage_profiles", {})[org_id] = payload
+    return payload
+
+
 def fetch_blender_versions() -> list[dict]:
     """Refresh the deployed farm Blender versions advertised by PocketBase."""
     api_url = active_profile().api_url
@@ -159,7 +182,7 @@ def _current_refresh_identity() -> tuple[int, int]:
 
 
 def invalidate_job_refresh_context() -> None:
-    """Invalidate in-flight job listings at an authenticated session boundary."""
+    """Invalidate in-flight reads at a login/logout or another session boundary."""
     global _auth_session_generation
     global _observed_user_token
 
@@ -177,7 +200,7 @@ def _storage_context_values_match(
     selected_project_sqid: str,
 ) -> bool:
     current_org_id = str(Storage.data.get("org_id") or "").strip()
-    if current_org_id and current_org_id != str(org_id or "").strip():
+    if current_org_id != str(org_id or "").strip():
         return False
 
     current_project_id = str(Storage.data.get("project_id") or "").strip()
@@ -187,7 +210,7 @@ def _storage_context_values_match(
         str(selected_project_sqid or "").strip(),
     }
     valid_project_ids.discard("")
-    return not current_project_id or current_project_id in valid_project_ids
+    return current_project_id in valid_project_ids
 
 
 def _request_jobs_unlocked(
@@ -231,9 +254,10 @@ def _request_jobs_unlocked(
             raise ProjectContextError("Render discovery repeated a page. Refresh to retry.")
         cursors.add(cursor)
     jobs = _filter_jobs_for_project(jobs, project, project_sqid)
-    if refresh_identity == _current_refresh_identity() and _storage_context_values_match(org, requested_project, project, project_sqid):
-        Storage.data["jobs"] = jobs
-        _request_properties_redraw()
+    with Storage._lock:
+        if refresh_identity == _current_refresh_identity() and _storage_context_values_match(org, requested_project, project, project_sqid):
+            Storage.data["jobs"] = jobs
+            _request_properties_redraw()
     return jobs
 
 
@@ -381,7 +405,6 @@ def unregister_job_refresh_infrastructure() -> None:
         _refresh_lifecycle_generation += 1
         _auth_session_generation += 1
         _observed_user_token = str(Storage.data.get("user_token") or "")
-
     reset_stored_job_session()
 
     _properties_redraw_requested.clear()
@@ -397,8 +420,6 @@ def _refresh_lifecycle_is_active(lifecycle_generation: int) -> bool:
 
 
 def request_job_loop(
-    org_id: str,
-    project_id: str,
     lifecycle_generation: int | None = None,
     stop_event: threading.Event | None = None,
 ):
@@ -410,7 +431,6 @@ def request_job_loop(
     if stop_event is None:
         stop_event = _job_loop_stop_event
 
-    initial_context = (org_id, project_id)
     try:
         while (
             Storage.enable_job_thread
@@ -422,7 +442,9 @@ def request_job_loop(
                 str(Storage.data.get("project_id") or "").strip(),
             )
             if not all(current_context):
-                current_context = initial_context
+                if stop_event.wait(_JOB_REFRESH_INTERVAL_SECONDS):
+                    break
+                continue
 
             try:
                 request_jobs(*current_context)
@@ -448,14 +470,10 @@ def request_job_loop(
             and not stop_event.is_set()
             and _refresh_lifecycle_is_active(lifecycle_generation)
         ):
-            current_context = (
-                str(Storage.data.get("org_id") or org_id).strip(),
-                str(Storage.data.get("project_id") or project_id).strip(),
-            )
-            _start_job_thread(*current_context)
+            _start_job_thread()
 
 
-def _start_job_thread(org_id: str, project_id: str) -> bool:
+def _start_job_thread() -> bool:
     global job_thread_running
     global _job_thread_generation
 
@@ -475,8 +493,6 @@ def _start_job_thread(org_id: str, project_id: str) -> bool:
         threading.Thread(
             target=request_job_loop,
             args=(
-                org_id,
-                project_id,
                 lifecycle_generation,
                 stop_event,
             ),
@@ -495,7 +511,7 @@ def fetch_jobs(org_id: str, project_id: str, live_update: bool = False):
     if live_update:
         Storage.enable_job_thread = True
         _ensure_pulse_timer()
-        if _start_job_thread(org_id, project_id):
+        if _start_job_thread():
             print("starting job thread")
     else:
         return request_jobs(org_id, project_id)

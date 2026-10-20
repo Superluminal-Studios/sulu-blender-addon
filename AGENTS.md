@@ -21,10 +21,10 @@ pass of the changed path: no UI freeze, no secret in the logs.
 - Background threads hand results back through safe handoff and never touch `bpy` objects.
 - Submit/download workers run in isolated processes under Blender's Python and must
   accept old handoff JSON; new handoff fields are optional.
-- Render input bytes go straight from the workstation to the project's R2 storage via
-  rclone. Sulu APIs and MCP may authenticate, issue scoped temporary storage access and
-  register the job, but never proxy render input bytes unless the user authorizes that
-  exact architecture change.
+- Render input bytes go straight from the workstation to the job's pinned storage through
+  presigned S3 multipart parts. Sulu APIs and MCP may authenticate, sign parts and register
+  the job, but never proxy render input bytes unless the user authorizes that exact
+  architecture change.
 - ZIP stays portable and self-contained; PROJECT stays project-root based. A change to
   off-drive dependency behaviour updates the UI warnings too.
 
