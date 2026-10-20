@@ -19,12 +19,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from .worker_utils import format_size
 
 
-# Maximum tail_lines stored per upload step in the report JSON.
-# rclone_utils keeps up to 160 lines in memory; we only persist the last N
-# to avoid bloating the report file.
-_MAX_TAIL_LINES = 20
-
-
 class DiagnosticReport:
     """
     Continuous JSON report writer for submission diagnostics.
@@ -85,7 +79,6 @@ class DiagnosticReport:
                 "os_version": platform.version(),
                 "python_version": platform.python_version(),
                 "architecture": platform.machine(),
-                "rclone_version": "",
             },
             "preflight": {
                 "passed": None,
@@ -124,12 +117,8 @@ class DiagnosticReport:
                     "steps": [],
                     "summary": {
                         "total_bytes_transferred": 0,
-                        "total_checks": 0,
-                        "total_transfers": 0,
-                        "total_errors": 0,
                         "total_elapsed_seconds": 0.0,
                         "step_count": 0,
-                        "has_warnings": False,
                     },
                 },
             },
@@ -201,7 +190,7 @@ class DiagnosticReport:
             self._maybe_flush()
 
     def set_environment(self, key: str, value: Any) -> None:
-        """Set an environment field (e.g., rclone_version)."""
+        """Set an environment field (e.g., transfer_mode)."""
         with self._lock:
             self._data["environment"][key] = value
             self._entries_since_flush += 1
@@ -308,31 +297,16 @@ class DiagnosticReport:
                 elif stage == "upload":
                     steps = self._data["stages"]["upload"]["steps"]
                     total_bytes = 0
-                    total_checks = 0
-                    total_transfers = 0
-                    total_errors = 0
                     total_elapsed = 0.0
-                    has_warnings = False
 
                     for step in steps:
                         total_bytes += step.get("bytes_transferred", 0)
-                        if step.get("warning"):
-                            has_warnings = True
                         total_elapsed += step.get("elapsed_seconds", 0)
-                        stats = step.get("rclone_stats")
-                        if stats:
-                            total_checks += stats.get("checks", 0) or 0
-                            total_transfers += stats.get("transfers", 0) or 0
-                            total_errors += stats.get("errors", 0) or 0
 
                     self._data["stages"]["upload"]["summary"] = {
                         "total_bytes_transferred": total_bytes,
-                        "total_checks": total_checks,
-                        "total_transfers": total_transfers,
-                        "total_errors": total_errors,
                         "total_elapsed_seconds": round(total_elapsed, 3),
                         "step_count": len(steps),
-                        "has_warnings": has_warnings,
                     }
 
             self.flush()
@@ -497,17 +471,12 @@ class DiagnosticReport:
             self._entries_since_flush += 1
             self._maybe_flush()
 
-    def complete_upload_step(
-        self,
-        bytes_transferred: int = 0,
-        rclone_stats: Optional[Dict[str, Any]] = None,
-    ) -> None:
+    def complete_upload_step(self, bytes_transferred: int = 0) -> None:
         """
         Complete the current upload step.
 
         Args:
             bytes_transferred: Bytes transferred during this step
-            rclone_stats: Full rclone stats dict from run_rclone() return value
         """
         with self._lock:
             if self._current_upload_step is not None:
@@ -526,79 +495,6 @@ class DiagnosticReport:
                 except Exception:
                     pass
 
-                if rclone_stats is not None:
-                    # Truncate tail_lines before persisting to keep report lean
-                    stats_to_store = dict(rclone_stats)
-                    tail = stats_to_store.get("tail_lines")
-                    if isinstance(tail, (list, tuple)) and len(tail) > _MAX_TAIL_LINES:
-                        stats_to_store["tail_lines"] = list(tail[-_MAX_TAIL_LINES:])
-                        stats_to_store["tail_lines_truncated"] = True
-
-                    self._current_upload_step["rclone_stats"] = stats_to_store
-
-                    # Generate anomaly warnings, prioritizing the most specific.
-                    checks = rclone_stats.get("checks", 0) or 0
-                    transfers = rclone_stats.get("transfers", 0) or 0
-                    stats_received = rclone_stats.get("stats_received", True)
-                    expected = self._current_upload_step.get("expected_bytes")
-
-                    warning = ""
-
-                    # No rclone statistics
-                    if not stats_received:
-                        warning = (
-                            "rclone emitted no transfer stats — "
-                            "source path may be invalid or transfer "
-                            "completed instantly"
-                        )
-                    # Check and transfer counters
-                    elif checks == 0 and transfers == 0:
-                        warning = (
-                            "rclone checked 0 files — manifest may be "
-                            "empty or source path doesn't match"
-                        )
-                    elif checks > 0 and transfers == 0:
-                        warning = (
-                            f"rclone checked {checks} files but "
-                            "transferred 0 — destination may already "
-                            "have matching files, or PUT permissions "
-                            "missing"
-                        )
-
-                    # Transferred and expected byte mismatch
-                    if expected and expected > 0:
-                        if bytes_transferred == 0:
-                            mismatch = (
-                                f"Expected {expected} bytes but "
-                                "transferred 0 — files may not have "
-                                "been uploaded"
-                            )
-                            if warning:
-                                warning += "; " + mismatch
-                            else:
-                                warning = mismatch
-                        elif bytes_transferred < expected * 0.5:
-                            pct = bytes_transferred * 100 // expected
-                            mismatch = (
-                                f"Transferred {bytes_transferred} of "
-                                f"{expected} expected bytes ({pct}%)"
-                            )
-                            if warning:
-                                warning += "; " + mismatch
-                            else:
-                                warning = mismatch
-
-                    # Non-zero errors despite exit code 0
-                    errors = rclone_stats.get("errors", 0) or 0
-                    if errors > 0:
-                        error_warning = (
-                            f"rclone reported {errors} error(s) despite "
-                            "exit code 0 — some files may not have uploaded"
-                        )
-                        warning = (warning + "; " + error_warning) if warning else error_warning
-
-                    if warning:
-                        self._current_upload_step["warning"] = warning
                 self._current_upload_step = None
             self.flush()
 
@@ -608,7 +504,6 @@ class DiagnosticReport:
         file_count: int,
         source: str,
         destination: str,
-        rclone_stats: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Record details of a single split-upload group within the current upload step.
@@ -626,14 +521,6 @@ class DiagnosticReport:
                 "source": source,
                 "destination": destination,
             }
-            if rclone_stats is not None:
-                entry["bytes_transferred"] = rclone_stats.get("bytes_transferred", 0)
-                entry["checks"] = rclone_stats.get("checks", 0) or 0
-                entry["transfers"] = rclone_stats.get("transfers", 0) or 0
-                entry["errors"] = rclone_stats.get("errors", 0) or 0
-                entry["stats_received"] = rclone_stats.get("stats_received", True)
-                if not entry["stats_received"] or entry["transfers"] == 0:
-                    entry["warning"] = "group transferred 0 files"
             groups.append(entry)
             self._entries_since_flush += 1
             self._maybe_flush()

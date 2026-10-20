@@ -214,15 +214,14 @@
 │   ├── download/
 │   │   ├── download_operator.py
 │   │   └── download_worker.py
-│   ├── submit/
-│   │   ├── addon_packer.py
-│   │   ├── layout_parser.py
-│   │   ├── rna_utils.py
-│   │   ├── scene_metadata.py
-│   │   ├── settings_schema.py
-│   │   ├── submit_operator.py
-│   │   └── submit_worker.py
-│   └── rclone_utils.py
+│   └── submit/
+│       ├── addon_packer.py
+│       ├── layout_parser.py
+│       ├── rna_utils.py
+│       ├── scene_metadata.py
+│       ├── settings_schema.py
+│       ├── submit_operator.py
+│       └── submit_worker.py
 ├── utils/
 │   ├── bat_utils.py
 │   ├── cloud_files.py

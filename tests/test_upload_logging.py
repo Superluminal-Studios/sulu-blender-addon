@@ -3,8 +3,6 @@
 Tests for bulletproof upload logging.
 
 Covers:
-- DiagnosticReport.complete_upload_step() warning generation
-- rclone_utils._redact_cmd() credential masking
 - submit_worker._log_upload_result() terminal output
 - submit_worker._is_filesystem_root() detection
 
@@ -16,7 +14,6 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-import json
 import sys
 import types
 import unittest
@@ -51,7 +48,6 @@ _pkg_name = _synthesize_addon_package()
 _diagnostic_report = importlib.import_module(f"{_pkg_name}.utils.diagnostic_report")
 _logger_utils = importlib.import_module(f"{_pkg_name}.utils.logger_utils")
 _submit_logger = importlib.import_module(f"{_pkg_name}.utils.submit_logger")
-_rclone_utils = importlib.import_module(f"{_pkg_name}.transfers.rclone_utils")
 _submit_worker = importlib.import_module(
     f"{_pkg_name}.transfers.submit.submit_worker"
 )
@@ -97,136 +93,6 @@ class TestStorageCredentialPrefetch(unittest.TestCase):
         session_factory.assert_not_called()
 
 
-class TestRcloneFinalizingProgress(unittest.TestCase):
-    """100% is emitted only after the rclone process confirms success."""
-
-    class _Logger:
-        def __init__(self):
-            self.calls = []
-
-        def transfer_progress(self, current, total):
-            self.calls.append((current, total, ""))
-
-        def transfer_progress_ext(
-            self,
-            current,
-            total,
-            *,
-            status="",
-            current_file="",
-            checks=0,
-            transfers=0,
-        ):
-            self.calls.append((current, total, status))
-
-    class _Process:
-        def __init__(self, lines, exit_code=0):
-            self.stdout = lines
-            self.exit_code = exit_code
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, traceback):
-            return False
-
-        def wait(self, timeout=None):
-            return self.exit_code
-
-        def terminate(self):
-            self.terminated = True
-
-        def kill(self):
-            self.killed = True
-
-
-    def test_failed_process_never_emits_terminal_100_percent(self):
-        lines = [
-            json.dumps(
-                {
-                    "stats": {
-                        "bytes": 1000,
-                        "totalBytes": 1000,
-                        "checks": 0,
-                        "transfers": 0,
-                        "errors": 1,
-                        "elapsedTime": 2.0,
-                    }
-                }
-            )
-            + "\n",
-            json.dumps(
-                {
-                    "level": "error",
-                    "msg": "connection reset by peer",
-                }
-            )
-            + "\n",
-        ]
-        process = self._Process(lines, exit_code=1)
-        logger = self._Logger()
-
-        with mock.patch.object(
-            _rclone_utils,
-            "_rclone_supports_flag",
-            return_value=False,
-        ), mock.patch.object(
-            _rclone_utils.subprocess,
-            "Popen",
-            return_value=process,
-        ), mock.patch.object(
-            _rclone_utils.time,
-            "perf_counter",
-            side_effect=[10.0, 12.0, 15.0],
-        ):
-            with self.assertRaises(_rclone_utils.RcloneError):
-                _rclone_utils.run_rclone(
-                    ["rclone"],
-                    "move",
-                    "/tmp/archive.zip",
-                    ":s3:bucket/",
-                    logger=logger,
-                    total_bytes=1000,
-                )
-
-        self.assertIn((999, 1000, "finalizing"), logger.calls)
-        self.assertNotIn((1000, 1000, "complete"), logger.calls)
-
-
-# DiagnosticReport warning generation
-
-
-# _redact_cmd
-
-
-class TestRedactCmd(unittest.TestCase):
-    """Test credential redaction in rclone commands."""
-
-    def setUp(self):
-        self._redact_cmd = _rclone_utils._redact_cmd
-
-    def test_basic_redaction(self):
-        """Sensitive flag values should be replaced with ***."""
-        cmd = [
-            "/usr/bin/rclone", "copy", "/src", ":s3:bucket/dst",
-            "--s3-access-key-id", "AKIAEXAMPLE",
-            "--s3-secret-access-key", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-            "--s3-session-token", "FwoGZXIvYXdzEBYaDHqa0",
-            "--transfers", "4",
-        ]
-        result = self._redact_cmd(cmd)
-        self.assertNotIn("AKIAEXAMPLE", result)
-        self.assertNotIn("wJalrXUtnFEMI", result)
-        self.assertNotIn("FwoGZXIvYXdzEBYaDHqa0", result)
-        self.assertIn("--s3-access-key-id ***", result)
-        self.assertIn("--s3-secret-access-key ***", result)
-        self.assertIn("--s3-session-token ***", result)
-        # Non-sensitive flags preserved
-        self.assertIn("--transfers 4", result)
-        self.assertIn("/usr/bin/rclone", result)
-        self.assertIn("copy", result)
-
-
 # _log_upload_result (submit_worker)
 
 
@@ -246,9 +112,6 @@ class TestRedactCmd(unittest.TestCase):
 
 
 # Report v3.0: upload summary (computed in complete_stage)
-
-
-# Report v3.0: elapsed_seconds and tail_lines truncation
 
 
 # Report v3.0: split upload groups
