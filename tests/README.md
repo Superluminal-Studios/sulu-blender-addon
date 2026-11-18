@@ -88,7 +88,6 @@ Blender Asset Tracer core functionality tests.
 - **test_bpathlib.py**: BlendPath class and path utilities
 - **test_pack.py**: Pack/rewrite operations
 - **test_tracer.py**: Dependency tracing
-- **test_mypy.py**: Type-checks the vendored BAT fork
 - Other specialized tests
 
 ## Adding New Tests
@@ -121,5 +120,4 @@ class TestMyBATFeature(AbstractBlendFileTest):
 - BAT (vendored in addon)
 - pytest (canonical runner, see `tests/requirements-test.txt`)
 - requests (imported by `utils/worker_utils.py`, which `tests/helpers.py` re-exports)
-- Optional: mypy (for `tests/bat/test_mypy.py`; skipped when absent)
 - Optional: zstandard (for compressed blend files)

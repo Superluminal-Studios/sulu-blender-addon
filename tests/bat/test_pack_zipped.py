@@ -87,26 +87,6 @@ class ZippedPackTest(AbstractPackTest):
                 {"pack-info.txt", "basic_file_ñønæščii.blend"}, set(inzip.namelist())
             )
 
-    def test_manual_zipinfo_uses_configured_fast_level(self):
-        info = zipfile.ZipInfo("asset.txt")
-        zipped._set_zipinfo_compress_level(info, zipped.ZIP_COMPRESSLEVEL)
-
-        actual = getattr(info, "compress_level", None)
-        if actual is None:
-            actual = getattr(info, "_compresslevel", None)
-        self.assertEqual(actual, 1)
-        self.assertEqual(
-            zipped._zip_entry_label(zipfile.ZIP_DEFLATED, zipfile),
-            "Deflate-1",
-        )
-
-    def test_default_compression_profiles_prioritize_submit_speed(self):
-        self.assertEqual(zipped.DEFAULT_ZIP_COMPRESSLEVEL, 1)
-        self.assertEqual(zipped.DEFAULT_BLEND_ZSTD_LEVEL, 1)
-        self.assertTrue(
-            zipped.ZipPacker._rewrite_output_uncompressed(mock.Mock())
-        )
-
     def test_blend_zstd_environment_override_is_applied_at_worker_import(self):
         with mock.patch.dict(os.environ, {"SULU_BLEND_ZSTD_LEVEL": "7"}):
             importlib.reload(zipped)

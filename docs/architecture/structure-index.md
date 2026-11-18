@@ -172,7 +172,6 @@
 │   │   ├── test_blendfile_modification.py
 │   │   ├── test_bpathlib.py
 │   │   ├── test_compressor.py
-│   │   ├── test_mypy.py
 │   │   ├── test_pack.py
 │   │   ├── test_pack_progress.py
 │   │   ├── test_pack_zipped.py
