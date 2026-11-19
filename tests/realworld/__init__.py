@@ -1,9 +1,4 @@
-# Real-world integration tests
-#
-# Live mode uploads to the Superluminal farm using local credentials.
-#
-# Only use live mode with valid credentials and when creating farm jobs is intended.
+# Checks that need a real Blender binary; excluded from unit runs by pytest.ini.
 #
 # Run with:
-#   python tests/realworld/test_farm_upload.py --dry-run    # Validate without uploading
-#   python tests/realworld/test_farm_upload.py --live-upload # Actually upload
+#   SULU_BLENDER_BINARY=/path/to/blender python -m pytest tests/realworld/test_storage_profile_selection.py

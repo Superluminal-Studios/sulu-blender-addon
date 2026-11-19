@@ -177,9 +177,7 @@ Canonical verification commands:
 
 ```bash
 cd sulu-blender-addon
-python -m unittest tests.test_project_context tests.test_project_identity_guards
-python -m unittest tests.test_upload_logging
-python -m unittest tests.test_deploy_extension_exclusion
+python -m pytest
 ```
 
 ## Testing and Verification
@@ -203,8 +201,7 @@ Canonical verification:
 
 ```bash
 cd sulu-blender-addon
-python -m unittest tests.test_project_context tests.test_project_identity_guards
-python -m unittest tests.test_upload_logging
+python -m pytest
 ```
 
 ## Ownership

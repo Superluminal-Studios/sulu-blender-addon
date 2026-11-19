@@ -10,5 +10,5 @@ mypy>=1.0.0
 # Required: canonical test runner (configured by the repo-root pytest.ini)
 pytest>=7.0.0
 
-# Required by utils/worker_utils.py, which tests/helpers.py re-exports
+# Required by the submit and download workers under test
 requests>=2.31.0

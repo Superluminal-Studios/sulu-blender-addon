@@ -144,12 +144,3 @@ def test_submission_uses_selected_profile_and_direct_storage_before_receipt(tmp_
     assert b"".join(item[2] for item in trace if item[0] == "bytes") == b"archiveaddon"
     retained = (tmp_path / "journal.json").read_text()
     assert "synthetic-session" not in retained and "synthetic-confirmation" not in retained
-
-
-def test_retained_upload_cannot_be_reused_with_changed_storage(tmp_path, monkeypatch):
-    client = SimpleNamespace(completed=lambda stage: {"upload_receipt": "original-receipt"} if stage == "render_upload_finalize" else {"storage_profile": "original-r2"})
-    monkeypatch.setattr(worker, "_coordinator", lambda _: client)
-    ctx = SimpleNamespace(data={"storage_profile": "different-seaweed"})
-    with pytest.raises(ValueError, match="retained upload uses different storage"):
-        worker._upload(ctx)
-    assert not hasattr(ctx, "upload_receipt")

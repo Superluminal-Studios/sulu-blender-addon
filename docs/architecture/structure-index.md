@@ -166,49 +166,21 @@
 │   │   ├── blendfiles/
 │   │   ├── __init__.py
 │   │   ├── abstract_test.py
-│   │   ├── test_blendfile_dna.py
-│   │   ├── test_blendfile_dna_io.py
-│   │   ├── test_blendfile_loading.py
-│   │   ├── test_blendfile_modification.py
-│   │   ├── test_bpathlib.py
-│   │   ├── test_compressor.py
 │   │   ├── test_pack.py
-│   │   ├── test_pack_progress.py
 │   │   ├── test_pack_zipped.py
-│   │   ├── test_tracer.py
-│   │   ├── test_tracer_file2blocks.py
-│   │   └── test_tracer_file_sequence.py
-│   ├── paths/
-│   │   ├── __init__.py
-│   │   ├── test_drive_detection.py
-│   │   └── test_s3_keys.py
+│   │   └── test_tracer.py
 │   ├── realworld/
 │   │   ├── __init__.py
-│   │   ├── reporting.py
-│   │   └── test_farm_upload.py
-│   ├── reports/
-│   │   └── .gitkeep
+│   │   └── test_storage_profile_selection.py
 │   ├── conftest.py
-│   ├── helpers.py
 │   ├── README.md
 │   ├── requirements-test.txt
-│   ├── test_blend_compression.py
-│   ├── test_compression_theory.py
-│   ├── test_directory_dependency_expansion.py
+│   ├── test_artifact_download_client.py
+│   ├── test_deploy.py
 │   ├── test_download_job_status.py
-│   ├── test_job_list_sorting.py
-│   ├── test_layout_parser.py
-│   ├── test_linked_library_tracking.py
-│   ├── test_path_normalization.py
-│   ├── test_project_context.py
-│   ├── test_project_identity_guards.py
-│   ├── test_render_task_order.py
-│   ├── test_request_utils_jobs.py
-│   ├── test_scene_metadata.py
-│   ├── test_settings_schema.py
-│   ├── test_submit_worker_schema_sync.py
-│   ├── test_upload_logging.py
-│   └── test_zipped_compression.py
+│   ├── test_environment_profiles.py
+│   ├── test_render_coordinator_client.py
+│   └── test_submit_worker_coordinator.py
 ├── transfers/
 │   ├── download/
 │   │   ├── download_operator.py

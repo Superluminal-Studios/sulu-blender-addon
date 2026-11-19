@@ -47,7 +47,6 @@ def _default_logger(msg: str) -> None:
 
 
 _LOG = _default_logger
-_UPLOAD_RESULT_PREFIX = "SULU_UPLOAD_RESULT "
 _PHASE_TIMING_PREFIX = "SULU_PHASE_TIMING "
 _MAX_SETTINGS_SCHEMA_BYTES = 2 * 1024 * 1024
 
@@ -55,64 +54,6 @@ _MAX_SETTINGS_SCHEMA_BYTES = 2 * 1024 * 1024
 def _set_logger(fn) -> None:
     global _LOG
     _LOG = fn if callable(fn) else _default_logger
-
-
-def _build_upload_success_payload(
-    *,
-    job_id: str,
-    job_name: str,
-    job_url: str,
-    upload_type: str,
-    rel_manifest: List[str],
-    main_blend_s3: str,
-    blend_path: str,
-    packed_addons: Optional[List[object]] = None,
-    report_path: str = "",
-    elapsed: float = 0.0,
-) -> Dict[str, object]:
-    """Build the machine-readable success marker consumed by upload smoke tests."""
-    upload_type = str(upload_type).upper()
-    dependency_file_count = len(rel_manifest) if upload_type == "PROJECT" else 0
-    content_file_count = dependency_file_count + 1
-    manifest_file_count = content_file_count if upload_type == "PROJECT" else 0
-    addon_file_count = len(packed_addons or [])
-
-    return {
-        "status": "success",
-        "job_id": str(job_id),
-        "job_name": str(job_name),
-        "job_url": str(job_url),
-        "upload_type": upload_type,
-        "uploaded_file_count": content_file_count,
-        "dependency_file_count": dependency_file_count,
-        "manifest_file_count": manifest_file_count,
-        "storage_object_count": content_file_count
-        + (1 if upload_type == "PROJECT" else 0)
-        + addon_file_count,
-        "addon_file_count": addon_file_count,
-        "main_file": (
-            str(main_blend_s3)
-            if upload_type == "PROJECT"
-            else Path(str(blend_path)).name
-        ),
-        "report_path": str(report_path),
-        "elapsed_sec": round(max(float(elapsed), 0.0), 3),
-    }
-
-
-def _emit_upload_success_payload(payload: Dict[str, object]) -> None:
-    print(
-        _UPLOAD_RESULT_PREFIX + json.dumps(payload, sort_keys=True),
-        flush=True,
-    )
-
-
-def _emit_upload_success_payload_if_requested(
-    data: Dict[str, object], payload: Dict[str, object]
-) -> None:
-    """Emit the automation marker only for an explicitly opted-in harness."""
-    if data.get("emit_upload_result") is True:
-        _emit_upload_success_payload(payload)
 
 
 _WIN_DRIVE_ROOT_RE = re.compile(r"^[A-Za-z]:[\\/]?$")
@@ -1676,11 +1617,7 @@ def _finish(ctx: _SubmitContext) -> None:
     logger = ctx.logger
     report = ctx.report
     t_start = ctx.t_start
-    use_project = ctx.use_project
     project_sqid = ctx.project_sqid
-    rel_manifest = ctx.rel_manifest
-    main_blend_s3 = ctx.main_blend_s3
-    blend_path = ctx.blend_path
     open_folder = mods["open_folder"]
 
     # Finalize the diagnostic report
@@ -1692,20 +1629,6 @@ def _finish(ctx: _SubmitContext) -> None:
         project_sqid,
         data["job_id"],
     )
-    upload_result = _build_upload_success_payload(
-        job_id=data["job_id"],
-        job_name=data["job_name"],
-        job_url=job_url,
-        upload_type="PROJECT" if use_project else "ZIP",
-        rel_manifest=rel_manifest,
-        main_blend_s3=main_blend_s3,
-        blend_path=blend_path,
-        packed_addons=data.get("packed_addons") or [],
-        report_path=str(report.get_reports_dir()),
-        elapsed=elapsed,
-    )
-    _emit_upload_success_payload_if_requested(data, upload_result)
-
     continue_to_download = bool(data.get("download_after_submit"))
     selection = "c"
     try:

@@ -154,9 +154,9 @@ class RenderCoordinatorClient:
             return operation["result"]
         return None
 
-    def upload_file(self, source: Path, descriptor, *, progress=None, before_chunk=None):
+    def upload_file(self, source: Path, descriptor, *, progress=None):
         try:
-            return self._upload_file_direct(source, descriptor, progress=progress, before_chunk=before_chunk)
+            return self._upload_file_direct(source, descriptor, progress=progress)
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             raise CoordinatorError("GENERATION_CHANGED") from None
 
@@ -228,7 +228,7 @@ class RenderCoordinatorClient:
         resolved.pop("parts_href", None)
         return resolved
 
-    def _upload_file_direct(self, source: Path, descriptor, *, progress=None, before_chunk=None):
+    def _upload_file_direct(self, source: Path, descriptor, *, progress=None):
         descriptor = self.resolve_upload_file(source, descriptor)
         source = Path(source)
         before = source.stat()
@@ -248,8 +248,6 @@ class RenderCoordinatorClient:
         try:
             with source.open("rb") as stream:
                 for part in parts:
-                    if before_chunk:
-                        before_chunk()
                     if source.stat().st_size != total or source.stat().st_mtime_ns != before.st_mtime_ns:
                         raise CoordinatorError("GENERATION_CHANGED")
                     chunk = stream.read(part["size"])

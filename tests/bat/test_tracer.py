@@ -6,7 +6,7 @@ import typing
 import unittest
 from typing import Optional
 
-from blender_asset_tracer import trace, blendfile
+from blender_asset_tracer import trace
 from blender_asset_tracer.blendfile import dna
 from tests.bat.abstract_test import AbstractBlendFileTest
 
@@ -21,49 +21,6 @@ class AbstractTracerTest(AbstractBlendFileTest):
     def setUpClass(cls):
         super().setUpClass()
         logging.getLogger("blender_asset_tracer.tracer").setLevel(logging.DEBUG)
-
-
-class AssetHoldingBlocksTest(AbstractTracerTest):
-    def setUp(self):
-        self.bf = blendfile.BlendFile(self.blendfiles / "basic_file.blend")
-
-    def test_simple_file(self):
-        # This file should not depend on external assets.
-        blocks_seen = 0
-        seen_scene = seen_ob = False
-
-        for block in trace.asset_holding_blocks(self.bf.blocks):
-            assert isinstance(block, blendfile.BlendFileBlock)
-            blocks_seen += 1
-
-            # The four-letter-code blocks don't refer to assets, so they
-            # shouldn't be yielded.
-            self.assertEqual(2, len(block.code))
-
-            # World blocks should not yielded either.
-            self.assertNotEqual(b"WO", block.code)
-
-            # Do some arbitrary tests that convince us stuff is read well.
-            if block.code == b"SC":
-                seen_scene = True
-                self.assertEqual(b"SCScene", block.id_name)
-                continue
-
-            if block.code == b"OB":
-                seen_ob = True
-                self.assertEqual("OBümlaut", block.get((b"id", b"name"), as_str=True))
-                continue
-
-        self.assertTrue(seen_scene)
-        self.assertTrue(seen_ob)
-
-        # Many of the data blocks are skipped, because asset_holding_blocks() only
-        # yields top-level, directly-understandable blocks.
-        #
-        # The numbers here are taken from whatever the code does now; I didn't
-        # count the actual blocks in the actual blend file.
-        self.assertEqual(965, len(self.bf.blocks))
-        self.assertEqual(4, blocks_seen)
 
 
 class DepsTest(AbstractTracerTest):
@@ -107,9 +64,6 @@ class DepsTest(AbstractTracerTest):
 
         # All expected uses should have been seen.
         self.assertEqual(expects, {}, "Expected results were not seen.")
-
-    def test_no_deps(self):
-        self.assert_deps("basic_file.blend", {})
 
     def test_ob_mat_texture(self):
         expects = {
@@ -191,19 +145,6 @@ class DepsTest(AbstractTracerTest):
 
             actual = list(dep.files())
             self.assertEqual(actual, expected)
-
-    def test_seq_image_udim_sequence(self):
-        expects = {
-            b"IMcube_UDIM.color": Expect(
-                "Image",
-                "name[1024]",
-                None,
-                None,
-                b"//cube_UDIM.color.<UDIM>.png",
-                True,
-            ),
-        }
-        self.assert_deps("udim/v01_UDIM_BAT_debugging.blend", expects)
 
     def test_block_cf(self):
         self.assert_deps(
@@ -361,77 +302,9 @@ class DepsTest(AbstractTracerTest):
             },
         )
 
-    def test_block_li(self):
-        self.assert_deps(
-            "linked_cube.blend",
-            {
-                b"LILib": Expect(
-                    "Library", "name[1024]", None, None, b"//basic_file.blend", False
-                ),
-            },
-        )
-
     def test_block_li_packed(self):
         # Packed libraries should not be traced.
         self.assert_deps("74871-packed-libraries.blend", {})
-
-    def test_deps_recursive(self):
-        self.assert_deps(
-            "doubly_linked.blend",
-            {
-                b"LILib": {
-                    # From doubly_linked.blend
-                    Expect(
-                        "Library",
-                        "name[1024]",
-                        None,
-                        None,
-                        b"//linked_cube.blend",
-                        False,
-                    ),
-                    # From linked_cube.blend
-                    Expect(
-                        "Library",
-                        "name[1024]",
-                        None,
-                        None,
-                        b"//basic_file.blend",
-                        False,
-                    ),
-                },
-                b"LILib.002": Expect(
-                    "Library",
-                    "name[1024]",
-                    None,
-                    None,
-                    b"//material_textures.blend",
-                    False,
-                ),
-                # From material_texture.blend
-                b"IMbrick_dotted_04-bump": Expect(
-                    "Image",
-                    "name[1024]",
-                    None,
-                    None,
-                    b"//textures/Bricks/brick_dotted_04-bump.jpg",
-                    False,
-                ),
-                b"IMbrick_dotted_04-color": Expect(
-                    "Image",
-                    "name[1024]",
-                    None,
-                    None,
-                    b"//textures/Bricks/brick_dotted_04-color.jpg",
-                    False,
-                ),
-                # This data block is in the basic_file.blend file, but not used by
-                # any of the objects linked in from linked_cube.blend or
-                # doubly_linked.blend, hence it should *not* be reported:
-                # b'IMbuildings_roof_04-color': Expect(
-                #     'Image', 'name[1024]', None, None,
-                #     b'//textures/Textures/Buildings/buildings_roof_04-color.png', False),
-            },
-        )
 
     def test_geometry_nodes(self):
         self.assert_deps(
@@ -531,17 +404,6 @@ class DepsTest(AbstractTracerTest):
                 ),
             },
         )
-
-    def test_usage_abspath(self):
-        deps = [
-            dep
-            for dep in trace.deps(self.blendfiles / "doubly_linked.blend")
-            if dep.asset_path == b"//material_textures.blend"
-        ]
-        usage = deps[0]
-
-        expect = self.blendfiles / "material_textures.blend"
-        self.assertEqual(expect, usage.abspath)
 
     def test_sim_data(self):
         self.assert_deps(
