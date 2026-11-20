@@ -6,6 +6,7 @@ import addon_utils
 from .utils.version_utils import get_blender_version_string, blender_version_status
 from .constants import DEFAULT_ADDONS
 from .storage import Storage
+from .updater import draw_notice
 from .preferences import refresh_jobs_collection, draw_header_row
 from .preferences import draw_login
 from .icons import get_icon_id, get_fallback_icon
@@ -263,6 +264,8 @@ class SUPERLUMINAL_PT_RenderPanel(bpy.types.Panel):
 
         logged_in = bool(Storage.data.get("user_token"))
         projects_ok = len(Storage.data.get("projects", [])) > 0
+
+        draw_notice(layout)
 
         if not logged_in:
             box = layout.box()

@@ -63,6 +63,36 @@ availability and worker values come from the database. A failed catalog fetch
 clears the choices, displays a refresh error and blocks submission until the
 catalog is available again.
 
+## Add-on updates
+
+Packaged releases check GitHub's latest stable release in the background at
+startup and every six hours. An update notice and **Update add-on** button
+appear at the top of the Superluminal Render panel, including before sign-in.
+The download is checked against GitHub's asset size and SHA-256, package
+version, Blender minimum version and service environment before installation.
+
+After downloading, **Restart Blender to update** opens a confirmation with
+**Save changes**, **Discard unsaved changes** and **Cancel**. Saving an untitled
+scene requires a new absolute `.blend` path; existing files must be overwritten
+through Blender's normal Save As confirmation first. Save failures keep Blender
+open. Finish local transfers and renders before restarting.
+
+The helper runs under Blender's Python, waits for that Blender process to exit,
+then replaces the add-on and relaunches the same Blender executable with the
+same saved file. It moves `session.json`, `dev_config.json`, `rclone/` and
+`reports/` into the replacement and saves Blender preferences before quitting.
+Failed installation or launch restores the previous code and configuration.
+The previous directory is removed only after the new add-on registers
+successfully. Interrupted or failed updates retain their recovery directory
+next to the add-on (`.sulu-update-*`); the status file in Blender's
+`CONFIG/sulu-updates/status.json` identifies it. The folder includes
+`update.log` and, after replacement, `previous/` for manual recovery.
+
+Updates no longer interrupt the submission terminal with manual uninstall
+instructions. Users on an older build without this updater need one ordinary
+add-on installation to receive it. Development checkouts do not check
+automatically, and this updater does not update Blender itself.
+
 Repository map:
 
 ```text

@@ -726,8 +726,6 @@ class _SubmitContext:
     phase_timings: Dict[str, Dict[str, object]] = field(default_factory=dict)
     storage_future: Optional[Future] = None
     storage_thread: Optional[threading.Thread] = None
-    update_future: Optional[Future] = None
-    update_thread: Optional[threading.Thread] = None
 
 
 def _record_phase_timing(
@@ -1797,108 +1795,6 @@ def _cancel_storage_prefetch(ctx: _SubmitContext) -> None:
         future.cancel()
 
 
-def _version_numbers(value: object) -> tuple[int, int, int]:
-    numbers = [int(part) for part in re.findall(r"\d+", str(value or ""))[:3]]
-    return tuple((numbers + [0, 0, 0])[:3])
-
-
-def _start_update_discovery(ctx: _SubmitContext) -> None:
-    """Start release discovery for packaged builds only."""
-    if ctx.update_future is not None:
-        return
-    if str(ctx.data.get("addon_build_channel") or "").lower() != "release":
-        return
-
-    future: Future = Future()
-    current_version = _version_numbers(ctx.data.get("addon_version"))
-
-    def _fetch() -> None:
-        if not future.set_running_or_notify_cancel():
-            return
-        available = False
-        failure: Optional[BaseException] = None
-        try:
-            with requests.Session() as session:
-                response = session.get(
-                    "https://api.github.com/repos/"
-                    "Superluminal-Studios/sulu-blender-addon/releases/latest",
-                    headers={
-                        "Accept": "application/vnd.github+json",
-                        "User-Agent": "Sulu-Blender-Addon/update-check",
-                    },
-                    timeout=5,
-                )
-                if response.status_code == 200:
-                    latest = response.json().get("tag_name")
-                    available = _version_numbers(latest) > current_version
-        except BaseException as exc:
-            failure = exc
-        if failure is not None:
-            future.set_exception(failure)
-        else:
-            future.set_result(available)
-
-    thread = threading.Thread(
-        target=_fetch,
-        name="sulu-update-discovery",
-        daemon=True,
-    )
-    ctx.update_future = future
-    ctx.update_thread = thread
-    thread.start()
-
-
-def _show_update_before_submit(ctx: _SubmitContext) -> None:
-    """Offer an available release before submission work begins."""
-    future = ctx.update_future
-    if future is None:
-        return
-    ctx.update_future = None
-    ctx.update_thread = None
-    try:
-        # The request itself has a five-second timeout. This outer bound also
-        # prevents a broken discovery thread from holding submission forever.
-        available = bool(future.result(timeout=6))
-    except BaseException:
-        return
-    if not available:
-        return
-
-    try:
-        answer = ctx.logger.version_update(
-            "https://superlumin.al/blender-addon",
-            [
-                "Download the add-on .zip file from the link.",
-                "Uninstall the current add-on in Blender preferences.",
-                "Install the downloaded .zip file.",
-                "Restart Blender.",
-            ],
-            prompt="Update now?",
-            options=[
-                ("y", "Update", "Open the download page and close"),
-                ("n", "Not now", "Continue with current version"),
-            ],
-            default="n",
-        )
-        if answer == "y":
-            webbrowser.open("https://superlumin.al/blender-addon")
-            ctx.logger.info_exit("Install the new version, then restart Blender.")
-    except SystemExit:
-        raise
-    except Exception:
-        # Release discovery is optional and happens after job receipt. A
-        # notification integration failure cannot turn success into failure.
-        return
-
-
-def _cancel_update_discovery(ctx: _SubmitContext) -> None:
-    future = ctx.update_future
-    ctx.update_future = None
-    ctx.update_thread = None
-    if future is not None:
-        future.cancel()
-
-
 def _project_storage_payload(ctx: _SubmitContext) -> object:
     """Return prefetched storage data, falling back to the synchronous path."""
     wait_started_at = time.perf_counter()
@@ -2594,10 +2490,6 @@ def main() -> None:
         session=mods["requests_retry_session"](),
     )
     try:
-        # Let release users decide whether to update before any submission work
-        # continues. Development installs are explicitly excluded.
-        _start_update_discovery(ctx)
-        _show_update_before_submit(ctx)
         _preflight(ctx)
         _ensure_farm_ready(ctx)
         # Credential prefetch normally began during farm preflight; this
@@ -2609,7 +2501,6 @@ def main() -> None:
         _finish(ctx)
     finally:
         _cancel_storage_prefetch(ctx)
-        _cancel_update_discovery(ctx)
         try:
             ctx.session.close()
         except Exception:

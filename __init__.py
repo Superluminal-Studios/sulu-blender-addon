@@ -87,6 +87,7 @@ from .transfers.submit import submit_operator
 from .transfers.download import download_operator
 from . import panels
 from . import operators
+from . import updater
 from .utils.request_utils import (
     register_job_refresh_infrastructure,
     unregister_job_refresh_infrastructure,
@@ -111,10 +112,12 @@ def register():
     download_operator.register()
     panels.register()
     operators.register()
+    updater.register()
     register_job_refresh_infrastructure()
     
 
 def unregister():
+    updater.unregister()
     unregister_job_refresh_infrastructure()
     Storage.invalidate_runtime_contexts()
     operators.unregister()
