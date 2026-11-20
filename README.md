@@ -57,6 +57,12 @@ flowchart LR
   Backend -->|generation-bound read| R2
 ```
 
+The farm version selector loads enabled, deployed records from PocketBase's
+`blender_versions` collection at startup, login and project refresh. Labels,
+availability and worker values come from the database. A failed catalog fetch
+clears the choices, displays a refresh error and blocks submission until the
+catalog is available again.
+
 Repository map:
 
 ```text

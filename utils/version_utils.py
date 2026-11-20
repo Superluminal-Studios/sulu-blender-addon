@@ -8,21 +8,25 @@ from typing import Dict, List, Tuple
 # Single source of truth for Blender version selection
 # ----------------------------------------------------------------
 
-# (enum_key, label, description)
-_FALLBACK_BLENDER_VERSION_ITEMS: List[Tuple[str, str, str]] = [
-    ("BLENDER50", "Blender 5.0", "Use Blender 5.0 on the farm"),
-    ("BLENDER51", "Blender 5.1", "Use Blender 5.1 on the farm"),
-    ("BLENDER52", "Blender 5.2", "Use Blender 5.2 on the farm"),
-    ("BLENDER53", "Blender 5.3 Beta", "Use Blender 5.3 Beta on the farm"),
-]
-
+# Blender keeps references to enum strings. Keep the database records alive.
 _version_lock = threading.RLock()
-blender_version_items: List[Tuple[str, str, str]] = list(
-    _FALLBACK_BLENDER_VERSION_ITEMS
-)
-_worker_value_by_enum: Dict[str, str] = {
-    code: code.lower() for code, *_ in blender_version_items
-}
+blender_version_items: List[Tuple[str, str, str]] = []
+_worker_value_by_enum: Dict[str, str] = {}
+_enum_strings: Dict[str, str] = {}
+_catalog_status = "Loading farm Blender versions..."
+
+
+def blender_version_status() -> str:
+    with _version_lock:
+        return _catalog_status
+
+
+def clear_deployed_blender_versions(message: str) -> None:
+    global _catalog_status
+    with _version_lock:
+        blender_version_items.clear()
+        _worker_value_by_enum.clear()
+        _catalog_status = message
 
 
 def _numeric_enum_lookup() -> Tuple[Dict[int, str], List[int]]:
@@ -38,53 +42,51 @@ def _numeric_enum_lookup() -> Tuple[Dict[int, str], List[int]]:
 def blender_version_items_callback(_self=None, _context=None):
     """Return a stable snapshot for Blender's dynamic EnumProperty callback."""
     with _version_lock:
-        return list(blender_version_items)
+        return blender_version_items
 
 
 def update_deployed_blender_versions(records) -> bool:
-    """Replace the selector cache with valid deployed records from PocketBase."""
+    """Validate the database catalog before publishing one complete snapshot."""
+    global _catalog_status
+    if not isinstance(records, list) or not records:
+        raise ValueError("No deployed Blender versions were returned.")
     normalized = []
     worker_values = {}
-    seen = set()
-
-    for record in records or []:
-        if not isinstance(record, dict):
-            continue
-        if record.get("enabled") is False or record.get("deployed") is False:
-            continue
-        identifier = str(record.get("identifier") or "").strip().upper()
-        worker_value = str(record.get("worker_value") or "").strip()
-        label = str(record.get("label") or "").strip()
-        version = str(record.get("version") or "").strip()
+    for record in records:
+        identifier = record["identifier"]
+        worker_value = record["worker_value"]
+        label = record["label"]
+        version = record["version"]
         if (
-            identifier not in {"BLENDER50", "BLENDER51", "BLENDER52", "BLENDER53"}
-            or not identifier.replace("BLENDER", "").isdigit()
+            not isinstance(identifier, str)
+            or not identifier.startswith("BLENDER")
+            or not identifier.removeprefix("BLENDER").isdigit()
+            or identifier in worker_values
+            or not isinstance(worker_value, str)
             or not worker_value
+            or worker_value in worker_values.values()
+            or not isinstance(label, str)
             or not label
-            or identifier in seen
-            or any(
-                "sulu" in value.lower()
-                for value in (identifier, worker_value, label, str(record.get("channel") or ""))
-            )
+            or not isinstance(version, str)
+            or not version
+            or not record["enabled"]
+            or not record["deployed"]
         ):
-            continue
-        seen.add(identifier)
-        description = f"Use Blender {version or label.removeprefix('Blender ')} on the farm"
-        try:
-            order = int(record.get("sort_order") or 0)
-        except (TypeError, ValueError):
-            order = 0
-        normalized.append((order, identifier, label, description))
+            raise ValueError("The farm Blender catalog contains an invalid record.")
+        order = record["sort_order"]
+        if not isinstance(order, (int, float)) or int(order) != order:
+            raise ValueError("The farm Blender catalog contains an invalid sort order.")
+        normalized.append((order, identifier, label, f"Use Blender {version} on the farm"))
         worker_values[identifier] = worker_value
-
-    if not normalized:
-        return False
-
     normalized.sort(key=lambda item: (item[0], item[1]))
     with _version_lock:
-        blender_version_items[:] = [item[1:] for item in normalized]
+        blender_version_items[:] = [
+            tuple(_enum_strings.setdefault(value, value) for value in item[1:])
+            for item in normalized
+        ]
         _worker_value_by_enum.clear()
         _worker_value_by_enum.update(worker_values)
+        _catalog_status = ""
     return True
 
 
@@ -101,7 +103,7 @@ def enum_from_bpy_version() -> str:
     numeric = major * 10 + minor
     enum_by_number, enum_numbers_sorted = _numeric_enum_lookup()
     if not enum_numbers_sorted:
-        return _FALLBACK_BLENDER_VERSION_ITEMS[0][0]
+        raise ValueError("Farm Blender versions are unavailable. Refresh Projects before submitting.")
 
     # Clamp to list boundaries
     if numeric <= enum_numbers_sorted[0]:
@@ -138,7 +140,9 @@ def to_worker_blender_value(enum_key: str) -> str:
     change this mapping without requiring an add-on release.
     """
     with _version_lock:
-        return _worker_value_by_enum.get(enum_key, enum_key.lower())
+        if enum_key not in _worker_value_by_enum:
+            raise ValueError("Choose a deployed Blender version. Refresh Projects before submitting.")
+        return _worker_value_by_enum[enum_key]
 
 
 def resolved_worker_blender_value(auto_determine: bool, selected_enum: str) -> str:

@@ -149,11 +149,6 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             self.report({"ERROR"}, "Your Sulu session changed. Sign in and try again.")
             return {"CANCELLED"}
         environment_values = environment_handoff_values(auth_context[0], org_id)
-        storage_profile = str(props.storage_profile or "")
-        storage_choices = Storage.data.get("storage_profiles", {}).get(org_id, {}).get("profiles", [])
-        if storage_profile not in {item["id"] for item in storage_choices}:
-            self.report({"ERROR"}, "Choose storage for this job. Refresh Projects to load available choices.")
-            return {"CANCELLED"}
 
         # Validate custom project path if automatic is disabled
         if props.upload_type == "PROJECT":
@@ -185,9 +180,13 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
                 pass
 
         # Blender version (single source of truth)
-        blender_version_payload = resolved_worker_blender_value(
-            props.auto_determine_blender_version, props.blender_version
-        )
+        try:
+            blender_version_payload = resolved_worker_blender_value(
+                props.auto_determine_blender_version, props.blender_version
+            )
+        except ValueError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
 
         # Frame computation (mode-aware)
         if self.mode == "STILL":
@@ -245,7 +244,6 @@ class SUPERLUMINAL_OT_SubmitJob(bpy.types.Operator):
             "packed_addons_path": tempfile.mkdtemp(prefix="blender_addons_"),
             "packed_addons": [],
             "job_id": str(job_id),
-            "storage_profile": storage_profile,
             "device_type": props.device_type,
             "blend_path": blend_path,
             # Optional and backward-compatible: the worker can prove the file

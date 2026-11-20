@@ -3,7 +3,7 @@ from __future__ import annotations
 import bpy
 import addon_utils
 
-from .utils.version_utils import get_blender_version_string
+from .utils.version_utils import get_blender_version_string, blender_version_status
 from .constants import DEFAULT_ADDONS
 from .storage import Storage
 from .preferences import refresh_jobs_collection, draw_header_row
@@ -513,6 +513,12 @@ class SUPERLUMINAL_PT_RenderNode(bpy.types.Panel):
         layout.use_property_decorate = False
 
         props = context.scene.superluminal_settings
+
+        status = blender_version_status()
+        if status:
+            layout.label(text=status, icon="INFO")
+            layout.operator("superluminal.fetch_projects", text="Refresh Projects")
+            return
 
         # Blender version (auto toggle + version enum)
         col = layout.column()

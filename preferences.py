@@ -4,7 +4,7 @@ import bpy
 from .storage            import Storage
 from .utils.date_utils   import format_submitted
 from .icons              import get_status_icon_id, get_fallback_icon
-from .utils.request_utils import fetch_jobs, fetch_projects, fetch_storage_profiles
+from .utils.request_utils import fetch_jobs, fetch_projects
 from .utils.request_utils import invalidate_job_refresh_context
 from .environment import (
     DEFAULT_ENVIRONMENT,
@@ -104,7 +104,6 @@ def apply_project_context(
             and validate_project_identity(cached_project)[0]
         )
     if use_cached:
-        fetch_storage_profiles(cached_org_id, auth_context)
         if refresh_jobs:
             fetch_jobs(cached_org_id, project_id)
         with Storage._lock:
@@ -143,7 +142,6 @@ def apply_project_context(
         )
 
     org_id = resolve_org_context(project)
-    fetch_storage_profiles(org_id, auth_context)
     with Storage._lock:
         _require_auth_context(auth_context)
         Storage.data["project_id"] = project_id
@@ -584,9 +582,6 @@ class SuperluminalAddonPreferences(bpy.types.AddonPreferences):
         if self.show_debug_panel:
             box = layout.box()
             box.prop(self, "debug_mode")
-            settings = getattr(getattr(context, "scene", None), "superluminal_settings", None)
-            if settings is not None:
-                box.prop(settings, "storage_profile", text="Storage")
 
 
 classes = (

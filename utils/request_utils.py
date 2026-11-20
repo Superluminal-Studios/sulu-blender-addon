@@ -14,7 +14,7 @@ from ..pocketbase_auth import (
 from ..storage import Storage
 from .project_context import ProjectContextError
 from .job_list import job_project_ids, selected_project_ids
-from .version_utils import update_deployed_blender_versions
+from .version_utils import clear_deployed_blender_versions, update_deployed_blender_versions
 
 job_thread_running = False
 
@@ -116,48 +116,49 @@ def fetch_projects():
     return projects
 
 
-def fetch_storage_profiles(org_id: str, auth_context=None) -> dict:
-    """Refresh choices outside panel drawing, scoped to the active login."""
-    auth_context = auth_context or Storage.auth_context()
-    response = authorized_request(
-        "GET", f"{active_profile().api_url}/api/render/v1/storage-profiles",
-        params={"organization_id": org_id},
-    )
-    payload = response.json()
-    if not isinstance(payload, dict) or not isinstance(payload.get("profiles"), list):
-        raise ProjectContextError("Storage listing returned an invalid response.")
-    profiles = payload["profiles"]
-    if not profiles or any(not isinstance(item, dict) or not all(isinstance(item.get(key), str) and item[key] for key in ("id", "name", "provider")) for item in profiles):
-        raise ProjectContextError("No storage choices are available.")
-    if payload.get("default_profile") not in {item["id"] for item in profiles}:
-        raise ProjectContextError("The default storage choice is unavailable.")
-    environment, generation, token, _ = auth_context
-    with Storage._lock:
-        if not Storage.auth_context_matches(environment, generation, token):
-            raise ProjectContextError("Your Sulu session changed. Refresh storage choices.")
-        Storage.data.setdefault("storage_profiles", {})[org_id] = payload
-    return payload
+_catalog_refresh_lock = threading.Lock()
 
 
 def fetch_blender_versions() -> list[dict]:
-    """Refresh the deployed farm Blender versions advertised by PocketBase."""
-    api_url = active_profile().api_url
-    resp = authorized_request(
-        "GET",
-        f"{api_url}/api/collections/blender_versions/records",
-        params={
-            "filter": "enabled=true && deployed=true",
-            "sort": "sort_order,identifier",
-            "perPage": 200,
-        },
-    )
-    payload = resp.json() or {}
-    items = payload.get("items") or []
-    if not isinstance(items, list):
-        raise ProjectContextError("Blender version listing returned an invalid page.")
-    if not update_deployed_blender_versions(items):
-        raise ProjectContextError("No deployed Blender versions were returned.")
-    return items
+    """Load every offered version from PocketBase, with visible failure state."""
+    with _catalog_refresh_lock:
+        environment, generation, _, _ = Storage.auth_context()
+        api_url = active_profile().api_url
+        clear_deployed_blender_versions("Loading farm Blender versions...")
+        try:
+            records = []
+            page = 1
+            while True:
+                response = authorized_request(
+                    "GET",
+                    f"{api_url}/api/collections/blender_versions/records",
+                    params={
+                        "filter": "enabled=true && deployed=true",
+                        "sort": "sort_order,identifier",
+                        "perPage": 200,
+                        "page": page,
+                    },
+                )
+                payload = response.json()
+                items = payload["items"]
+                if not isinstance(items, list) or payload["page"] != page:
+                    raise ProjectContextError("Blender version listing returned an invalid page.")
+                records.extend(items)
+                if page >= payload["totalPages"]:
+                    break
+                page += 1
+            with Storage._lock:
+                if Storage.auth_context()[:2] != (environment, generation):
+                    raise ProjectContextError("Your Sulu session changed during catalog loading.")
+                update_deployed_blender_versions(records)
+            return records
+        except Exception:
+            with Storage._lock:
+                if Storage.auth_context()[:2] == (environment, generation):
+                    clear_deployed_blender_versions("Could not load farm versions. Refresh Projects to retry.")
+            raise
+        finally:
+            _request_properties_redraw()
 
 
 def _observe_user_token_locked() -> None:
@@ -190,6 +191,7 @@ def invalidate_job_refresh_context() -> None:
         _auth_session_generation += 1
         _observed_user_token = str(Storage.data.get("user_token") or "")
     reset_stored_job_session()
+    clear_deployed_blender_versions("Sign in or refresh projects to load farm versions.")
     _request_properties_redraw()
 
 
@@ -372,6 +374,10 @@ def register_job_refresh_infrastructure() -> None:
             _refresh_infrastructure_enabled = True
     _ensure_pulse_timer()
     _request_properties_redraw()
+    if Storage.data.get("user_token"):
+        threading.Thread(target=fetch_blender_versions, daemon=True, name="sulu-version-catalog").start()
+    else:
+        clear_deployed_blender_versions("Sign in to load farm Blender versions.")
 
 
 def _unregister_pulse_timer() -> None:
