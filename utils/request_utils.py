@@ -248,6 +248,8 @@ def _request_jobs_unlocked(
         for job_id, job in page.items():
             if not isinstance(job, dict) or job_id in jobs:
                 raise ProjectContextError("Render discovery repeated an item. Refresh to retry.")
+            if not profile.render_coordinator:
+                job["finished_tasks"] = job["tasks"]["finished"]
             jobs[job_id] = job
         cursor = payload.get("next_cursor")
         if not cursor:

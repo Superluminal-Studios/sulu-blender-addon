@@ -30,6 +30,7 @@ import pathlib
 import sys
 import time
 import gzip
+import unicodedata
 from typing import BinaryIO, Iterable, List, Tuple, cast
 
 
@@ -278,6 +279,58 @@ class ZipTransferrer(transfer.FileTransferer):
         super().__init__()
         self.zippath = zippath
 
+    def _archive_name(self, destination: pathlib.PurePath) -> str:
+        return pathlib.Path(destination).absolute().relative_to(
+            self.zippath.absolute()
+        ).as_posix()
+
+    @staticmethod
+    def _same_contents(first: pathlib.Path, second: pathlib.Path) -> bool:
+        if first.samefile(second):
+            return True
+        if first.stat().st_size != second.stat().st_size:
+            return False
+        with first.open("rb") as left, second.open("rb") as right:
+            while True:
+                chunk = left.read(ZIP_IO_BUFSIZE)
+                if chunk != right.read(ZIP_IO_BUFSIZE):
+                    return False
+                if not chunk:
+                    return True
+
+    def _unique_items(self, items):
+        """Resolve repeated destinations before opening the ZIP or deleting sources."""
+        seen = {}
+        parents = {}
+        unique = []
+        for src, dst, action in items:
+            name = self._archive_name(dst)
+            key = tuple(unicodedata.normalize("NFC", part).casefold()
+                        for part in name.split("/"))
+            previous = seen.get(key)
+            if previous is not None:
+                previous_src, previous_name = previous
+                # Distinct spellings can be referenced separately by a .blend;
+                # silently dropping one would break those references on Linux.
+                if previous_name != name or not self._same_contents(previous_src, src):
+                    raise ValueError(
+                        f"Conflicting ZIP destinations {previous_name!r} and {name!r}: "
+                        f"{previous_src} and {src}"
+                    )
+                log.info("Skipping repeated ZIP destination: %s", name)
+                continue
+            ancestor = next((seen[key[:i]] for i in range(1, len(key))
+                             if key[:i] in seen), None)
+            descendant = parents.get(key)
+            if ancestor is not None or descendant is not None:
+                conflict = ancestor[1] if ancestor is not None else descendant
+                raise ValueError(f"Conflicting ZIP file/folder paths: {conflict!r} and {name!r}")
+            seen[key] = (src, name)
+            for i in range(1, len(key)):
+                parents.setdefault(key[:i], name)
+            unique.append((src, dst, action))
+        return unique
+
     def _choose_compress_type(self, suffix: str, size: int, zipfile_mod) -> int:
         # If user wants maximum speed: store everything.
         if ZIP_NO_COMPRESS:
@@ -309,6 +362,17 @@ class ZipTransferrer(transfer.FileTransferer):
         except Exception:
             log.exception("ZIP queue iteration failed")
             _emit("ZIP: failed to read queued files.")
+            return
+
+        queued_items = items
+        try:
+            items = self._unique_items(queued_items)
+        except Exception as exc:
+            self.error_set(str(exc))
+            for item in queued_items:
+                self.queue.put(item)
+            log.exception("ZIP destination validation failed")
+            _emit(f"ZIP creation cancelled: {exc}")
             return
 
         total_files = len(items)
@@ -505,8 +569,7 @@ class ZipTransferrer(transfer.FileTransferer):
                     
                     # Compute archive name (must be POSIX separators)
                     dst_abs = pathlib.Path(dst).absolute()
-                    relpath = dst_abs.relative_to(zippath)
-                    arcname = str(relpath).replace("\\", "/")
+                    arcname = self._archive_name(dst)
 
                     # Stat once
                     try:
@@ -725,10 +788,6 @@ class ZipTransferrer(transfer.FileTransferer):
                                 file_elapsed,
                             )
 
-                        # Delete source if MOVE
-                        if act == transfer.Action.MOVE:
-                            self.delete_file(src)
-
                         bytes_done += max(size, 0)
 
                     except Exception:
@@ -747,6 +806,10 @@ class ZipTransferrer(transfer.FileTransferer):
                             pass
                         return
 
+            # A source can be queued repeatedly or to several destinations.
+            # Preserve all sources until the complete archive has been closed.
+            for src in {src for src, _, act in queued_items if act == transfer.Action.MOVE}:
+                self.delete_file(src)
             finish_inline()
             elapsed = time.perf_counter() - t0
             if _zip_done_cb:
