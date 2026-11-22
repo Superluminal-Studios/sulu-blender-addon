@@ -17,6 +17,7 @@ from .environment import (
     url_uses_origin,
 )
 from .pocketbase_auth import logged_session_request
+from .utils.machine_identity import machine_auth_headers
 from .storage import Storage
 from .utils.request_utils import (
     _ensure_pulse_timer,
@@ -139,6 +140,8 @@ def _browser_login_thread_v2(
             "POST",
             token_url,
             json={"txn": txn},
+            headers=machine_auth_headers(),
+            allow_redirects=False,
             timeout=Storage.timeout,
         )
 
@@ -186,7 +189,8 @@ def _fetch_user_email_for_token(token: str, api_url: str | None = None) -> str:
     try:
         res = Storage.session.post(
             f"{api_url or active_profile().api_url}/api/collections/users/auth-refresh",
-            headers={"Authorization": token},
+            headers={"Authorization": token, **machine_auth_headers()},
+            allow_redirects=False,
             timeout=Storage.timeout,
         )
         if res.status_code != 200:
@@ -256,7 +260,7 @@ def first_login(
     
 
 class SUPERLUMINAL_OT_Login(bpy.types.Operator):
-    """Sign in to Superluminal"""
+    """Sign in to Sulu and send a Sulu-specific computer fingerprint for account security"""
     bl_idname = "superluminal.login"
     bl_label = "Sign In"
 
@@ -279,11 +283,14 @@ class SUPERLUMINAL_OT_Login(bpy.types.Operator):
                 "POST",
                 url,
                 json=data,
+                headers=machine_auth_headers(),
+                allow_redirects=False,
                 timeout=Storage.timeout,
             )
             if r.status_code in (401, 403):
                 _flush_wm_credentials(wm)  # scrub both email+password on wrong creds
-                self.report({"ERROR"}, "Invalid email or password.")
+                message = "Sign-in is restricted." if r.status_code == 403 else "Invalid email or password."
+                self.report({"ERROR"}, message)
                 return {"CANCELLED"}
 
             r.raise_for_status()
@@ -329,7 +336,7 @@ class SUPERLUMINAL_OT_Logout(bpy.types.Operator):
 
 
 class SUPERLUMINAL_OT_LoginBrowser(bpy.types.Operator):
-    """Sign in via your default browser"""
+    """Sign in via your browser and send a Sulu-specific computer fingerprint for account security"""
     bl_idname = "superluminal.login_browser"
     bl_label = "Sign In with Browser"
 

@@ -63,6 +63,14 @@ availability and worker values come from the database. A failed catalog fetch
 clears the choices, displays a refresh error and blocks submission until the
 catalog is available again.
 
+## Account security
+
+At sign-in and session refresh, Blender sends Sulu a fingerprint derived locally
+from the Windows MachineGuid, macOS platform UUID, or Linux machine ID. The
+add-on hashes that ID with a Sulu-specific prefix before sending it. Sulu stores
+the fingerprint with the account to enforce bans across sign-ins. Reinstalling
+the operating system or cloning a machine image can change or duplicate this ID.
+
 ## Add-on updates
 
 Packaged releases check GitHub's latest stable release in the background at

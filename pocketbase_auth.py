@@ -17,6 +17,7 @@ from requests.adapters import HTTPAdapter
 
 from .environment import profile_for_environment, validate_api_url
 from .storage import Storage
+from .utils.machine_identity import machine_auth_headers
 from .utils.worker_utils import _request_endpoint
 
 # ------------------------------------------------------------------
@@ -176,7 +177,8 @@ def _refresh_token_if_due(auth_context=None) -> str:
             Storage.session,
             "POST",
             refresh_url,
-            headers={"Authorization": current_token},
+            headers={"Authorization": current_token, **machine_auth_headers()},
+            allow_redirects=False,
             timeout=Storage.timeout,
         )
         if res.status_code != 200:
